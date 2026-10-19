@@ -1,0 +1,76 @@
+# 文件清单（SHA256）
+# 生成时间: 2026-10-18 09:10 CST
+# 由 gen_filelist.py 生成；收录规则见脚本头部注释。
+# 文件数: 71  合计: 924.0 KB
+
+6bb3dba4daa5f677fa48e3b1014a40a02b5d39c00930de61ae42fce0a56b7b97     10053  01_ofx插件源码/PROGRESS.md
+a7cbc5bf89eaa6106d78c332b93634f936e7b743a1a87e1cc0ddaba18c7344e9      7876  01_ofx插件源码/README.md
+8059e5b9eb0b9a5a9ca939f385c78e77a258704cb82bd2d31c7d02902dec9f02      1927  01_ofx插件源码/build.bat
+d55551e378154e69b650f180416424a8d750fd0726b03040e1b2017fde87f77d     37042  01_ofx插件源码/examples/basic.cpp
+47c8740a1c23db88c50be21eb50bc8e224a93d388d19b1cb1fe46c92aa884268      8893  01_ofx插件源码/examples/invert.cpp
+f651dbba0bd762650906ccac668bc9f868ec76a2cd1b5d39c187aa3c299d6e51      9729  01_ofx插件源码/examples/ofxUtilities.H
+ed36192023ab81e841ba64e7e3b7f178d40657737c6bda7b49efb007067a99f3      6864  01_ofx插件源码/install.bat
+0ba428d98d712bbf60be38aba7685ebed6d150cf10582cef266218ccb3dc55f2     14123  01_ofx插件源码/sdk/include/ofxColour.h
+e2ad90185153aa4b415422ac172418d43edbf4af63750d7b1e968cf154ad3884     38487  01_ofx插件源码/sdk/include/ofxCore.h
+3f4326bbbc352cae9a4af41a66b2781f758995ba1d61aa190d22c1c6add36b9d      6140  01_ofx插件源码/sdk/include/ofxDrawSuite.h
+3186ae3e24dd3ae3aff07e8d49235423b1e63d61b5ee6ec5391c1908ef3c2c6e     37312  01_ofx插件源码/sdk/include/ofxGPURender.h
+d42af3b7985837ce3799aea0466d2a8257add1daae62feb43f7afc87376ede31     91931  01_ofx插件源码/sdk/include/ofxImageEffect.h
+64ede699c53c075e7498c383314a8b41fece6291677698a76b4af44cda6f7283     24418  01_ofx插件源码/sdk/include/ofxInteract.h
+06003fc0be9d1c07bb6d93994392eefd3be5abacf08a6adfec1ccf3e3f17cf05     20521  01_ofx插件源码/sdk/include/ofxKeySyms.h
+52ba2b7ee3fcb88a04b8ce80e5af3485b1ad25743c58b31b32457a13ea41e871      1973  01_ofx插件源码/sdk/include/ofxMemory.h
+6cdf7598431fdd58c5efc0144cea585083d03aa151d2cda601198136ae860963      7389  01_ofx插件源码/sdk/include/ofxMessage.h
+d59a6816e3b17e2de7639ace9fc03c9a81d58587d64368553d9bcac6473733ba      5512  01_ofx插件源码/sdk/include/ofxMultiThread.h
+8d427d3635773f30d71ce8eb32dc993da5d0dfd550012507f56cf9e7ebac4722       211  01_ofx插件源码/sdk/include/ofxOpenGLRender.h
+a56c76aac856cadd307ed2c7c62e132afb7dd5ab8e69436decd28e45b24cb6b3     62282  01_ofx插件源码/sdk/include/ofxParam.h
+0e5c2344431996899c3c6e3d42a2607da49b185c1f4a53ce9a79b5c914badf2e     11761  01_ofx插件源码/sdk/include/ofxParametricParam.h
+b86e4256d2392394f977c570e6ce14d0f836840ecab4c0cca98a1553cd9dde5b      1356  01_ofx插件源码/sdk/include/ofxPixels.h
+2d57ce3a4201add43d8dbbd9a926d95bd0fa3839e5357927e1b01831c81f4c22      6553  01_ofx插件源码/sdk/include/ofxProgress.h
+b3340b71499571ff55ec05260209dab3311b30b4adc7a04e82df9f2c913e0929     11110  01_ofx插件源码/sdk/include/ofxProperty.h
+c36cded0c96c26797092e1574808806af4428b3560b589e6edc54eae2562182a      2802  01_ofx插件源码/sdk/include/ofxTimeLine.h
+6b7d1d021c1e0606c79f39ffc1a477fd5ea2221896e405abc4f8d9a4d929cc65     28867  01_ofx插件源码/src/nama_engine.cpp
+4b22da87e9707925a43cda450e848963c655d39b68e295d655b3edb9dbb4979a      9663  01_ofx插件源码/src/nama_engine.h
+711f1f6b3951a43870d63959ef7890432c612d75e9a8e83f504bc6b4c2b67428     58396  01_ofx插件源码/src/ofx_plugin.cpp
+c87943dc9b1199c092711ab9ec614ad2df51a5e246fc1955e95068883b3e0fac      3100  02_测试夹具beauty_probe/deps.py
+970f39e26d16aae009f9bc4ac351d85f232592bd324fb5f1821031b9e3029d5b      1823  02_测试夹具beauty_probe/diag_bmd.py
+c3c56b2de548a19fec5d62b3aec3e4c1d6fa85240f804acdf9297e187eed6566      2237  02_测试夹具beauty_probe/diag_reg.py
+c14af2a4cd66179ae3dfd9499cce897415ee1f4f62b0410cf82e7af8b6cb6b64      1824  02_测试夹具beauty_probe/diag_reg2.py
+71a475208595f1d9def6d398e78815659862fb824be61dc69ea045185b444f04      2036  02_测试夹具beauty_probe/diag_reg3.py
+210bb216fe781c4b3a53b651e8344fd6c7889f307b8e6dab379574f0d43c6fb6      1273  02_测试夹具beauty_probe/diag_reg4.py
+439e7b1b946a0c815c75c7daf8f1385d9c9527db86a9b61a7bc45a7b75f903db      3817  02_测试夹具beauty_probe/diag_resolve.py
+6498d192cf9b835f72fc18d1b74ca4d1f21b281726570dbe158f719a423bfc6a       425  02_测试夹具beauty_probe/job.json
+d65db5b6914777c2dea5334061e04cc5b74cc14168f815163e76abac056e5027       427  02_测试夹具beauty_probe/job_cn.json
+1d70a26191ab85375c6a78910e4e203a7c7056bdf2aa6e833cb197f537fa2584       288  02_测试夹具beauty_probe/luacheck.lua
+2b855441fc8b6c2d642bca99ab045c2ad48f096cc7997db442c7ab1b81c05319     49522  02_测试夹具beauty_probe/mock_host.py
+2a192677e8540539ae8b78d084cb3279e310bd494ec5604b0bf98def7fdd2a63     12147  02_测试夹具beauty_probe/probe_nama.py
+b4c563e4331dcc96973378196d63fe3c7d70a386d25d341b8c1b6e0bb2f326eb      4885  02_测试夹具beauty_probe/selftest_ofx.py
+0f2b370e27a25f96ddf618be24963255f09870d006a87c551c5a320e1ecea2cc      6099  02_测试夹具beauty_probe/selftest_ui.py
+5742fceb9a4f8b09d0aa75c1cff137db5a689f59aab53a53478ffee936254bf1      2220  02_测试夹具beauty_probe/test_harness.py
+795f2b753ba8b04c40e9c0c9dc249db87687c3e83db38ce524b463dae6f8e83b     23820  03_脚本版Python源码/NamaBeauty_美颜_cli.py
+de60fb89d1f93ce1b6138f16c7f3c425f831554b67223a5af9728effe895d264     12454  03_脚本版Python源码/README.md
+2f716f0d8d0519966986b2cd9954884c1969815a3b3a09e30c58d2bf3ad083af       439  03_脚本版Python源码/config.json
+955e79e2026bb76de6a3197dc06e7960b374f43190e7b3cc9df5b65c8e21d8e0     15932  03_脚本版Python源码/nama_live.py
+4a3c98fe7e275422ed08ae4adb3ab520dbf716811dbd2df91c93733bc6706260     13028  03_脚本版Python源码/nama_ui.py
+9af9297c54734153c6f4908e541ff8cf5ca17befebeb4190ea5eb4365ec316b4     32511  03_脚本版Python源码/nama_worker.py
+f04154ef7d8b888dd3458b87d807c35c7e1be3382ccacc458e6d0b8215c0117f      4209  03_脚本版Python源码/tests/analyze_ofx.py
+87086f9b4c4141f0af64c4ca52971361584d3ecda230b090ce5af30440d0b6cf      4930  03_脚本版Python源码/tests/bench_live.py
+db0aa4ae420213016f03476d7d218ad98a6ad6b1b9e601832d8ec1eaf1cc2431      4822  03_脚本版Python源码/tests/bench_live2.py
+fdfab0bd05eaf28068246db7ff2a6aa2cfbeb6397c0ef0db067a27da6a514e00       263  03_脚本版Python源码/tests/check_lua.lua
+d20c658e9ebb0d33249ef58dfe2f9cfac3d282439c99d9ca51dc7cb28c089a2e      4227  03_脚本版Python源码/tests/probe_tk.py
+4690294d99080927c2801e54f376ec6f9933fb60fa409dfcfadc417b237e5d71      5779  03_脚本版Python源码/tests/probe_tk2.py
+7e268b34f0b3842525aae0a70105d894d4bad3658c025ec8e2514f9a34604d99      4813  03_脚本版Python源码/tests/probe_tk3.py
+af51acb5d246c231c3de8f277d9099c9d978650bca4ca868e7e85329d9b28ceb      2054  03_脚本版Python源码/tests/probe_ui_image.lua
+81a731c934e6d8498f7d65bfd0b2d707ebf7321deb014ddc3771e457b5e58681      1665  03_脚本版Python源码/tests/probe_ui_image2.lua
+6ef99f92446e68512ba29654e160d9456fddc5c05db8ca2178051ce2ca7e54ff      1403  03_脚本版Python源码/tests/probe_ui_image3.lua
+c41a6c4654da160b35f27d90e008a12f709c0fc7363145b4fe2d3e82b02b0df2      2983  03_脚本版Python源码/tests/selftest_preview.lua
+064ef5dd99626b28217bc4bb8a0728effbfa03e86983500d351cf497d9a30f85      1809  03_脚本版Python源码/tests/test_write_job.lua
+93484d1ea642302d6850797204b25c0546520b5999e531f34ffce93d36a344cf     38218  04_脚本版Lua源码/NamaBeauty 美颜/NamaBeauty 美颜.lua
+4d360de2b017837964673d45c0cd49dcaaa53f8191bec14a448d62b145a22ca3     23088  04_脚本版Lua源码/旧备份/210903_preview/NamaBeauty 美颜.lua
+8013340aa074dbdb152357a34e7c8408f3e0a850dd200a57f80595c7147702e4     27396  04_脚本版Lua源码/旧备份/210903_preview/nama_worker.py
+4d360de2b017837964673d45c0cd49dcaaa53f8191bec14a448d62b145a22ca3     23088  04_脚本版Lua源码/旧备份/NamaBeauty_美颜.lua.wrongpath.bak
+ef972c39e95e9e4e0cab6183dd1ab9c135f795bae4a5e657ba5abd2dcf4f30f5     24662  CODE_REVIEW.md
+ee8b9b0632821b3e9809b3fa4af4a4fdf7b517b6a311d4395025f71d96894882      4818  README.md
+4e045afc2de15bcfc9e3d4c59515d702343ac37d78e1c714645e1d3a47c68b58      3397  gen_filelist.py
+160be05bfa7fdc9ea938c26af4a472f17ab70667f71c332f00e11a2c914a6308      6278  installer/README.md
+b0fa54ab51f22427433b277b10aa373cfb141857d9f3bcaa3772a7661fe6474d      8639  installer/build_nsis.py
+0ebbaf870de58850bb6a74d24d2887b91bd86ed53df9cb5dc4a2263d31bf95f1     12430  installer/namabeauty.nsi
+9a0489a02006d75f33820e0b09c13d644c01d0eabde7063b4c37f24322587e9f     21738  installer/namabeauty_setup.py
