@@ -31,8 +31,10 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "FILELIST.txt")
 
-EXCLUDE_DIR_NAMES = {"out", "obj", ".git", "__pycache__", ".vs"}
-EXCLUDE_DIR_PREFIXES = ("_backup_before",)
+# bundle/ 是 install.bat 的打包中间产物（含引擎 DLL 副本），与 out/ obj/ 同类，
+# 不该进清单。_locked残留备份* 是删 .locked-* 前的临时备份（约 139 MB）。
+EXCLUDE_DIR_NAMES = {"out", "obj", "bundle", ".git", "__pycache__", ".vs"}
+EXCLUDE_DIR_PREFIXES = ("_backup_before", "_locked残留备份")
 EXCLUDE_EXT = {
     ".raw", ".mp4", ".mov", ".avi", ".mkv",
     ".dll", ".ofx", ".exe", ".bundle", ".bin", ".sys",

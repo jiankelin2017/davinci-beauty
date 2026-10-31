@@ -1,0 +1,20 @@
+NamaBeauty 验收报告 2026-10-27 00:49:55
+
+[PASS] 版本           NAMA_BUILD_STR 与三段一致         2.3.0 == 2.3.0
+[PASS] 版本           二进制内嵌版本串                     搜 '2.3.0' 命中
+[PASS] 版本           NamaVersion 编码               0x20003，期望 (MAJOR<<16)|MINOR = 0x20003
+[PASS] 版本           装机产物字节比对                     相同 e3d649563f6d
+[PASS] 版本           装机产物行为等价                     黄金用例 3/3
+[PASS] 参数           三张表长度一致                      枚举14 面板14 keys14
+[PASS] 参数           面板名 ↔ SDK key 对齐             
+[PASS] 参数           默认档 50/30/30 其余0             
+[PASS] 参数           锐化保持隐藏                       隐藏项: delspot_level, sharpen
+[PASS] 参数           美型三项沉底                       末三项: cheek_thinning, eye_enlarging, intensity_chin
+[PASS] 回归           逐字节一致                        15/15  (2.7s)
+[PASS] 接口           mock host OFX 契约             PASS 20 / FAIL 0
+[PASS] 接口           自测链路 LoadLibrary→渲染          结论: PASS
+[PASS] 装机           引擎资产齐全                       
+[PASS] 装机           无 .locked-* 残留               干净
+
+PASS 15 FAIL 0 WARN 0
+总判定: PASS

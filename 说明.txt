@@ -1,30 +1,56 @@
-﻿NamaBeauty 美颜插件 v1.3 —— 交付包
-生成时间：2026-10-18
+﻿DaVinci Beauty 美颜插件 —— 交付说明
+
+【当前状态 2026-10-31】v3.0.0 已把引擎从闭源 FaceUnity NamaSDK 整体替换为 OBS 自研纯 CPU 美颜引擎（CoreEngine）+ ONNX 人脸检测，并在引擎内自动检测 GPU（DirectML）/ 退回 CPU，可作为最终版日常使用。当前最新 v3.0.4：修正帧行序（OFX/Resolve 的帧是 bottom-up，第 0 行是画面最下面一行，检测此前按 top-down 读，脸是上下颠倒的，真机实测 score 0.25/0 脸 → 0.93/1 脸）；v3.0.3 修掉三个「假故障」——离线自测夹具把文件路径当成图像（导致此前所有离线「0 检出」结论作废）、异步检测在按需渲染宿主（Resolve 单帧/静止画面）里永久透传、参数句柄取不到时静默给 0 导致引擎逐字节透传。v3.0.2 修正了人脸检测预处理（喂原始 0-255，去掉归一化）。
+产物 md5 5526671130b276fdfbc36fb9cfd8ec71（编译版；装机版因 PE 时间戳不同而字节不同，属正常）。
+
+重装 / 升级请用 01_ofx插件源码\install.bat（需管理员权限，且先完全退出 Resolve）。
+本交付包内没有 .exe 安装包 —— installer\ 只有 NSIS 构建脚本，需要时再自行构建。
 
 【本文件夹内容】
-  NamaBeauty_Setup_v1.3.exe   安装程序（双击运行，会请求管理员权限）
-                              卸载：控制面板 ->「应用和功能」->「NamaBeauty 美颜」
-                              或  NamaBeauty_Setup_v1.3.exe --uninstall
-                              或  C:\Program Files\Common Files\OFX\Plugins\NamaBeauty.ofx.bundle\Uninstall_NamaBeauty.exe
-  源码\                       修复后的 v1.3 完整源码（纯源码与文档，不含二进制）
-                              清单与校验：源码\FILELIST.txt（每个文件的 SHA256）
-                              说明：      源码\README.md
+  01_ofx插件源码\          OFX 插件 C++ 源码（当前主线）
+                           编译：build.bat    安装：install.bat
+  02_测试夹具beauty_probe\ 无宿主回归测试（19 项）与引擎直测脚本
+  06_验收工具\             一键验收（acceptance.py / verify.bat）、
+                           逐字节回归基线、性能 A/B 测量
+  03_脚本版Python源码\     早期脚本版，已不再维护，留档
+  04_脚本版Lua源码\        早期 Lua 版，已移出菜单，留档
+  05_解密模型数据\         模型数据
+  installer\               NSIS 安装包构建脚本（不含构建产物）
+  FILELIST.txt             文件清单（每个文件的 SHA256 + 大小）
+  README.md                完整交付说明
+  说明.txt                 本文件
 
 【安装前】
-  请先完全退出 DaVinci Resolve；安装后重启它才能识别新插件。
+  必须先完全退出 DaVinci Resolve；安装后重启它才能识别新插件。
+  不退出就装的话，被占用的 DLL 会被改名成 .locked-<pid> 留在目录里
+  （这就是此前堆积 139 MB 垃圾的原因）。
 
 【使用】
-  效果库 -> OpenFX -> NamaBeauty -> 把「NamaBeauty 美颜」拖到片段上。
-  提示：磨皮不为 0 时锐化不生效；八项全 0 时画面完全不变。
+  效果库 -> OpenFX -> DaVinci Beauty -> 把「DaVinci Beauty 美颜」拖到片段上。
+  默认已给 磨皮 50 / 美白 30 / 红润 30，拖上去就有轻度美颜。
+  提示：磨皮不为 0 时锐化不生效（要锐利感请用「清晰」）；八项全 0 时画面完全不变。
 
-【版本 / 本次变更】
-  插件上报版本 1.3（NamaVersion = 0x10003）。
-  源码已完成《NamaBeauty_v1.3_审查报告》P0–P4 全部修复。
-  安装器本次重新出包，改动：
-    - 新增 --uninstall 参数支持（等价于调用自带卸载器）
-    - 静默安装 /S 不再弹框卡死；失败时返回非 0 退出码
-    - 卸载更彻底：连带删掉空的 bundle 目录
+【版本演进（简表）】
+  v2.0     引擎层回移 OBS 3.0.19
+  v2.0.3   默认磨皮 50 -> 62（唯一有同帧 GT 支撑的配置调整）
+  v2.1.2   三项美型（瘦脸 / 大眼 / 下巴），两遍渲染
+  v2.2.0   性能 3.2x（热点是锐化不是磨皮）；美型拆页
+  v2.2.3   面板沉底 + 版本号入面板 + 默认改回 50/30/30
+  v2.3.0   锐化中间结果改行缓存（4K -7.3%）+ 工程验收工具
+  v2.3.1   项目改名 DaVinci Beauty（UI/路径/目录）+ 修 install.bat 漏拷资产（历史）
+  v3.0.0   开源引擎：移除 NamaSDK，CPU 全量移植 + 人脸推理 GPU 自动检测（DirectML）
+  v3.0.0   彻底脱离 NamaSDK：改用 OBS 自研纯 CPU 美颜引擎 + ONNX 人脸检测；
+           GPU 自动检测（DirectML 优先，CPU 兜底），公开接口零改动；约 12MB 分发
+  v3.0.2   人脸检测预处理改回 raw 0-255（去掉归一化），修复清晰正脸却全局磨皮
+  v3.0.4   修正帧行序 bottom-up：检测按视觉方向读行并把框映射回缓冲行号
+  v3.0.3   修三个「假故障」：自测夹具把路径当图像 / 异步检测在按需渲染宿主里永久
+           透传（首帧改同步兜底）/ 参数句柄失败静默给 0（回落默认值 + WARN）；
+           新增「面板参数」日志与 BEAUTY_DEBUG_DETECT / BEAUTY_DEBUG_DUMP 诊断
+
+【验收（2026-10-30）】
+  一键验收通过（版本 / 三表对齐 / 逐字节回归 / mock host 契约 / bundle 完整性 / 工程一致性）。
+  跑法：cd 06_验收工具 && python acceptance.py（或双击 verify.bat）。
+  详见 01_ofx插件源码\PROGRESS.md（精简版）与 PROGRESS_ARCHIVE_至v2.3.0.md（完整历史）。
 
 【静默用法（可选）】
-  安装：NamaBeauty_Setup_v1.3.exe /S
-  卸载：NamaBeauty_Setup_v1.3.exe --uninstall /S
+  用 install.bat 装机；卸载请走控制面板或 bundle 内的 Uninstall_DaVinci Beauty.exe。

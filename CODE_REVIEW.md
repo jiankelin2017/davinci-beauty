@@ -3,7 +3,7 @@
 审查对象：`NamaBeauty_源码备份_20261014_2236`
 审查时间：2026-10-14
 审查范围：67 个文件（OFX C++ 插件 3 个核心文件、构建/安装脚本、官方 OFX 头文件、Python 脚本版、Lua 脚本版、无宿主测试夹具）
-证据来源：源码 + 官方 `ofxImageEffect.h` 规范 + 真实运行日志 `C:\ProgramData\NamaBeauty\logs\ofx.log`
+证据来源：源码 + 官方 `ofxImageEffect.h` 规范 + 真实运行日志 `C:\ProgramData\DaVinciBeauty\logs\ofx.log`
 
 ---
 
@@ -369,7 +369,7 @@ inargs.set("OfxImageEffectPropRenderScale", 0, [1.0, 1.0])
 ### 验证结果
 
 **编译**：`build.bat` 干净重编译，`/W3` 下**零警告零错误**，导出符号齐全
-（`NamaBeauty.ofx` 64512 字节，`NamaSelfTest` / `OfxGetNumberOfPlugins` / `OfxGetPlugin`）。
+（`DaVinciBeauty.ofx` 64512 字节，`NamaSelfTest` / `OfxGetNumberOfPlugins` / `OfxGetPlugin`）。
 
 **协议回归**：8 项全 PASS（新增 3 项，原 5 项无回归）。
 
@@ -407,11 +407,11 @@ GetClipPreferences -> 0  Depth_Output=OfxBitDepthByte FrameVarying=1
 - 关掉 B3：注释掉 `pluginMain` 里分发 `GetClipPreferences` 的那两行。
 
 **2. 安装目录里有 3 个 `.locked-*` 残留文件删不掉。** 因为 **DaVinci Resolve 当前正在运行**
-（PID 22236），它映射着旧的 `CNamaSDK.dll` / `fuai.dll` / `NamaBeauty.ofx`。
+（PID 22236），它映射着旧的 `CNamaSDK.dll` / `fuai.dll` / `DaVinciBeauty.ofx`。
 这正是 `install.bat` 改名策略的预期行为 —— **关掉 Resolve 之后手动删掉它们即可**：
 
 ```
-C:\Program Files\Common Files\OFX\Plugins\NamaBeauty.ofx.bundle\Contents\Win64\*.locked-*
+C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\*.locked-*
 ```
 
 （同理，B1/B3 的改动要生效，**必须重启 Resolve** —— 它按 `mtime + size` 缓存插件扫描结果。）

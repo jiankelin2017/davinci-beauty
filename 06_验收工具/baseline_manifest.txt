@@ -1,0 +1,24 @@
+# DaVinci Beauty 逐字节回归基线
+#
+# 每行: <用例名> <输出帧md5>
+# 输入帧由 06_验收工具/input_face.png 缩放到 1074x604 后转 BGRA 生成，其 md5 记录如下；输入变了这里会失配，属预期。
+#
+# input_md5: f031e3eab93c542ac262c0b21a67b228
+# plugin_version: 3.0.4
+# generated_by: DaVinciBeauty.ofx
+#
+blur00         ee23b5ce6ddac6a5da4974ac0c5519ea
+blur30         1cf1ae3d886d987ae8c3de344f26d869
+blur62         2874b5bc5ececa4609e2456796b7d49d
+blur100        67b76ff95aef74054dd7420a5a6bc087
+blur62_wh30    4095840e6195d3753198c77b43c2964e
+blur62_wh100   5b1b8b4e57c2425588904fc53fb2e96f
+sh50           d3fce168bc0e4d8231a93358a80e98bd
+sh100          43c37ea6083a46b359ff03573830b1d9
+cl50           bf78956e82346fb45e7ea674d2915de9
+sh50_cl100     418fede42bfbd926b589450945966a2e
+gs50           cfbb01cefa34078defff0c893d52103c
+shape100       b21fdb5bbe83c41afcc2eab3c4c01331
+mode1          4095840e6195d3753198c77b43c2964e
+mode2          4095840e6195d3753198c77b43c2964e
+mode3          4095840e6195d3753198c77b43c2964e

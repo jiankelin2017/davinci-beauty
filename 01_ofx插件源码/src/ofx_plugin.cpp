@@ -1,4 +1,4 @@
-// ofx_plugin.cpp —— NamaBeauty 的 OpenFX 插件层。
+// ofx_plugin.cpp —— DaVinci Beauty 的 OpenFX 插件层。
 //
 // 结构照官方 Examples/Invert/invert.cpp 的最小骨架，参数部分照
 // Examples/Basic/basic.cpp。所有 OpenFX 幂等常量与 suite 签名都来自官方头文件，
@@ -43,12 +43,12 @@ static OfxMessageSuiteV1* gMsgHost = nullptr;
 // ---------------------------------------------------------------------------
 // 自带日志
 //
-// 落在 %ProgramData%\NamaBeauty\logs\ofx.log。设 NAMA_OFX_LOG 可改路径，
+// 落在 %ProgramData%\DaVinciBeauty\logs\ofx.log。设 NAMA_OFX_LOG 可改路径，
 // 设成 0 可整体关闭。
 //
 // 只对前若干帧做详细记录，之后按间隔抽样，避免正常播放时把磁盘写满。
 // ---------------------------------------------------------------------------
-#define NAMA_LOG_DEFAULT "C:\\ProgramData\\NamaBeauty\\logs\\ofx.log"
+#define NAMA_LOG_DEFAULT "C:\\ProgramData\\DaVinciBeauty\\logs\\ofx.log"
 #define NAMA_LOG_MAX_BYTES (4 * 1024 * 1024)
 
 // ---------------------------------------------------------------------------
@@ -80,6 +80,32 @@ static void ofxLogEnsureCs() {
     InitOnceExecuteOnce(&g_logCsOnce, ofxLogInitCs, nullptr, nullptr);
 }
 
+// 逐级创建目录。
+//
+// 【v2.0.1 修的真 bug】旧实现只有一句 CreateDirectoryA(父目录)，而它**只建一级**。
+// 装机后 C:\ProgramData\DaVinciBeauty 本身就不存在，于是 C:\ProgramData\DaVinciBeauty\logs
+// 永远建不出来，fopen 失败，每一条日志都被静默丢掉 —— Resolve 里跑了一整天，
+// 磁盘上一个 ofx.log 都没有，而这期间所有「出错就看日志」的排查其实都是空的。
+// 更糟的是旧代码里 `static bool dirOk` 无论成败都置 true，等于第一次失败就永久放弃。
+//
+// 现在按分隔符逐段建，并且只在**确认目录真的存在**后才置位缓存。
+static void ensureDirRecursive(const std::string& dir) {
+    if (dir.empty()) return;
+    std::string cur;
+    cur.reserve(dir.size());
+    for (size_t i = 0; i < dir.size(); i++) {
+        const char c = dir[i];
+        const bool sep = (c == '\\' || c == '/');
+        cur.push_back(c);
+        if (!sep && i + 1 != dir.size()) continue;
+        std::string p = cur;
+        while (!p.empty() && (p.back() == '\\' || p.back() == '/')) p.pop_back();
+        // "C:" 这种纯驱动器前缀不是目录，建不了也没必要建
+        const bool driveOnly = (p.size() == 2 && p[1] == ':');
+        if (!driveOnly && !p.empty()) CreateDirectoryA(p.c_str(), nullptr);
+    }
+}
+
 static void ofxLog(const char* fmt, ...) {
     const char* env = getenv("NAMA_OFX_LOG");
     if (env && env[0] == '0' && env[1] == 0) return;
@@ -90,10 +116,14 @@ static void ofxLog(const char* fmt, ...) {
     std::string path = (env && *env) ? std::string(env) : std::string(NAMA_LOG_DEFAULT);
     size_t slash = path.find_last_of("\\/");
     if (slash != std::string::npos) {
-        static bool dirOk = false;
-        if (!dirOk) {
-            CreateDirectoryA(path.substr(0, slash).c_str(), nullptr);
-            dirOk = true;
+        static std::string dirDone;
+        const std::string dir = path.substr(0, slash);
+        if (dir != dirDone) {
+            ensureDirRecursive(dir);
+            // 确认建成才缓存，否则下次继续试（旧代码在这里无条件置位）
+            const DWORD at = GetFileAttributesA(dir.c_str());
+            if (at != INVALID_FILE_ATTRIBUTES && (at & FILE_ATTRIBUTE_DIRECTORY))
+                dirDone = dir;
         }
     }
 
@@ -131,32 +161,127 @@ struct ParamDef {
     const char* label;
     double dflt;
     const char* hint;
+    // true → 设 OfxParamPropSecret，宿主界面不显示，但参数照常存在、照常读写。
+    // 用来下线「实测无效但接线完好」的滑块：保留底层，随时一个字段改回来。
+    bool secret;
+    // 所属参数页。"Main" = 主「美颜」页；"Shape" = v2.2.0 拆出来的「美型」页。
+    // nullptr 视同 "Main"。
+    //
+    // 为什么要拆页（用户反馈「UI 选项太多」）：面板一度是 14 个滑块平铺，
+    // 而美型三项是几何形变，与「磨皮/美白」这类像素级效果性质完全不同 ——
+    // 它会改变五官位置、承担额外的第二遍 SDK 渲染开销。混在一起既难找，
+    // 也容易让人手滑推一下就把脸拉变形。
+    const char* page;
 };
 
+// 首次拖到片段上的默认值（v2.0.3 起）：只开「磨皮 62」，其余十项 0。
+// v2.2.3 起改为「磨皮 50 / 美白 30 / 红润 30」，其余十一项 0 —— 用户侧决策。
+// 以前是 70 / 美白 15 / 红润 30，用户一拖上去就是重妆感，还得先逐项归零。
+//
+// v2.0 把磨皮默认值从 20 提到 50：v1.51 的滑块在 10 档就接近饱和（实测
+// mad 10 档 0.167 / 100 档 0.207，只差 1.24 倍），而 v2.0 换成了线性曲线
+// （10 档 0.014 / 100 档 0.208）。同一个「20」在两版里的实际强度差约 5 倍，
+// 沿用 20 会让用户第一眼以为插件没生效。50 档对应 mad 0.087，是肉眼可辨
+// 的轻磨皮，也是 OBS 侧标定的常用档（纹理保留约 86%）。
+//
+// ⚠ 顺序必须与 nama_engine.h 的 P_* 枚举逐一对应：readParams() 按下标写进
+// NamaSettings::panel[]，顺序错一位就会「拖 A 滑块、B 效果变」。编译期只能保证
+// 元素个数不多不少，保证不了顺序 —— 改这里务必同时看枚举。
 static const ParamDef kParams[P_COUNT] = {
-    {"blur_level", "磨皮", 70, "磨皮强度。实测：只要磨皮不为 0，锐化的效果会被完全盖住。"},
-    {"clarity", "清晰", 0, "清晰度。实测满量程改动 89% 像素，是最强的一项。"},
-    {"color_level", "美白", 15, "美白。实测满量程改动 99% 像素。"},
-    {"red_level", "红润", 30, "红润。实测满量程改动 58% 像素。"},
-    {"sharpen", "锐化", 0, "锐化。磨皮不为 0 时实测无任何效果，请先把磨皮调到 0。"},
-    {"face_threed", "五官立体", 0, "五官立体。实测满量程改动 16% 像素。"},
-    {"eye_bright", "亮眼", 0, "亮眼。实测很弱，满量程只改动 0.65% 像素，需放大才看得出。"},
-    {"remove_pouch_strength", "去黑眼圈", 0, "去黑眼圈。实测很弱，满量程只改动 0.93% 像素。"},
+    // v2.0.3 曾把默认值从 50 提到 62，依据是物理摄像头 GT：第三方默认 blur=80
+    //   对应皮肤区噪声 81.4%，我方 50 是 85.9%、75 是 76.9%，插值到 81.4% 落在
+    //   62.5 档，取 62 —— 那是当时唯一有 GT 支撑的默认值调整，且不改引擎曲线。
+    //
+    // v2.2.3 用户明确要求改回「磨皮 50 / 美白 30 / 红润 30」（产品侧的观感取舍：
+    //   62 的磨皮单独看偏重，配合美白/红润一起给，整组下来的观感由这三个值共同
+    //   决定）。注意：这是**覆盖 GT 结论的用户决策**，不是新测出来的数据。
+    //   回退方式：改回 62 / 0 / 0 即可，引擎曲线未动，GT 依据仍记录在案的上面几行。
+    {"blur_level", "磨皮", 50, "磨皮强度。默认 50（轻磨皮，用户侧标定档）。"
+     "本版档位是线性的：1.x 的 20 约相当于本版的 70~80，想要更强请往 80~95 推。", false, "Main"},
+    {"clarity", "清晰", 0, "清晰度。结构增强：只放大 3~7px 的中频轮廓，不放大毛孔噪点。"
+     "v2.0.2 起独立生效（此前必须先把「锐化」推起来它才有反应）。", false, "Main"},
+    {"color_level", "美白", 30, "美白。只提亮肤色，无脸帧逐字节不动。默认 30。", false, "Main"},
+    {"red_level", "红润", 30, "红润。实测满量程改动 58% 像素。默认 30。", false, "Main"},
+    // 已隐藏（secret）。两个独立原因，详见 02_测试夹具beauty_probe/锐化无效排查报告.md：
+    //   1) SDK 自身行为：磨皮 > 0 时锐化对输出的贡献恒为 0（字节级确证 0/252160）；
+    //   2) 1.51 起语义掩码把锐化改动撤掉 93%（锐化增强的是眼睛/眉毛/嘴唇/发丝，
+    //      恰好在皮肤掩码外）。想要锐利感请用「清晰」——它不受磨皮影响。
+    {"sharpen", "锐化", 0, "已停用：磨皮大于 0 时完全无效；需要锐利感请用「清晰」。", true, "Main"},
+    // v2.0 新增：把「锐化」同一条细节回填曲线扩展到皮肤掩码之外。0 = 脸外逐字节不变，
+    // 这是 OBS 版 3.0.13 为「只动脸」这条硬指标做的设计，默认必须保持 0。
+    {"global_sharpen", "全局锐化", 0,
+     "把细节回填扩展到皮肤区域之外。0 表示脸外逐字节不变（默认）；"
+     "调大后背景也会变锐，适合需要整体质感时使用。", false, "Main"},
+    {"face_threed", "五官立体", 0, "五官立体。实测满量程改动 16% 像素。", false, "Main"},
+    {"eye_bright", "亮眼", 0, "亮眼。实测很弱，满量程只改动 0.65% 像素，需放大才看得出。", false, "Main"},
+    {"remove_pouch_strength", "去黑眼圈", 0, "去黑眼圈。实测很弱，满量程只改动 0.93% 像素。", false, "Main"},
+    // v2.0 新增两项：OBS 版实测 SDK 侧确实生效的参数，v1.51 从未接过。
+    {"remove_nasolabial_folds_strength", "去法令纹", 0,
+     "去法令纹。SDK 侧生效；强度过大时鼻翼两侧可能出现涂抹感，建议 0~40。", false, "Main"},
+    // 隐藏（secret）：v2.0 回移后实测在「只开磨皮」的调用链上**逐字节无变化**
+    // （blur=0 与 blur=50 两种条件、delspot=50/100 都试过，改动像素 0）。
+    // OBS 侧 3.0.16 记录的效果量 +9.4% 是在「同时带 sharpen=4」的那一组测出来的，
+    // 而磨皮开启时本项目根本不下发 sharpen ⇒ 那个增益很可能来自 sharpen 而非它。
+    // 因此不删接线（万一特定素材/组合下有效），但从面板隐藏，避免给用户一个
+    // 拖了没反应的滑块。这与 v1.51 处理「锐化」的方式一致。
+    {"delspot_level", "祛斑痘", 0,
+     "已停用：实测在当前调用链上无效果（改动像素为 0），详见源码注释。", true, "Main"},
+    // ---- 2.1.0 美型三项（几何形变）----------------------------------------
+    // 数值是「改动像素比例」，来自 OBS 3.0.19 侧对 166 个 SDK 参数的逐项实测
+    // （见 05_文档/一级入口说明.md 第十六节）。只挑正交的三项：脸宽、眼大小、
+    // 下庭。同族的窄脸 38.9% / V脸 28.3% / 小脸 29.6% / 短脸 18.0% 都作用于
+    // 同一块下半脸像素，同时推会互相打架，所以不做成滑块。
+    //
+    // ⚠️ 形变是像素位移，与本插件「只在皮肤掩码内动手、掩码外逐字节不动」的
+    // 承诺有冲突，引擎侧为此加了两处处理（见 nama_engine.cpp 的 shapeOn 分支）：
+    //   1) 磨皮强度不再用 CPU 混合（那会把形变稀释成 t 倍并留双线）；
+    //   2) 掩码与「不动基准」都改用形变后的帧，否则掩码错位 + 鬼影。
+    {"cheek_thinning", "瘦脸", 0,
+     "脸宽收窄。实测满量程改动 36.5% 像素，是三项里最明显的。"
+     "开启后磨皮强度改由 SDK 承担，档位手感与关闭美型时略有不同。", false, "Shape"},
+    {"eye_enlarging", "大眼", 0,
+     "眼睛放大。实测满量程改动 2.6% 像素（眼睛本身占画面小），"
+     "效果局部但准确；数值越大越明显，建议 30~70。", false, "Shape"},
+    {"intensity_chin", "下巴", 0,
+     "下巴长度/形状微调。实测满量程改动 2.7% 像素。"
+     "与「瘦脸」作用在不同区域，可以同时使用。", false, "Shape"},
 };
 
-static const char* kBlurTypeChoices[] = {"双边滤波（最强·推荐）", "高斯（中等）", "弱磨皮"};
+static const char* kBlurTypeChoices[] = {"双边滤波", "高斯", "弱磨皮"};
+
+// v2.0 新增：磨皮模式四档。这一项**不是 SDK 参数**（OBS 侧做过 14 组实验，
+// heavy_blur / *_smooth 系列输出逐位相同，已证伪），而是引擎自己的 CPU 后处理：
+// 按结构自适应决定平坦皮肤与边缘轮廓各回填多少细节。
+// 索引直接对应 NamaSettings::smooth_mode，不要改动顺序。
+static const char* kSmoothModeChoices[] = {
+    "人像磨皮",
+    "清晰磨皮",
+    "精细磨皮",
+    // 索引 3 在 OBS 侧叫「朦胧磨皮（细频整体压低）」，v2.0.1 改名。
+    // 原因：这个名字与实际行为方向相反。kTexModes[3] = {140,0,0} 的含义是
+    // 「按面板锐化档位的 55% 回填细频」，不是「压低压低」——本引擎没有负回填
+    // （hf 取自原图，减它只会把边缘挖穿），所以它做不到「比纯磨皮更糊」。
+    // 实测（640x394 人像帧，磨皮 50，相对原图）：四档细频平坦区
+    //   模式0 92.3% / 模式1 94.3% / 模式2 96.8% / 模式3 96.7%
+    // 即模式 3 是「细节留得最多」的一档，故改名。
+    "轻磨皮",
+};
 
 // 每个 instance 缓存的参数句柄
 struct InstanceData {
     OfxParamHandle p[P_COUNT];
     OfxParamHandle blurType;
     OfxParamHandle skinDetect;
+    // v2.0：磨皮模式四档（0 人像 / 1 清晰 / 2 精细 / 3 朦胧）
+    OfxParamHandle smoothMode;
     // 本实例在引擎里独占的 SDK 道具槽位（>=0 有效）。见 NamaEngine::acquireSlot。
     int slot = -1;
     // 本实例是否已经把「引擎不可用」的报错抛给宿主了。
     // 以前这是函数级 static，跨实例共享且永不重置 —— 第一个实例报过一次之后，
     // 后面所有实例（哪怕在不同片段上）都静默失败，用户完全看不到提示。
     bool warned = false;
+    // v2.0.1：输入像素编码自检只在首帧做一次，结果进日志（见 probeInputEncoding）
+    bool probedInput = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -176,8 +301,14 @@ static InstanceData* getData(OfxImageEffectHandle instance) {
 // ---------------------------------------------------------------------------
 static void readParams(InstanceData* d, NamaSettings& s) {
     for (int i = 0; i < P_COUNT; i++) {
-        double v = 0.0;
-        if (d && d->p[i]) gParamHost->paramGetValue(d->p[i], &v);
+        // v3.0.3：句柄取不到时不能默默给 0。
+        // 以前这里 `v` 初值 0、句柄为空就跳过 —— 结果是「面板参数全 0」，
+        // 引擎走「逐字节透传」分支（sdk 耗时 ~1ms），用户看到的现象是
+        // 「插件完全没效果」，而日志里看不出任何异常。改成回落到声明默认值，
+        // 至少保持与面板显示一致的观感。
+        double v = kParams[i].dflt;
+        if (d && d->p[i] && gParamHost->paramGetValue(d->p[i], &v) != kOfxStatOK)
+            v = kParams[i].dflt;
         s.panel[i] = v;
     }
     if (d && d->blurType) {
@@ -192,6 +323,13 @@ static void readParams(InstanceData* d, NamaSettings& s) {
         gParamHost->paramGetValue(d->skinDetect, &b);
         s.skin_detect = b ? 1 : 0;
     }
+    // v2.0：磨皮模式。取不到句柄时保持 NamaSettings 的默认 0（人像磨皮），
+    // 这样老工程（1.x 存的、没有这个参数）打开后观感不变。
+    if (d && d->smoothMode) {
+        int m = 0;
+        gParamHost->paramGetValue(d->smoothMode, &m);
+        s.smooth_mode = (m >= 0 && m <= 3) ? m : 0;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +342,77 @@ static void readParams(InstanceData* d, NamaSettings& s) {
 // ---------------------------------------------------------------------------
 static inline bool isFloatDepth(const char* d) {
     return d && strcmp(d, kOfxBitDepthFloat) == 0;
+}
+
+// ---------------------------------------------------------------------------
+// 输入像素自检（v2.0.1）
+//
+// 为什么需要：引擎把输入一律当成「8bit 非线性编码像素」——f32_to_u8_row 是纯
+// v*255 缩放，**不做伽马解码**。这在 DaVinci YRGB（非 Color Managed）+ Rec.709
+// 时间线（2026-10-26 实测的配置）下是正确的。
+//
+// 但如果宿主改送 scene-linear（Color Managed / ACES 项目里 OFX 常收到线性
+// float），v*255 会把 18% 灰映射成 46/255 而不是 105/255：画面整体压暗、人脸
+// 检测漏检、美白提亮比例失真 —— 而且**不报任何错**，用户只看到「效果变弱了」。
+//
+// 这里只做观测：每实例首帧采一次亮度分布并写日志。中位 < 55/255 基本可以断定
+// 是线性域（非线性编码的画面极少这么暗）。不做自动补偿 —— 补偿需要确切的传递
+// 函数，猜错比不补偿更糟。
+// ---------------------------------------------------------------------------
+static void probeInputEncoding(const void* src, int rowBytes, int w, int h, bool isFloat) {
+    if (!src || w < 8 || h < 8 || rowBytes <= 0) return;
+    int hist[256] = {0};
+    long long total = 0;
+    for (int y = 0; y < h; y += 8) {
+        const unsigned char* row =
+            (const unsigned char*)src + (size_t)y * (size_t)rowBytes;
+        for (int x = 0; x < w; x += 16) {
+            int r, g, b;
+            if (isFloat) {
+                const float* p = (const float*)row + (size_t)x * 4;
+                r = (int)(p[2] * 255.0f + 0.5f);
+                g = (int)(p[1] * 255.0f + 0.5f);
+                b = (int)(p[0] * 255.0f + 0.5f);
+                r = r < 0 ? 0 : (r > 255 ? 255 : r);
+                g = g < 0 ? 0 : (g > 255 ? 255 : g);
+                b = b < 0 ? 0 : (b > 255 ? 255 : b);
+            } else {
+                const unsigned char* p = row + (size_t)x * 4;
+                b = p[0]; g = p[1]; r = p[2];
+            }
+            hist[(77 * r + 150 * g + 29 * b) >> 8]++;
+            total++;
+        }
+    }
+    if (total <= 0) return;
+    // 排除纯黑像素再求中位。
+    // 第一版直接用全帧中位，结果第一张测试帧就假阳性：那张图 53.9% 是黑遮幅，
+    // 中位恒为 0，而它的非黑像素中位是 120（完全正常的 Rec.709 画面）。
+    // 黑边、遮幅、黑底字幕这些在真实素材里很常见，必须排除。
+    long long nonzero = 0;
+    for (int i = 8; i < 256; i++) nonzero += hist[i];
+    if (nonzero * 100 < total * 10) {
+        ofxLog("inputProbe 有效像素不足 10%%（画面几乎全黑），跳过编码自检");
+        return;
+    }
+    const long long k1 = total / 100, k50 = nonzero / 2, k99 = total * 99 / 100;
+    int median = -1, lo1 = -1, hi99 = -1;
+    long long acc = 0, accNz = 0;
+    for (int i = 0; i < 256; i++) {
+        acc += hist[i];
+        if (i >= 8) accNz += hist[i];
+        if (lo1 < 0 && acc >= k1) lo1 = i;
+        if (median < 0 && accNz >= k50) median = i;
+        if (acc >= k99) { hi99 = i; break; }
+    }
+    if (median < 55)
+        ofxLog("inputProbe 中位=%d/255 黑1%%=%d 亮99%%=%d —— WARN 疑似 scene-linear 输入。"
+               "本引擎按非线性编码像素处理，线性输入会导致人脸检测漏检、美白比例失真。"
+               "请把时间线色彩空间设为 Rec.709/sRGB，或使用非 Color Managed 的 DaVinci YRGB",
+               median, lo1, hi99);
+    else
+        ofxLog("inputProbe 中位=%d/255 黑1%%=%d 亮99%%=%d（非线性编码，正常范围）",
+               median, lo1, hi99);
 }
 
 // float32 → uint8：乘 255、加 0.5、夹到 [0,255]、截断。
@@ -373,10 +582,10 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
     gEffectHost->getPropertySet(effect, &props);
     if (!props) return kOfxStatFailed;
 
-    gPropHost->propSetString(props, kOfxPropLabel, 0, "NamaBeauty 美颜");
-    gPropHost->propSetString(props, kOfxImageEffectPluginPropGrouping, 0, "NamaBeauty");
-    gPropHost->propSetString(props, kOfxPropShortLabel, 0, "NamaBeauty");
-    gPropHost->propSetString(props, kOfxPropLongLabel, 0, "NamaBeauty 皮肤 / 眼部美颜");
+    gPropHost->propSetString(props, kOfxPropLabel, 0, "DaVinci Beauty 美颜");
+    gPropHost->propSetString(props, kOfxImageEffectPluginPropGrouping, 0, "DaVinci Beauty");
+    gPropHost->propSetString(props, kOfxPropShortLabel, 0, "DaVinci Beauty");
+    gPropHost->propSetString(props, kOfxPropLongLabel, 0, "DaVinci Beauty");
     gPropHost->propSetString(props, kOfxImageEffectPluginPropSingleInstance, 0, "false");
 
     // 能被当作滤镜（Edit / Color 页面）使用
@@ -429,7 +638,7 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
     gPropHost->propSetString(props, kOfxImageEffectPluginRenderThreadSafety, 0,
                              kOfxImageEffectRenderUnsafe);
 
-    ofxLog("describe            label=NamaBeauty 美颜 grouping=NamaBeauty contexts=Filter,General "
+    ofxLog("describe            label=DaVinci Beauty 美颜 grouping=DaVinci Beauty contexts=Filter,General "
            "depths=Byte,Float par=1 noSpatial=false tiles=0 threadsafe=Unsafe build=" NAMA_BUILD_STR);
     return kOfxStatOK;
 }
@@ -496,17 +705,53 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
     // 先于其子参数存在。这里改成：先建页，然后每个参数在 paramDefine 之后立刻用
     // kOfxParamPropParent 挂到页上 —— 不依赖定义顺序，更可靠。
     OfxParamHandle pageHandle = nullptr;
-    if (gParamHost->paramDefine(paramSet, kOfxParamTypePage, "Main", &pp) == kOfxStatOK) {
+    const OfxStatus stPage = gParamHost->paramDefine(paramSet, kOfxParamTypePage, "Main", &pp);
+    if (stPage == kOfxStatOK) {
         gPropHost->propSetString(pp, kOfxPropLabel, 0, "美颜");
-        if (gParamHost->paramGetHandle(paramSet, "Main", &pageHandle, nullptr) != kOfxStatOK)
-            pageHandle = nullptr;
     }
+    // v3.0.4：paramDefine 失败不代表页面不可用 —— 有的宿主在 describe 被调两次、
+    // 或实例已存在同名页时返回失败码。这里一律再试一次 paramGetHandle 把句柄取回来，
+    // 拿到就照常归类（以前 define 失败就整页放弃，参数全散到根级）。
+    if (gParamHost->paramGetHandle(paramSet, "Main", &pageHandle, nullptr) != kOfxStatOK)
+        pageHandle = nullptr;
     // 页面拿不到时，参数会散落到根级（仍然可用，只是归类失效）。以前这里是静默
     // 降级 —— 出问题时只能靠猜。现在明确记一条日志（旧报告 A8）。
     if (!pageHandle)
-        ofxLog("describeInContext WARN 参数页 Main 定义/取句柄失败，参数将挂在根级");
+        ofxLog("describeInContext WARN 参数页 Main 不可用（define=%d），参数将挂在根级",
+               (int)stPage);
 
-    // ---- 8 个 0..100 的效果滑块 ----
+    // ---- v2.2.2：独立的「美型」分组（可折叠）---------------------------------
+    // 用户诉求：美型功能要能用，只是面板太杂 —— 要「折叠」，不要「隐藏」。
+    //
+    // v2.2.0 用第二个 OFX Page：Resolve 不渲染 Page，拍平成一列，无效。
+    // v2.2.1 改用 Group，但仍把 Group 挂在 Main 页下 —— 嵌套在页内的分组同样不呈现。
+    // v2.2.2 的关键修正：**Group 必须留在 root 层级**（不设 kOfxParamPropParent）。
+    //   Resolve 确实支持 OFX 分组（第三方商业插件在 inspector 里就有可折叠小节，
+    //   并能双击标题栏收起），但只对 root 层级的 Group 生效；页内嵌套的会被降级。
+    //   三项美型仍用 Parent 挂到 Shape 之下。
+    //   兜底：分组建不出来时三项退回 Main —— 宁可不分组，也不能丢参数。
+    OfxParamHandle shapeHandle = nullptr;
+    const OfxStatus stShape = gParamHost->paramDefine(paramSet, kOfxParamTypeGroup, "Shape", &pp);
+    if (stShape == kOfxStatOK) {
+        gPropHost->propSetString(pp, kOfxPropLabel, 0, "美型（几何形变）");
+        gPropHost->propSetString(pp, kOfxParamPropHint, 0,
+                                 "几何形变类：瘦脸 / 大眼 / 下巴。三项默认均为 0（关闭）。"
+                                 "任意一项非 0 时会额外增加一遍 SDK 渲染（1080p 约 +7ms、"
+                                 "4K 约 +19ms），且磨皮力度改由 SDK 接管，手感与关闭时略有不同。"
+                                 "形变会改变五官位置，建议从小值起步。");
+        // 默认收起 —— 用户明确反馈「UI 选项太多」，展开状态只会添乱。
+        // ⚠️ 不设 kOfxParamPropParent：Group 必须在 root 层级，Resolve 才渲染。
+        //    （v2.2.1 把它挂在 Main 页下，结果是分组被忽略、三项照样平铺。）
+        gPropHost->propSetInt(pp, kOfxParamPropGroupOpen, 0, 0);
+    }
+    // v3.0.4：同 Main 页 —— define 失败也再试一次取句柄，避免「分组没了」。
+    if (gParamHost->paramGetHandle(paramSet, "Shape", &shapeHandle, nullptr) != kOfxStatOK)
+        shapeHandle = nullptr;
+    if (!shapeHandle)
+        ofxLog("describeInContext WARN 美型分组 Shape 不可用（define=%d），三项美型将退回主「美颜」页",
+               (int)stShape);
+
+    // ---- P_COUNT 个 0..100 的效果滑块（2.1.0 起 14 个）----
     for (int i = 0; i < P_COUNT; i++) {
         if (gParamHost->paramDefine(paramSet, kOfxParamTypeDouble, kParams[i].name, &pp) !=
             kOfxStatOK)
@@ -520,6 +765,33 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
         gPropHost->propSetDouble(pp, kOfxParamPropMax, 0, 100.0);
         gPropHost->propSetDouble(pp, kOfxParamPropDisplayMin, 0, 0.0);
         gPropHost->propSetDouble(pp, kOfxParamPropDisplayMax, 0, 100.0);
+        // v2.2.0：按 ParamDef::page 归类。Shape 页不可用时退回 Main，
+        // 保证参数一定存在、一定可读 —— 宁可不分组，也不能丢参数。
+        const char* pg = "Main";
+        if (kParams[i].page && kParams[i].page[0] &&
+            strcmp(kParams[i].page, "Shape") == 0 && shapeHandle)
+            pg = "Shape";
+        if (pageHandle) gPropHost->propSetString(pp, kOfxParamPropParent, 0, pg);
+        // 下线滑块：secret 让宿主完全不显示，但参数仍然存在、仍然可读写，
+        // 旧工程里存的非零值也不会丢（Sharpen 在磨皮=0 时确实是有效的）。
+        if (kParams[i].secret)
+            gPropHost->propSetInt(pp, kOfxParamPropSecret, 0, 1);
+    }
+
+    // ---- 磨皮模式（v2.0 新增，四档）----
+    // 这一项是引擎的 CPU 后处理，不是 SDK 参数；默认档与 v1.51 观感最接近。
+    // 放在「磨皮算法」之前，因为它决定细节回填策略，比滤波算法更影响观感。
+    if (gParamHost->paramDefine(paramSet, kOfxParamTypeChoice, "smooth_mode", &pp) == kOfxStatOK) {
+        gPropHost->propSetString(pp, kOfxPropLabel, 0, "磨皮模式");
+        gPropHost->propSetString(pp, kOfxParamPropScriptName, 0, "smooth_mode");
+        gPropHost->propSetString(pp, kOfxParamPropHint, 0,
+                                 "四档只在「细节回填策略」上有区别，任何一档都不会把磨皮变成锐化。"
+                                 "人像=不额外回填（SDK 原始磨皮质感）；清晰=只回填轮廓、皮肤最干净；"
+                                 "精细=轮廓小幅回填且平坦区压得更狠；轻磨皮=均匀回填、最接近原图质感。"
+                                 "需要锐度请调「锐化」或「清晰」滑块。");
+        for (int i = 0; i < 4; i++)
+            gPropHost->propSetString(pp, kOfxParamPropChoiceOption, i, kSmoothModeChoices[i]);
+        gPropHost->propSetInt(pp, kOfxParamPropDefault, 0, 0);  // 0 = 人像磨皮
         if (pageHandle) gPropHost->propSetString(pp, kOfxParamPropParent, 0, "Main");
     }
 
@@ -536,15 +808,44 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
     }
 
     // ---- 只磨皮肤区域 ----
+    // 默认打开：全局磨皮会把人脸以外的背景、衣服、字幕一起磨糊，用户体感就是
+    // "画面整体不对劲"。开启后 SDK 只处理检测到的皮肤区域，背景逐字节不动。
+    // 实测 44 张真实照片：开启后磨皮影响面积平均减少 20.8 个百分点
+    // （-30.6pp ~ -4.3pp），整帧平均亮度最大漂移 0.46/255（无全局亮度问题）。
+    // 注意：依赖人脸检测， faces=0 时该开关无效（此时应转去调磨皮算法/强度）。
     if (gParamHost->paramDefine(paramSet, kOfxParamTypeBoolean, "skin_detect", &pp) == kOfxStatOK) {
         gPropHost->propSetString(pp, kOfxPropLabel, 0, "只磨皮肤区域");
         gPropHost->propSetString(pp, kOfxParamPropScriptName, 0, "skin_detect");
-        gPropHost->propSetString(pp, kOfxParamPropHint, 0, "只磨皮肤区域");
-        gPropHost->propSetInt(pp, kOfxParamPropDefault, 0, 0);
+        gPropHost->propSetString(pp, kOfxParamPropHint, 0,
+                                 "默认开启。开启后只处理检测到的皮肤区域，背景和衣服不动；"
+                                 "画面里检测不到人脸时此开关不生效。");
+        gPropHost->propSetInt(pp, kOfxParamPropDefault, 0, 1);
         if (pageHandle) gPropHost->propSetString(pp, kOfxParamPropParent, 0, "Main");
     }
 
-    ofxLog("describeInContext   clips=Output,Source params=%d(+page)", P_COUNT + 2);
+    // ---- 版本号（v2.2.3 起，面板底部只读展示）-------------------------------
+    // 用户要求：面板上要能直接看到版本号，且**随升级自动改变**。
+    //
+    // 为什么放在这里 / 为什么是 String 而不是内置 label：
+    //   OFX 无法指定「右下角 / 左下角」这类绝对位置 —— Resolve 严格按 paramDefine
+    //   的顺序纵向渲染，所以「最后一个定义」就是最靠近面板底部的稳定落点。
+    //
+    // 为什么它能自动同步：default 直接引用 NAMA_BUILD_STR —— 那是版本号唯一出处
+    // （nama_engine.h）。以后每次升级只改宏，这里跟着变，不存在"忘了手动同步"。
+    //
+    // kOfxParamPropEnabled=0 让它灰显不可编辑，只是个标签。
+    if (gParamHost->paramDefine(paramSet, kOfxParamTypeString, "build_version", &pp) == kOfxStatOK) {
+        gPropHost->propSetString(pp, kOfxPropLabel, 0, "版本");
+        gPropHost->propSetString(pp, kOfxParamPropScriptName, 0, "build_version");
+        gPropHost->propSetString(pp, kOfxParamPropHint, 0,
+                                 "插件版本号（只读）。随每次升级自动变化，"
+                                 "排障/反馈时请一并告知这个值。");
+        gPropHost->propSetString(pp, kOfxParamPropDefault, 0, NAMA_BUILD_STR);
+        gPropHost->propSetInt(pp, kOfxParamPropEnabled, 0, 0);
+        if (pageHandle) gPropHost->propSetString(pp, kOfxParamPropParent, 0, "Main");
+    }
+
+    ofxLog("describeInContext   clips=Output,Source params=%d(+page)", P_COUNT + 4);
     return kOfxStatOK;
 }
 
@@ -616,7 +917,16 @@ static OfxStatus getClipPreferences(OfxImageEffectHandle instance,
     if (gPropHost->propSetInt(outArgs, kOfxImageEffectFrameVarying, 0, 1) == kOfxStatOK)
         changed = true;
 
-    if (changed) ofxLog("getClipPreferences 输出深度/组件/PAR 跟随输入，FrameVarying=true");
+    // 只在**第一次**应答时记一行。Resolve 在每次 clip 变化 / 开始播放时都会问
+    // 一遍，逐次打印会把 ofx.log 冲成同一条消息的复读机，反而盖住真正有用的
+    // render 行（v3.0.4）。
+    if (changed) {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            ofxLog("getClipPreferences 输出深度/组件/PAR 跟随输入，FrameVarying=true（后续不再重复记录）");
+        }
+    }
     return changed ? kOfxStatOK : kOfxStatReplyDefault;
 }
 
@@ -633,11 +943,30 @@ static OfxStatus createInstance(OfxImageEffectHandle instance) {
     memset(d->p, 0, sizeof(d->p));
     d->blurType = nullptr;
     d->skinDetect = nullptr;
+    d->smoothMode = nullptr;
 
-    for (int i = 0; i < P_COUNT; i++)
-        gParamHost->paramGetHandle(paramSet, kParams[i].name, &d->p[i], nullptr);
+    // v3.0.3：句柄取不到要显式报出来。
+    // 静默失败的后果极隐蔽：readParams 读到全 0 → 引擎逐字节透传 → 用户以为
+    // 插件坏了（实测日志里就是 sdk=1.0ms / faces=0 / score=0.00）。
+    int hFail = 0;
+    char hFailNames[320] = {0};
+    for (int i = 0; i < P_COUNT; i++) {
+        if (gParamHost->paramGetHandle(paramSet, kParams[i].name, &d->p[i], nullptr) != kOfxStatOK ||
+            !d->p[i]) {
+            d->p[i] = nullptr;
+            hFail++;
+            if (strlen(hFailNames) + strlen(kParams[i].name) + 2 < sizeof(hFailNames)) {
+                if (hFailNames[0]) strcat_s(hFailNames, sizeof(hFailNames), ",");
+                strcat_s(hFailNames, sizeof(hFailNames), kParams[i].name);
+            }
+        }
+    }
+    if (hFail > 0)
+        ofxLog("createInstance WARN %d/%d 个参数句柄取不到：%s（这些参数按声明默认值兜底）",
+               hFail, P_COUNT, hFailNames);
     gParamHost->paramGetHandle(paramSet, "blur_type", &d->blurType, nullptr);
     gParamHost->paramGetHandle(paramSet, "skin_detect", &d->skinDetect, nullptr);
+    gParamHost->paramGetHandle(paramSet, "smooth_mode", &d->smoothMode, nullptr);
 
     gPropHost->propSetPointer(props, kOfxPropInstanceData, 0, (void*)d);
 
@@ -654,15 +983,26 @@ static OfxStatus createInstance(OfxImageEffectHandle instance) {
     if (didInit) {
         const char* ng = getenv("NAMA_ENGINE_NO_GLLOCK");
         const char* glTxt = (ng && ng[0] == '1') ? "off" : "on";
-        ofxLog("createInstance 预热引擎 %s 耗时=%.0fms ver=%s item=%d ownerTid=%lu gllock=%s %s",
-               ok ? "成功" : "失败", ms, engine.version() ? engine.version() : "?",
+        ofxLog("createInstance 预热引擎 %s 耗时=%.0fms build=%s ver=%s item=%d ownerTid=%lu gllock=%s %s",
+               ok ? "成功" : "失败", ms, NAMA_BUILD_STR,
+               engine.version() ? engine.version() : "?",
                engine.itemId(), engine.ownerThread(), glTxt, ok ? "" : err.c_str());
+        // 语义区域（自研皮肤分割）单独打一行。它是 v1.5 的核心，出问题时的
+        // 第一个问题永远是「区域到底有没有生效」，而这行就是答案：
+        //   region=on    → 已加载人脸模型并完成区域推理，效果被限制在皮肤内
+        //   region=off   → 退回 v1.4 颜色启发式（原因见 err）
+        // faces/cov 是**上一次推理**的快照，刚初始化完还没有掩码，所以可能为 0。
+        ofxLog("createInstance 语义区域 region=%s segfaces=%d cov=%.1f%% infer=%.1fms n=%ld %s",
+               engine.regionActive() ? "on" : "off",
+               engine.regionFaces(), 100.0 * engine.regionCoverage(),
+               engine.regionInferMs(), engine.regionInferCount(),
+               engine.regionActive() ? "" : engine.regionErr());
         // 预热失败以前只写日志，用户在界面上完全看不到 —— 表现就是「拖上去了但没效果」。
         // 这里补一次宿主报错，让问题可见。
         if (!ok && gMsgHost) {
             d->warned = true;
             gMsgHost->message(instance, kOfxMessageError, "", "%s",
-                              err.empty() ? "NamaBeauty 引擎预热失败，美颜不会生效。"
+                              err.empty() ? "DaVinci Beauty 引擎预热失败，美颜不会生效。"
                                           : err.c_str());
         }
     } else {
@@ -678,7 +1018,7 @@ static OfxStatus createInstance(OfxImageEffectHandle instance) {
             if (gMsgHost && !d->warned) {
                 d->warned = true;
                 gMsgHost->message(instance, kOfxMessageError, "", "%s",
-                                  serr.empty() ? "NamaBeauty 引擎不可用，美颜不会生效。"
+                                  serr.empty() ? "DaVinci Beauty 引擎不可用，美颜不会生效。"
                                                : serr.c_str());
             }
         } else {
@@ -980,7 +1320,38 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
         NamaSettings s;
         readParams(d, s);
 
+        // v3.0.3：面板参数变化时记一行。
+        // 「插件没效果」有两种完全不同的原因，日志上必须能一眼分开：
+        //   · 参数全 0 → 引擎走逐字节透传（sdk≈1ms、faces=0、score=0.00）；
+        //   · 参数正常但检不出脸 → sdk≥15ms、faces=0、score 是个小正数。
+        // 只在参数真的变化时打，稳态零开销。
+        {
+            static double lastSig = -1e30;
+            double sig = 0.0;
+            for (int i = 0; i < P_COUNT; i++) sig = sig * 1.618 + s.panel[i];
+            sig = sig * 1.618 + s.blur_type * 3.1 + s.skin_detect * 5.7 + s.smooth_mode * 9.3;
+            if (sig != lastSig) {
+                lastSig = sig;
+                char pl[512];
+                int off = 0;
+                for (int i = 0; i < P_COUNT && off < (int)sizeof(pl); i++)
+                    off += snprintf(pl + off, sizeof(pl) - (size_t)off, "%s%.0f",
+                                    i ? "/" : "", s.panel[i]);
+                ofxLog("面板参数 磨皮/清晰/美白/红润/锐化/全局锐化/立体/亮眼/去眼袋/去法令纹/祛斑/瘦脸/大眼/下巴 = %s"
+                       " | blurType=%d skinDetect=%d smoothMode=%d",
+                       pl, s.blur_type, s.skin_detect, s.smooth_mode);
+            }
+        }
+
         const char* depthTxt = isFloatDepth(srcDepth) ? "float" : "byte";
+
+        // ---- 输入编码自检：每实例只采一次（v2.0.1）----
+        // 放在代理/全 0 分支之前，保证「第一次真正出图」就能采到。
+        // 采样本身约 3 万次循环，对首帧的耗时影响在 0.1ms 量级。
+        if (!d->probedInput) {
+            probeInputEncoding(srcPtr, srcRowBytes, w, h, isFloatDepth(srcDepth));
+            d->probedInput = true;
+        }
 
         // ---- 无空间感知渲染（例如生成 LUT）：必须透传（旧报告 A10）----
         // 本插件依赖整帧空间信息（人脸检测 + 磨皮），宿主声明这种渲染时不能出图。
@@ -1074,7 +1445,7 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
                 if (gMsgHost) {
                     // message() 是 printf 风格，引擎原因里可能带 % 字符，必须走 %s
                     gMsgHost->message(instance, kOfxMessageError, "", "%s",
-                                      why && *why ? why : "NamaBeauty 引擎不可用，画面按原样输出。");
+                                      why && *why ? why : "DaVinci Beauty 引擎不可用，画面按原样输出。");
                 }
             }
         }
@@ -1088,14 +1459,15 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
 
         if (verbose) {
             didLog = true;
-            ofxLog("render #%ld time=%.3f %dx%d scale=%.2f in=%s out=%s rowBytes=%d/%d faces=%d "
+            ofxLog("render #%ld time=%.3f %dx%d scale=%.2f in=%s out=%s rowBytes=%d/%d faces=%d score=%.2f "
                    "取图=%.1fms 转in=%.1fms sdk=%.1fms 转out=%.1fms 合计=%.1fms "
-                   "slot=%d draft=%d interactive=%d seq=%d",
+                   "slot=%d draft=%d interactive=%d seq=%d region=%s segn=%ld",
                    seq, time, w, h, scale[0], depthTxt,
                    isFloatDepth(dstDepth) ? "float" : "byte",
-                   srcRowBytes, dstRowBytes, engine.lastFaces(),
+                   srcRowBytes, dstRowBytes, engine.lastFaces(), engine.lastFaceScore(),
                    tGetImg, tIn, tSdk - tIn, tOut - tSdk, tTotal,
-                   slot, (int)draft, (int)interactive, (int)sequential);
+                   slot, (int)draft, (int)interactive, (int)sequential,
+                   engine.regionActive() ? "on" : "off", engine.regionInferCount());
         }
     } while (0);
 
@@ -1144,7 +1516,8 @@ static OfxStatus onLoad(void) {
 }
 
 static OfxStatus onUnload(void) {
-    ofxLog("unload：释放引擎并卸载 SDK");
+    // v3.0.0 起不再有 NamaSDK（旧文案「卸载 SDK」会误导排错方向）。
+    ofxLog("unload：释放引擎（CoreEngine + ONNX 会话）");
     NamaEngine::inst().release();
     return kOfxStatOK;
 }

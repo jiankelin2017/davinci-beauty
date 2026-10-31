@@ -1,21 +1,53 @@
-# NamaBeauty 一键安装包
+# DaVinci Beauty 一键安装包
 
-达芬奇 DaVinci Resolve 的 NamaBeauty 美颜 OpenFX 插件 —— 一键安装 / 一键卸载。
+达芬奇 DaVinci Resolve 的 DaVinci Beauty 美颜 OpenFX 插件 —— 一键安装 / 一键卸载。
 
 ## 交付物
 
 | 文件 | 说明 |
 |---|---|
-| `build\NamaBeauty_Setup_v1.3.exe` | **单文件安装包**。双击即装，内置插件 + 美颜/AI 引擎 + 模型资源（约 83 MB） |
-| `namabeauty.nsi` | NSIS 安装脚本（安装/卸载逻辑都在这里） |
+| `build\DaVinciBeauty_Setup_v<版本>.exe` | **单文件安装包**。双击即装，内置插件 + 自研美颜/AI 引擎（ONNX Runtime + YuNet 模型，约 12 MB），不再依赖闭源 SDK。v3.0.4 为约 12 MB |
+| `build\DaVinciBeauty_Setup_v<版本>_sandbox.exe` | 沙箱包，仅 `--sandbox` 构建时产出。装到 `DaVinciBeautySandbox.ofx.bundle`，不影响正式安装 |
+| `davincibeauty.nsi` | NSIS 安装脚本（安装/卸载逻辑都在这里） |
 | `build_nsis.py` | 构建器：收集资源 + 调 makensis 编译出 exe |
-| `namabeauty_setup.py` | 等价的 Python 实现，供无 GUI 场景/调试使用 |
+| `验证沙箱安装.bat` | 双击跑一遍「安装 → 校验 → 卸载 → 校验」，**只认 `_sandbox.exe`**，不碰正式安装 |
+| `davincibeauty_setup.py` | 等价的 Python 实现，供无 GUI 场景/调试使用 |
+
+> **沙箱包与正式包必须不同名。** 曾经两者同名同路径，正式构建覆盖沙箱构建后，
+> 验证脚本把正式包当沙箱包装了一遍，把正式安装刷掉，还误报 9 项「缺文件」。
+> 现在沙箱包一律带 `_sandbox` 后缀，验证脚本也只匹配该后缀——拿不到就明确
+> 报「未执行验证」，绝不替你装正式包。
+
+## 快速开始
+
+```
+:: 直接出正式包（日常就用这条）
+python build_nsis.py
+→ build\DaVinciBeauty_Setup_v3.0.4.exe，已复制到 D:\插件\ 根目录同名文件
+
+:: 改过安装脚本、想先试一遍又不想弄脏正式安装时，才需要沙箱
+python build_nsis.py --sandbox
+→ build\DaVinciBeauty_Setup_v<版本>_sandbox.exe（带 _sandbox 后缀，与正式包并存）
+然后双击「验证沙箱安装.bat」
+```
+
+**找不到 `验证沙箱安装.bat`？** Windows 默认隐藏 `.bat` 扩展名，列表里显示为
+「验证沙箱安装」（没有后缀）；中文名按拼音排序还会掉到列表最底部。三个办法：
+
+| 位置 | 说明 |
+|---|---|
+| `D:\插件\01_验证沙箱安装.bat` | **根目录快捷入口**（`01_` 前缀，排最前），双击即可，内部转调本目录真身 |
+| `DaVinciBeauty\installer\验证沙箱安装.bat` | 真身（改逻辑只改这个） |
+| 资源管理器地址栏粘贴 `D:\插件\DaVinciBeauty\installer` | 直接进目录找 |
+
+脚本会自动找安装包（同目录 / 上级 / `D:\插件` 根 / `build\`），放哪都能跑。
+运行过程弹两次 UAC，点「是」。第一阶段跑完会 `pause`，看清楚结果再按任意键继续卸载。
 
 ## 使用
 
 ### 安装
 
-**双击 `NamaBeauty_Setup_v1.3.exe`** 即可。会弹出 UAC，点「是」开始安装。
+**双击 `DaVinciBeauty_Setup_v3.0.4.exe`**（或根目录同名文件）即可。会弹出 UAC，点「是」开始安装。
 
 界面里能选安装目录（默认已按 OFX 规范填好，一般不用改）。
 
@@ -23,30 +55,25 @@
 
 三种方式，任选其一：
 
-1. **控制面板 → 程序和功能 → 找到「NamaBeauty 美颜」→ 卸载**
+1. **控制面板 → 程序和功能 → 找到「DaVinci Beauty 美颜」→ 卸载**
 2. 运行安装包所在目录的卸载器：
-   `C:\Program Files\Common Files\OFX\Plugins\NamaBeauty.ofx.bundle\Uninstall_NamaBeauty.exe`
+   `C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Uninstall_DaVinciBeauty.exe`
 3. 重新运行安装包，或命令行：
    ```
-   NamaBeauty_Setup_v1.3.exe /S           静默安装
-   Uninstall_NamaBeauty.exe /S            静默卸载
+   DaVinciBeauty_Setup_v<版本>.exe /S           静默安装
+   Uninstall_DaVinciBeauty.exe /S            静默卸载
    ```
 
 ### 安装位置
 
 ```
-C:\Program Files\Common Files\OFX\Plugins\NamaBeauty.ofx.bundle\
-    Uninstall_NamaBeauty.exe          <- 卸载器
+C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\
+    Uninstall_DaVinciBeauty.exe          <- 卸载器
     Contents\
         Win64\                        <- OFX 规范要求的二进制层
-            NamaBeauty.ofx            插件本体
-            CNamaSDK.dll  19.6 MB     美颜引擎
-            fuai.dll      29.0 MB     AI 推理引擎
-            w32-pthreads.dll
-            api-ms-win-downlevel-shlwapi-l1-1-0.dll
-            auth_package.bin
-            model\                    AI 模型（人脸 23 MB / 人体 42 MB）
-            graphics\                 特效资源
+            DaVinciBeauty.ofx            插件本体
+            onnxruntime.dll  约 11 MB   ONNX Runtime（CPU 构建版；换 onnxruntime-directml 构建版即可启用 GPU）
+            yunet.onnx        约 0.2 MB  本地人脸检测模型
 ```
 
 ### 卸载清什么（全清策略）
@@ -55,20 +82,20 @@ C:\Program Files\Common Files\OFX\Plugins\NamaBeauty.ofx.bundle\
 
 | 目标 | 内容 |
 |---|---|
-| `...\OFX\Plugins\NamaBeauty.ofx.bundle\` | 整个 bundle（约 162 MB） |
-| `C:\ProgramData\NamaBeauty\` | 日志、jobs、live、engine 副本、disabled_scripts 等全部数据 |
+| `...\OFX\Plugins\DaVinciBeauty.ofx.bundle\` | 整个 bundle（约 12 MB） |
+| `C:\ProgramData\DaVinciBeauty\` | 日志、jobs、live、engine 副本、disabled_scripts 等全部数据 |
 | `%APPDATA%\Blackmagic Design\...\OFXPluginCacheV2.xml` | Resolve 的插件扫描缓存 |
-| `HKLM\SOFTWARE\Microsoft\...\Uninstall\NamaBeauty.BeautyOFX` | 卸载信息注册表项 |
+| `HKLM\SOFTWARE\Microsoft\...\Uninstall\DaVinciBeauty.BeautyOFX` | 卸载信息注册表项 |
 
 ## 安装后
 
 1. 启动（或**重启**）DaVinci Resolve
 2. 打开项目，进 Color 或 Edit 页面
-3. 左侧 Effects Library → OpenFX → 分组 `NamaBeauty`
-4. 把「NamaBeauty 美颜」拖到片段上，右侧 Inspector 调参数
+3. 左侧 Effects Library → OpenFX → 分组 `DaVinci Beauty`
+4. 把「DaVinci Beauty 美颜」拖到片段上，右侧 Inspector 调参数
 
 > **参数提示**：磨皮不为 0 时锐化不生效；八项全 0 时画面完全不变。
-> **日志**：`C:\ProgramData\NamaBeauty\logs\ofx.log`
+> **日志**：`C:\ProgramData\DaVinciBeauty\logs\ofx.log`
 
 ## Resolve 正在运行时
 
@@ -76,7 +103,7 @@ Resolve 会把插件 DLL 内存映射住，导致文件无法覆盖。安装器�
 
 1. **启动时检测**：发现 Resolve 在跑就弹窗提示，建议先退出（可强制继续）
 2. **安装时自愈**：每次安装前先扫掉历史遗留的 `*.locked-*` / `*.old_*` 文件，
-   避免"越装越多"（单个 `CNamaSDK.dll` 就 19 MB）
+   避免"越装越多"（单个 `onnxruntime.dll` 约 11 MB）
 3. **装完提示**：若之前 Resolve 在运行，明确告知**必须重启才能加载新插件**
 
 ## 从源码重新构建
@@ -104,12 +131,24 @@ build.bat
 ### 构建参数
 
 ```
---engine <dir>     引擎资源目录（默认 C:\ProgramData\NamaBeauty\engine）
---ofx <path>       插件二进制（默认 ..\01_ofx插件源码\out\NamaBeauty.ofx）
---version <str>    版本号，写进文件名
+--engine <dir>     引擎资源目录。不指定时按序回落：
+                   C:\ProgramData\DaVinciBeauty\engine
+                   → ..\01_ofx插件源码\bundle\...\Win64
+                   → 已装 bundle 的 Win64
+--ofx <path>       插件二进制（默认 ..\01_ofx插件源码\out\DaVinciBeauty.ofx）
+--version <str>    版本号。**默认从 src\nama_engine.h 的 NAMA_BUILD_* 宏读取**，
+                   不传就不会出现「产物名写死旧版本、实际已升级」的漂移
 --out <path>       指定输出路径
---no-python        不捆绑 Python 解释器（体积更小）
+--sandbox          沙箱构建：APPID 换成 DaVinciBeauty.SandboxTest、
+                   bundle 名换成 DaVinciBeautySandbox.ofx.bundle，
+                   用来验证安装/卸载而不影响正式装机
 ```
+
+> **改动资产清单时必须同步三处**，缺一处就会产出「能装但一运行就崩」的包：
+> `install.bat` 的 copy 行、`build_nsis.py` 的 `PAYLOAD_PLAN`、
+> `davincibeauty.nsi` 的 `File` 指令。
+> `06_验收工具\acceptance.py` 的工程组会对三处做静态校验，
+> 缺任何一处直接判 FAIL —— 装机之前就能抓到，不用等运行崩溃。
 
 ## 工作原理
 

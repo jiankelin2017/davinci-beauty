@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NamaBeauty 安装器 —— 业务逻辑层。
+DaVinci Beauty 安装器 —— 业务逻辑层。
 
 这份模块被两种方式使用：
   1. 打包时：build_exe.py 把它和资源一起塞进自解压 exe；
-  2. 调试时：直接 `python namabeauty_setup.py install --from <资源目录>` 跑。
+  2. 调试时：直接 `python davincibeauty_setup.py install --from <资源目录>` 跑。
 
 设计上刻意与「自解压外壳」解耦：本模块只认「一个装着资源的目录」，
 不关心这个目录是 exe 自己解出来的还是手边现成的。
@@ -23,36 +23,27 @@ from ctypes import wintypes
 # 常量
 # ---------------------------------------------------------------------------
 PLUGIN_ID = "com.nama.davinci.beauty"
-PLUGIN_LABEL = "NamaBeauty 美颜"
-BUNDLE_NAME = "NamaBeauty.ofx.bundle"
+PLUGIN_LABEL = "DaVinci Beauty 美颜"
+BUNDLE_NAME = "DaVinciBeauty.ofx.bundle"
 
 # bundle 内需要安装的文件清单（相对 Contents/Win64）
+# v3.0.0 起引擎为自研 OBS CoreEngine + ONNX Runtime，仅两个运行时资产：
+# onnxruntime.dll（CPU 构建版，启用 GPU 时换成 onnxruntime-directml 构建版）
+# 与本地人脸模型 yunet.onnx。不再依赖任何闭源 NamaSDK 文件。
 PAYLOAD_FILES = [
-    "NamaBeauty.ofx",
-    "CNamaSDK.dll",
-    "fuai.dll",
-    "w32-pthreads.dll",
-    "api-ms-win-downlevel-shlwapi-l1-1-0.dll",
-    "auth_package.bin",
-    r"model\ai_face_processor_pc.bundle",
-    r"model\ai_human_processor_pc.bundle",
-    r"graphics\face_beautification.bundle",
-    r"graphics\face_makeup.bundle",
-    r"graphics\body_slim.bundle",
-    r"graphics\background_blur.bundle",
+    "DaVinciBeauty.ofx",
+    "onnxruntime.dll",
+    "yunet.onnx",
 ]
 
 # 安装时必须逐项校验存在的最小集合（核心文件，缺一不可）
 CRITICAL_FILES = [
-    "NamaBeauty.ofx",
-    "CNamaSDK.dll",
-    "fuai.dll",
-    "auth_package.bin",
-    r"model\ai_face_processor_pc.bundle",
-    r"graphics\face_beautification.bundle",
+    "DaVinciBeauty.ofx",
+    "onnxruntime.dll",
+    "yunet.onnx",
 ]
 
-PROGRAMDATA_DIR = r"C:\ProgramData\NamaBeauty"
+PROGRAMDATA_DIR = r"C:\ProgramData\DaVinciBeauty"
 LOGS_DIR = os.path.join(PROGRAMDATA_DIR, "logs")
 DISABLED_SCRIPTS_DIR = os.path.join(PROGRAMDATA_DIR, "disabled_scripts")
 ENGINE_CACHE_DIR = os.path.join(PROGRAMDATA_DIR, "engine")
@@ -335,7 +326,7 @@ def target_win64_path():
 def do_install(payload_root, assume_yes=False):
     say("")
     hr()
-    say(c("  NamaBeauty 美颜 —— DaVinci Resolve OpenFX 滤镜", BOLD))
+    say(c("  DaVinci Beauty 美颜 —— DaVinci Resolve OpenFX 滤镜", BOLD))
     say(c("  一键安装", DIM))
     hr()
 
@@ -380,7 +371,7 @@ def do_install(payload_root, assume_yes=False):
 
     step(2, 4, "复制插件与引擎资源")
     # 先把历史遗留的 .locked-* / .old_* 清掉再装 —— 否则每装一次就多堆一份
-    # 十几 MB 的死文件（CNamaSDK.dll 单个就 19MB），几个来回就是上百 MB。
+    # 引擎资产副本（onnxruntime.dll 单个就十几 MB），几个来回就是上百 MB。
     stale = clean_locked_leftovers(target)
     if stale:
         ok("清理了 %d 个历史残留文件" % stale)
@@ -417,7 +408,7 @@ def do_install(payload_root, assume_yes=False):
     if resolve_running:
         say("       " + c("← Resolve 之前是开着的，必须重启才能识别新插件", YELLOW))
     say("    2. 打开任意项目，进 Color 或 Edit 页面")
-    say("    3. 左侧 Effects Library -> OpenFX -> 分组 %s" % c("NamaBeauty", CYAN))
+    say("    3. 左侧 Effects Library -> OpenFX -> 分组 %s" % c("DaVinci Beauty", CYAN))
     say("    4. 把 %s 拖到片段上，在右侧 Inspector 调参数" % c(PLUGIN_LABEL, CYAN))
     say("")
     say(c("  参数提示：磨皮不为 0 时锐化不生效；八项全 0 时画面完全不变。", DIM))
@@ -469,7 +460,7 @@ def _dir_size(path):
 def do_uninstall(assume_yes=False):
     say("")
     hr()
-    say(c("  NamaBeauty 美颜 —— 卸载", BOLD))
+    say(c("  DaVinci Beauty 美颜 —— 卸载", BOLD))
     hr()
 
     if not is_admin():
@@ -491,7 +482,7 @@ def do_uninstall(assume_yes=False):
     step(1, 3, "确认要删除的内容")
     existing = [p for p in paths if os.path.exists(p)]
     if not existing:
-        warn("没有找到已安装的 NamaBeauty，可能本来就没装过。")
+        warn("没有找到已安装的 DaVinci Beauty，可能本来就没装过。")
         say("")
         say("  仍然会清理 Resolve 的 OFX 缓存，避免插件残影留在列表里。")
     for p in existing:
@@ -509,7 +500,7 @@ def do_uninstall(assume_yes=False):
         say("  " + c("以下内容将被永久删除：", RED))
         say("       - 插件本体与全部引擎/模型资源（约 162 MB）")
         say("       - 日志目录 %s" % LOGS_DIR)
-        say("       - NamaBeauty 在 ProgramData 下的全部数据")
+        say("       - DaVinci Beauty 在 ProgramData 下的全部数据")
         say("")
         try:
             ans = input("  确认卸载？输入 yes 继续: ").strip().lower()
@@ -553,7 +544,7 @@ def do_uninstall(assume_yes=False):
     say("  " + c("卸载完成", GREEN + BOLD))
     hr()
     say("")
-    say("  NamaBeauty 已从系统中移除。")
+    say("  DaVinci Beauty 已从系统中移除。")
     say("  重启 DaVinci Resolve 后，效果库的 OpenFX 列表里就不会再出现它了。")
     say("")
     return 0
@@ -597,10 +588,10 @@ def main(argv=None):
     if not argv or argv[0] in ("-h", "--help", "/?", "help"):
         say("")
         say("  用法:")
-        say("    NamaBeauty_Setup.exe              安装（双击即可）")
-        say("    NamaBeauty_Setup.exe --uninstall  卸载")
-        say("    NamaBeauty_Setup.exe --yes        静默确认（不询问）")
-        say("    NamaBeauty_Setup.exe --from <dir> 从指定资源目录安装（调试用）")
+        say("    DaVinciBeauty_Setup.exe              安装（双击即可）")
+        say("    DaVinciBeauty_Setup.exe --uninstall  卸载")
+        say("    DaVinciBeauty_Setup.exe --yes        静默确认（不询问）")
+        say("    DaVinciBeauty_Setup.exe --from <dir> 从指定资源目录安装（调试用）")
         say("")
         return 0
 
