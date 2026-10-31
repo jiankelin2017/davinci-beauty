@@ -16,9 +16,14 @@
 #include <mutex>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
+
+// core_glue 的 coreBeautyProcess 固定按 14 个 double 转发；P_COUNT 一旦增长，
+// `double panel[14]` + 循环到 P_COUNT 就会写穿栈。这里把契约钉死在编译期。
+static_assert(P_COUNT == 14, "core_glue.h / coreBeautyProcess 固定 14 项，改枚举必须同步改桥接层");
 
 std::mutex g_mux;   // 保护 ensureReady / preheat 的「只初始化一次」语义
 
@@ -171,8 +176,14 @@ bool NamaEngine::process(int slot, const unsigned char* src, unsigned char* dst,
 int NamaEngine::itemId() const    { return coreBeautyItemId(); }
 
 const char* NamaEngine::version() const {
+    // 只在不一致时改写。调用方常见写法是 `version() ? version() : "?"` ——
+    // 两次调用之间若发生重新赋值，第一个指针就可能悬空（UB）。内容在引擎
+    // 初始化后不再变化，因此这里实际上只写一次。
+    static std::mutex m;
     static std::string v;
-    v = std::string(coreBeautyVersion()) + " / " + coreBeautyGpuProvider();
+    std::string cur = std::string(coreBeautyVersion()) + " / " + coreBeautyGpuProvider();
+    std::lock_guard<std::mutex> lk(m);
+    if (cur != v) v = std::move(cur);
     return v.c_str();
 }
 
@@ -234,7 +245,7 @@ int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
 
     // v3.0.4：自测必须**确定性**。异步检测下「本帧用哪份掩码」取决于 worker
     // 线程调度，同一份输入连跑两次会得到不同输出（实测同进程连跑 blur62 出现
-    // 两个 md5）—— 那正是 06_验收工具/baseline.py 的基线一直不可复现的原因。
+    // 两个 md5）—— 那正是 04_验收工具/baseline.py 的基线一直不可复现的原因。
     // 这里关掉异步，让检测在调用线程上同步完成。生产路径（OFX render）不受影响。
     coreBeautySetAsyncDetect(0);
 
@@ -244,7 +255,7 @@ int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
 
     // v3.0.4：恢复 NAMA_ST_* 自测钩子（v2.x 有，v3.0 重写时丢了）。
     //
-    // 为什么必须有：06_验收工具/baseline.py 的 15 个逐字节用例里，有 8 个靠这些
+    // 为什么必须有：04_验收工具/baseline.py 的 15 个逐字节用例里，有 8 个靠这些
     // 变量切换清晰/锐化/全局锐化/美型/磨皮模式。钩子丢掉之后，那 8 个用例的
     // 输出与 blur62_wh30 **完全相同**（实测同一个 md5），回归网看着有 15 格，
     // 实际只覆盖了 4 种参数组合 —— 参数接线断了也测不出来。
@@ -266,6 +277,12 @@ int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
         double sm = (double)s.smooth_mode;
         stv("NAMA_ST_SMOOTH", sm);
         s.smooth_mode = (int)sm;
+        // v3.0.5：磨皮算法三档（0 双边 / 1 高斯 / 2 弱磨皮）。基线要能覆盖
+        // 「换了算法档」的输出差异，否则接线断了也测不出来 —— 与 NAMA_ST_*
+        // 其余钩子同一个理由。
+        double alg = (double)s.blur_type;
+        stv("NAMA_ST_ALG", alg);
+        s.blur_type = (int)alg;
     }
 
     char ebuf[512];

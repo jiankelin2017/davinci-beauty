@@ -15,7 +15,6 @@
 // 因此参数可逐字段直通，无需任何映射表。
 
 #include <string>
-#include <vector>
 
 // ---------------------------------------------------------------------------
 // 构建版本号 —— 唯一出处
@@ -24,8 +23,8 @@
 // （含 PATCH 位）看 NAMA_BUILD_STR，日志里的 "init OK (v2.1.2 ...)" 用它。
 #define NAMA_BUILD_MAJOR 3
 #define NAMA_BUILD_MINOR 0
-#define NAMA_BUILD_PATCH 4
-#define NAMA_BUILD_STR "3.0.4"
+#define NAMA_BUILD_PATCH 8
+#define NAMA_BUILD_STR "3.0.8"
 
 // 面板参数顺序（滤镜属性页滑块的顺序）
 enum {
@@ -65,16 +64,22 @@ enum {
 
 struct NamaSettings {
     double panel[P_COUNT];   // 面板刻度 0..100
-    int blur_type;           // 1=双边滤波（实测最强，推荐）0=高斯 2=弱磨皮
+    // 磨皮算法。顺序必须与 ofx_plugin.cpp 的 kBlurTypeChoices 一致：
+    //   0 双边滤波（= 保边表面模糊，v3.0.5 起的默认档，也是历史行为）
+    //   1 高斯（纯空间高斯，不保边）
+    //   2 弱磨皮（同一套保边算法，强度对折）
+    // v3.0.5 之前这个字段**从未被读取**，三档输出逐位相同；旧注释写的
+    // 「1=双边 0=高斯」是 NamaSDK 时代的顺序，已作废。
+    int blur_type;
     int skin_detect;         // 0/1 只磨皮肤区域（默认 1：不要把背景一起磨糊）
     // 3.0.17：磨皮模式（纯 CPU 侧，不是 SDK 参数）。
-    //   0 人像磨皮 = 3.0.16 行为，逐位不变
-    //   1 清晰磨皮 = 平坦皮肤少回填、边缘轮廓多回填（推荐）
-    //   2 精细磨皮 = 整体收敛，只留关键轮廓
-    //   3 朦胧磨皮 = 整体压低细频
+    //   0 人像磨皮 = 历史行为，逐位不变
+    //   1 清晰磨皮 = 磨皮后多回填细频（皮肤更透）
+    //   2 精细磨皮 = 回填更多 + 补一点中频（结构最完整）
+    //   3 轻磨皮   = 降低磨皮强度（整体最轻）
     int smooth_mode;
 
-    NamaSettings() : blur_type(1), skin_detect(1), smooth_mode(0) {
+    NamaSettings() : blur_type(0), skin_detect(1), smooth_mode(0) {
         // paramGetValue 失败时的兜底默认：磨皮 50 / 美白 30 / 红润 30，其余十一项 0。
         // 必须与 ofx_plugin.cpp 的 kParams[].dflt 保持一致（那边是宿主真正下发的值）。
         // 62 的来历见 kParams 上方的标定说明：本版磨皮是线性曲线，20 档的实际强度
@@ -115,8 +120,6 @@ public:
     bool preheat(std::string& err, bool& didInit);
     bool ready() const { return ready_; }
 
-    // SDK 是否抛过访问违例。一旦为真，本进程内不再调用 SDK（避免反复崩）。
-    bool poisoned() const { return poisoned_; }
     // 初始化失败次数；达到上限后 ensureReady 直接失败，不再重付那 2 秒。
     int failCount() const { return failCount_; }
     // 创建 GL 上下文的线程 id（诊断用）
@@ -126,29 +129,29 @@ public:
     bool process(const unsigned char* src, unsigned char* dst,
                  int w, int h, const NamaSettings& s);
 
-    // ---- 每实例一个 SDK 道具（slot）----
+    // ---- 槽位 API（保留给未来按实例隔离用）----
     //
-    // 引擎内部的道具与参数缓存以前是**进程级单例**：两个滤镜（磨皮 30 / 90）交替
-    // 渲染时会互相覆盖参数，而且 applied_ 缓存每帧被冲掉，每帧白付 10 次 setter。
-    // 现在每个滤镜实例独占一个 slot。
-    //
-    // acquireSlot 成功返回 >=0 的槽位号，失败返回 -1（err 说明原因）。
-    // 归还后槽位进空闲池复用，不销毁 SDK 道具（池大小 = 并发实例峰值）。
+    // ⚠️ 现状（v3.0.8 实测）：CoreEngine::acquireSlot 恒返回 0、releaseSlot 是空操作、
+    // process() 忽略 slot 与 advanceFrame —— 全进程只有一份引擎状态（含时序 EMA /
+    // 混合历史 / 上一帧参数缓存）。因此**不要**把「每实例独立」当成保证：
+    // 两个滤镜实例交替渲染时会共享同一份时序历史。参数本身逐帧全量下发，
+    // 不会像 v2.x 的 NamaSDK 缓存那样「A 的滑块改到 B」；受影响的是跨帧平滑量。
+    // 真要隔离，得让 CoreEngine 持有 per-slot 状态，属于引擎层改造。
     int  acquireSlot(std::string& err);
     void releaseSlot(int slot);
     // 进程级检测选项（fuSetDefaultRotationMode / 关键点质量 / 最大人脸数）。
     // SDK 这三个 setter 是进程全局的，多个滤镜实例共用同一份状态，最后一次
     // 调用生效；内部加锁 + SEH，只能在渲染线程调用。
     void setDetectOptions(int rotate, int landmarkQuality, int maxFaces);
-    // OBS 的视频渲染是严格顺序的，不需要 advanceFrame 开关（保留参数只为
-    // 与 OFX 版保持同一份实现，少一处 diff 少一处坑）。
+    // advanceFrame 目前被 CoreEngine 忽略（帧序总是自增）—— 保留参数是为了让
+    // 宿主侧「非顺序渲染」的意图留在签名里，将来引擎实现按实例时序时直接接上。
     bool process(int slot, const unsigned char* src, unsigned char* dst,
                  int w, int h, const NamaSettings& s, bool advanceFrame = true);
 
     int lastFaces() const { return faces_; }
     // v3.0.1：本帧人脸检测的最高候选置信度（不受阈值影响），供日志判断
     // 「模型没看出脸」还是「看出了没到阈值」。
-    float lastFaceScore() const { return faceScore_; }
+    double lastFaceScore() const { return faceScore_; }
     int itemId() const;     // 实现见 nama_engine.cpp（经 coreBeauty 桥接）
     const char* version() const;  // 实现见 nama_engine.cpp（含 GPU provider）
     // 上一次失败的原因（成功时为空串）。供插件层把原因报给宿主。
@@ -175,96 +178,22 @@ private:
     NamaEngine(const NamaEngine&) = delete;
     NamaEngine& operator=(const NamaEngine&) = delete;
 
-    bool ensurePath(std::string& err);
-    bool ensureGL(std::string& err);
-    bool ensureSDK(std::string& err);
-    // 加锁版本：调用方必须**未**持有 mutex_。didInit 可为空。
-    bool ensureReadyLocked(std::string& err, bool* didInit);
-    // 创建一个新的美颜道具并写入模块级默认参数。调用前 GL 上下文必须已 current。
-    bool createBeautyItemGL(int* outItem);
-    bool enter();     // true = 已切到本引擎的 GL 上下文；false = 切换失败
-    void leave();
-
+    // v3.0.8：删掉 v2.x（NamaSDK）遗留的整组成员与方法声明 —— GL 隐藏窗口、
+    // SDK 道具池 Slot、渲染临时缓冲、语义区域映射表。v3.0.0 起这些全部由
+    // CoreEngine 内部持有，本层只剩「参数搬运 + 取回诊断」。
     bool ready_ = false;
-    bool pathDone_ = false;
-    bool glDone_ = false;
-    bool poisoned_ = false;
     int  failCount_ = 0;
     unsigned long ownerThread_ = 0;
     std::string failReason_;
     int faces_ = 0;
-    float faceScore_ = 0.0f;   // v3.0.1：本帧最高候选置信度
-    const char* ver_ = "";
+    double faceScore_ = 0.0;   // v3.0.1：本帧最高候选置信度
+    // 上一次 process 内引擎自身的耗时（毫秒，不含调用方的像素格式转换）
     double lastSdkMs_ = 0.0;
 
-    std::string dir_;          // 插件 DLL 所在目录（.../obs-plugins/64bit）
-    std::string assetDir_;     // 数据目录（.../obs-plugins/64bit/obs-nama-beauty）
-    void* hGL_ = nullptr;      // 隐藏窗口
-    void* hDC_ = nullptr;
-    void* hRC_ = nullptr;
-    int item_ = 0;             // 第一个道具（诊断用；= slots_[0].item）
-    int frameId_ = 0;
-    void* mutex_ = nullptr;    // CRITICAL_SECTION，避免依赖 MSVC 版本的 std::mutex 布局
-    std::string work_;         // 渲染临时缓冲（输出侧，已换成 BGRA）
-    std::string bgScratch_;    // 输入侧 BGRA 副本（src 是调用方的，不能原地改）
-    // 美白肤色掩码（1/4 分辨率）与羽化中间结果，跨帧复用，避免每帧堆分配。
-    // 仅在语义区域不可用时（退回颜色启发式）才会用到。
-    std::vector<unsigned char> whitenMask_;
-    std::vector<unsigned char> whitenTmp_;
-
-    // ---- 语义区域融合用的映射表 ----
-    // 把 192×256 的皮肤掩码双线性采样到 w×h：每个 x/y 只算一次下标与权重，
-    // 逐像素只剩查表与乘加。表很小（w+h 项），每帧重建的代价可以忽略。
-    bool regionActive_ = false;      // 已成功初始化（不代表每帧都有掩码）
-    bool regionInitDone_ = false;    // 已尝试过初始化（避免每帧重试）
-    std::string regionErr_;          // 初始化失败原因（regionActive_=false 时有效）
-    std::vector<int> mapX0_, mapX1_, mapWX_, mapY0_, mapY1_, mapWY_;
-    // CPU 侧 unsharp mask 的中间缓冲（横/纵模糊的积分值），按帧大小增长后复用。
-    // 3.0.2 起多一组 7-tap 的横向和（中频带回填用）与一列滑窗累加器。
-    // 两个横向和缓冲用 unsigned short：3-tap 最大 765、7-tap 最大 1785，
-    // 都装得下 —— 1080p 下每帧少读写 8MB 内存，实测省 ~1.5ms。
-    std::vector<unsigned short> sharpenTmp_;
-    std::vector<unsigned short> sharpenTmp7_;
-    std::vector<int> sharpenCol7_;
-    bool ensureRegion();
-
-    // 加载进内存的 face_beautification.bundle，acquireSlot 新建道具时复用
-    std::vector<unsigned char> beautyPkg_;
-
-    // 每实例一个 SDK 道具 + 它自己「上一次真正写进 SDK 的参数」。
-    // 参数未变化时跳过重复 setter（每帧省 10 次查表），且不同实例互不干扰。
-    // 3.0.1 起还带自己的细节层 EMA 历史（见 applySharpen）：也是每实例一份，
-    // 两个滤镜交替渲染时互不污染。
-    struct Slot {
-        int item = 0;
-        NamaSettings applied;
-        bool hasApplied = false;
-        bool inUse = false;
-        // 3.0.1：细节层时序 EMA 的上一帧高频层（回填用的 hv，范围
-        // [-255,255]，短整型足够）。按帧大小增长后复用。
-        std::vector<short> detailPrev;
-        // 3.0.2：中频带（box3-box7）的上一帧值，同样过 EMA、同样每槽位一份。
-        std::vector<short> midPrev;
-        bool hasDetailPrev = false;
-        // 3.0.10：磨皮强度混合的「时间平滑原图」srcT（全帧 RGBA，每槽位一份）。
-        // 见 bgraToRgbaBlend 的长注释 —— 3.0.8 的混合按 (1-t) 把相机噪声注回脸上，
-        // 这里把混合的原图端换成 srcT，只削时间白噪、不动静态纹理。
-        std::vector<unsigned char> blendPrev;
-        // srcT 失效标记：t=0/t=1 走短路分支时不更新 srcT，下一帧要整帧对齐一次，
-        // 否则运动后会用上很久以前的历史，表现为拖影。
-        bool blendSnap = true;
-        // 3.0.10：faces 门控的滞回（见 kFaceHoldFrames / kFaceGateStep）。
-        // 用户实测「整脸突然暗一下再回来」就是 faces 单帧抖 0 让美白整档归零。
-        int faceHold = 0;
-        double faceGate = 1.0;
-        // 2.1.2：这里原本有两个全帧缓冲（shapeGeo / shapeBase），是 2.1.0/2.1.1
-        // 「形变在前、美颜在后」那套顺序的产物 —— 形变过一次之后，掩码、混合的
-        // (1-t) 端、细节回填的高频来源、贴回基准，全都得换成形变后的版本，
-        // 于是每个用途各存一份。
-        // 美型挪到**最后**之后，这些补偿一个都不需要了：美颜那一遍作用在原始
-        // 几何上，与 2.0.x 逐字节一致，缓冲随之删掉。
-    };
-    std::vector<Slot> slots_;
+    // 语义区域状态。CoreEngine 不暴露覆盖率 / 推理耗时，只保留「是否可用 +
+    // 初始化失败原因」两项。
+    bool regionActive_ = false;
+    std::string regionErr_;
 };
 
 // ---------------------------------------------------------------------------

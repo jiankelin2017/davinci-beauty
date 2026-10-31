@@ -287,7 +287,7 @@ enum {
 
 struct BeautySettings {
     double panel[P_COUNT];   // 面板刻度 0..100
-    int blur_type;           // 1=双边滤波（实测最强，推荐）0=高斯 2=弱磨皮
+    int blur_type;           // 0=双边滤波(默认,保边) 1=高斯(不保边) 2=弱磨皮(强度对折)
     int skin_detect;         // 0/1 只磨皮肤区域（默认 1：不要把背景一起磨糊）
     // 3.0.17：磨皮模式（纯 CPU 侧，不是参考实现参数）。
     //   0 人像磨皮 = 3.0.16 行为，逐位不变
@@ -296,7 +296,7 @@ struct BeautySettings {
     //   3 朦胧磨皮 = 整体压低细频
     int smooth_mode;
 
-    BeautySettings() : blur_type(1), skin_detect(1), smooth_mode(0) {
+    BeautySettings() : blur_type(0), skin_detect(1), smooth_mode(0) {
         // 首次拖到来源上的默认值：只开「磨皮 20」，其余十三项 0。
         // 与 OFX 版 v1.51 的默认一致（旧 OBS 默认 磨皮70/美白15/红润30 已按
         // 产品要求下调 —— 强默认值会让用户第一眼就觉得"假"）。

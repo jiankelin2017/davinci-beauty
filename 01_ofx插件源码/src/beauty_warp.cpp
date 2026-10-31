@@ -19,6 +19,18 @@
 // 5) 没有关键点时退化：用「脸框比例」估眼位（0.38h / ±0.22w）和嘴线
 //    （0.72h）。估出来的位置比关键点差，但至少不会让功能失效 ——
 //    检不出关键点的帧在真机上并不罕见（侧脸、低头）。
+//
+// 6) **y 方向有语义，必须按行序取反**（v3.0.5 修，之前是真机上的硬 bug）：
+//    这三项里「上/下」不是装饰 —— 嘴线在眼线之下、下巴在嘴线之下、
+//    瘦脸的垂直高斯中心在脸颊。而 OFX 给的缓冲第 0 行是画面**最下面**一行，
+//    于是 f.y 是脸框的**视觉下沿**、f.y+f.h 是视觉上沿。
+//    之前一律按 top-down 写（chinY=f.y+f.h、eyeY=f.y+0.38h、mouthY=f.y+0.72h），
+//    在真机上等于：下巴底取到发际线、嘴线取到额头、嘴线合理性校验恒假
+//    （嘴角的缓冲行号比眼小），结果瘦脸的高斯中心跑到眉毛、下巴压的是头发。
+//    大眼因为是径向各向同性、且眼心来自关键点（关键点映射本身是对的），
+//    所以只有它看起来正常 —— 这就是「三项只有大眼对」的全部原因。
+//    修法：所有「视觉往下」的量统一乘 sgn（flipY 时 sgn=-1），比例值改成
+//    从缓冲最小行往上数（0.38→0.62、0.72→0.28）。
 
 #include "beauty_warp.h"
 
@@ -40,6 +52,7 @@ inline float smoothstep01(float a, float b, float x) {
 }
 
 // 一张脸做位移场需要的全部几何量，先算一次，内层循环只读。
+// 所有 y 量都是**缓冲行号**（不是视觉坐标），方向由 makeGeom 的 flipY 决定。
 struct Geom {
     float cx = 0, cy = 0;      // 脸框中心
     float fw = 0, fh = 0;      // 脸框宽高
@@ -48,26 +61,34 @@ struct Geom {
     float eyeY = 0;            // 双眼平均高度
     float eyeDist = 0;         // 双眼间距，用来定「大眼」的作用半径
     float mouthY = 0;          // 嘴线高度，下巴变形的分界
-    float chinY = 0;           // 下巴底（脸框下沿）
+    float chinY = 0;           // 下巴底（脸框下沿，视觉上的最下）
     bool hasEyes = false;      // 眼睛来自关键点（否则是比例估算）
 };
 
-Geom makeGeom(const FaceBox& f) {
+// flipY=true：缓冲第 0 行是画面最下面一行（OFX/Resolve）。
+// 此时 f.y 是脸框的**视觉下沿**，f.y+f.h 是视觉上沿，所以：
+//   · 下巴底（视觉最下）= f.y，不是 f.y+f.h
+//   · 眼线距视觉上沿 0.38h → 距缓冲最小行 0.62h
+//   · 嘴线距视觉上沿 0.72h → 距缓冲最小行 0.28h
+Geom makeGeom(const FaceBox& f, bool flipY) {
     Geom g;
     g.cx = f.x + f.w * 0.5f;
     g.cy = f.y + f.h * 0.5f;
     g.fw = f.w;
     g.fh = f.h;
-    g.chinY = f.y + f.h;
+    g.chinY = f.y + (flipY ? 0.0f : f.h);
+
+    // 视觉「往下」在缓冲行号里是减小（flipY）还是增大（top-down）。
+    const float sgn = flipY ? -1.0f : 1.0f;
 
     // 比例兜底：三庭五眼的粗估。只在没有关键点时用。
-    g.eyeY = f.y + 0.38f * f.h;
+    g.eyeY = f.y + (flipY ? 0.62f : 0.38f) * f.h;
     g.eyeRx = g.cx - 0.22f * f.w;
     g.eyeRy = g.eyeY;
     g.eyeLx = g.cx + 0.22f * f.w;
     g.eyeLy = g.eyeY;
     g.eyeDist = 0.44f * f.w;
-    g.mouthY = f.y + 0.72f * f.h;
+    g.mouthY = f.y + (flipY ? 0.28f : 0.72f) * f.h;
 
     if (f.hasKps) {
         // YuNet 关键点顺序：0 右眼 / 1 左眼 / 2 鼻尖 / 3 右嘴角 / 4 左嘴角
@@ -75,6 +96,7 @@ Geom makeGeom(const FaceBox& f) {
         const float l1x = f.kps[2], l1y = f.kps[3];
         const float d = sqrtf((l1x - r0x) * (l1x - r0x) + (l1y - r0y) * (l1y - r0y));
         // 合理性检查：间距太小说明两个点重合（解码失败），太大说明跨了半张图。
+        // 这一条与行序无关（用的是距离，不是方向）。
         if (d > 4.0f && d < 3.0f * f.w) {
             g.eyeRx = r0x;
             g.eyeRy = r0y;
@@ -85,8 +107,12 @@ Geom makeGeom(const FaceBox& f) {
             g.hasEyes = true;
         }
         const float my = (f.kps[7] + f.kps[9]) * 0.5f;
-        // 嘴线必须落在眼睛和下巴之间，否则说明嘴角点不可信，用比例值。
-        if (my > g.eyeY + 0.05f * f.h && my < g.chinY) g.mouthY = my;
+        // 嘴线必须落在「眼线往下、下巴往上」之间，否则说明嘴角点不可信，
+        // 用比例值。方向无关写法：两个差值都乘 sgn 后必须为正。
+        // （之前写成 my > eyeY+0.05h && my < chinY，bottom-up 下恒假，
+        //   于是真机上关键点的嘴线被白白丢掉，回落到错误的额头位置。）
+        if ((my - g.eyeY) * sgn > 0.05f * f.h && (g.chinY - my) * sgn > 0.0f)
+            g.mouthY = my;
     }
     return g;
 }
@@ -94,12 +120,16 @@ Geom makeGeom(const FaceBox& f) {
 }  // namespace
 
 void warpFace(unsigned char* rgba, int w, int h, const FaceBox& f,
-              const WarpParams& p, std::vector<unsigned char>& scratch) {
+              const WarpParams& p, std::vector<unsigned char>& scratch,
+              bool flipY) {
     if (!rgba || w <= 0 || h <= 0) return;
     if (p.thin <= 0.0f && p.eye <= 0.0f && p.chin <= 0.0f) return;
     if (!(f.w > 8.0f) || !(f.h > 8.0f)) return;
 
-    const Geom g = makeGeom(f);
+    const Geom g = makeGeom(f, flipY);
+    // 视觉「往下」对应的缓冲行号增量：flipY 时行号减小，故为 -1。
+    // 只在「下半脸」这类有方向的判据里用；大眼是径向的，用不到它。
+    const float sgn = flipY ? -1.0f : 1.0f;
 
     // ---- ROI：脸框外扩 30% 宽 / 18% 高，并钳到画面内 ----
     const float mx = 0.30f * g.fw;
@@ -142,8 +172,12 @@ void warpFace(unsigned char* rgba, int w, int h, const FaceBox& f,
     const bool doThin = (p.thin > 0.0f) && (thinSig > 0.5f);
 
     // 下巴：从嘴线往下压缩，嘴线以上不动。
-    const float chinYm = g.mouthY + 0.02f * g.fh;
-    const float chinSpan = g.chinY - chinYm;
+    // 「往下」在缓冲里可能是行号减小（flipY）或增大（top-down），统一用 sgn
+    // 表达：chinYm 偏移方向、chinSpan 取正、判定与归一化都乘 sgn。
+    // 注意最后那步 sy = chinYm + (sy-chinYm)*(1+k) 不用改 —— 它缩放的是
+    // **带符号的差值**，与行序无关。
+    const float chinYm = g.mouthY + sgn * 0.02f * g.fh;
+    const float chinSpan = (g.chinY - chinYm) * sgn;
     const float chinK = p.chin * 0.18f;   // 满档下巴纵向缩 18%
     const bool doChin = (p.chin > 0.0f) && (chinSpan > 1.0f);
 
@@ -195,8 +229,10 @@ void warpFace(unsigned char* rgba, int w, int h, const FaceBox& f,
 
             // ---- ③ 下巴：下半脸纵向压缩 ----
             // 中线强、两侧弱（lat），否则会连下颌角一起往上提，脸变方。
-            if (doChin && sy > chinYm) {
-                const float t = (sy - chinYm) / chinSpan;
+            // 判据写成 (sy - chinYm)*sgn > 0：bottom-up 下命中视觉**下方**那一半，
+            // 之前写成 sy > chinYm，在真机上命中的是视觉最上面 26%（头发）。
+            if (doChin && (sy - chinYm) * sgn > 0.0f) {
+                const float t = (sy - chinYm) * sgn / chinSpan;
                 const float wv = smoothstep01(0.0f, 0.45f, t) *
                                  (1.0f - smoothstep01(0.92f, 1.10f, t));
                 if (wv > 1e-4f) {

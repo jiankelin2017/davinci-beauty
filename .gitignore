@@ -2,7 +2,7 @@
 01_ofx插件源码/out/
 01_ofx插件源码/obj/
 01_ofx插件源码/bundle/
-installer/build/
+05_安装包/build/
 **/__pycache__/
 *.pyc
 
@@ -11,12 +11,12 @@ installer/build/
 
 # 验收工具：基线 raw 每次现生成，不入库（15 用例 x 2.6MB ≈ 41MB），
 # 仓库里只留 baseline_manifest.txt（md5 清单）。
-06_验收工具/*.raw
+04_验收工具/*.raw
 
-# 07_引擎资产：第三方 NamaSDK + AI 模型，约 138MB，可从 NamaSDK 重取得或在装机 bundle
+# 02_引擎资产：第三方 NamaSDK + AI 模型，约 138MB，可从 NamaSDK 重取得或在装机 bundle
 # 里另取两份，不入库。但 stage.bat 要留 —— 它是这份资产的「放回 ProgramData」入口。
-07_引擎资产/*
-!07_引擎资产/stage.bat
+02_引擎资产/*
+!02_引擎资产/stage.bat
 
 # 源码里的临时备份（发版确认后应删除，不让 git status 一直挂着）
 01_ofx插件源码/src/*.bak_*
@@ -24,13 +24,13 @@ installer/build/
 # ---- 以下都是「跑一次就重新生成」的过程产物，2026-10-27 全量清理时确认 ----
 
 # 探针脚本的输出（probe_in.raw 是测试用例输入，不在此列）
-02_测试夹具beauty_probe/probe_out.raw
-02_测试夹具beauty_probe/_calib_out.raw
-02_测试夹具beauty_probe/_np_out.raw
-02_测试夹具beauty_probe/_face_avail.txt
-02_测试夹具beauty_probe/_phase1_report.txt
-02_测试夹具beauty_probe/_phase2_gate_report.txt
-02_测试夹具beauty_probe/_aitype_probe.log
+03_测试夹具/probe_out.raw
+03_测试夹具/_calib_out.raw
+03_测试夹具/_np_out.raw
+03_测试夹具/_face_avail.txt
+03_测试夹具/_phase1_report.txt
+03_测试夹具/_phase2_gate_report.txt
+03_测试夹具/_aitype_probe.log
 
 # 各类临时备份目录（清理前/改名前的回滚点，用完即删）
 _*残留备份*/
@@ -38,3 +38,10 @@ _*迁移备份*/
 
 # 调试用临时目录（放调试版 ofx + onnxruntime + 模型做离线自测）
 _dbgtest/
+
+# ---- 本地归档与交付安装包不入库（2026-10-31 整理后确认） ----
+# _archive/ 为归档参考（含逆向闭源模型数据，约 63MB），仅本地保留，不入版本库；
+# 原跟踪文件若需恢复用 git restore。
+_archive/
+# 构建出的安装包 exe 为二进制交付物，不进 git（.ofx 插件 DLL 在 bundle/，已忽略）
+*.exe

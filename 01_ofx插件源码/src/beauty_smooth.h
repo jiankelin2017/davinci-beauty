@@ -73,6 +73,17 @@ void bilateralRgbaDown(const unsigned char* src, unsigned char* dst,
 void mixRgba(const unsigned char* src, const unsigned char* smooth,
              unsigned char* dst, int w, int h, float t);
 
+// 磨皮强度总增益（3.0.7）：dst = src + (dst − src) · gain。
+//
+// 作用对象是「磨皮已经产出的改动量」，不是档位曲线 —— 用来在不破坏
+// lvI/lvE 标定（产品五档强度占比 0.005/0.211/0.588/1.0）的前提下整体调强/调弱。
+// 四条磨皮路径（surface3 三变体 + 高斯/legacy 盒式）都靠它统一缩放。
+//
+// gain == 1.0 时整段跳过，逐字节等于未加此函数的实现 —— 基线可以据此判回归。
+// gain 上限建议 3.0：再大就会把低频推过 B2，出现蜡像感与边界发灰。
+void amplifySmooth(const unsigned char* src, unsigned char* dst,
+                   int w, int h, float gain, int threads = 0);
+
 // 默认参数：离线对拍扫出来的最优组合（05_文档/S2_磨皮核对拍结论.md）
 //   radius=2 / σSpace=7 / σColor=40 → 档位曲线误差 1.09 个百分点
 // 注意半径小反而更贴合 参考实现：说明它的平滑核半径本来就不大。

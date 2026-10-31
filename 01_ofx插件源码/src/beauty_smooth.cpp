@@ -1260,6 +1260,49 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
 
 
 // ---------------------------------------------------------------------------
+// 磨皮强度总增益（3.0.7）
+// ---------------------------------------------------------------------------
+
+// dst = src + (dst − src) · gain，逐像素、alpha 原样保留。
+//
+// 为什么要单独一个函数而不是在 surface3 里把 I 放开到 1 以上：
+//   surface3 三条实现（band / 25 tap / 盒式）的合成式都是
+//   res = c + (even − c)·I 且 I 在函数内被 clamp 到 [0,1]；高斯档与 legacy
+//   盒式压根没有 I 这条腿（它们靠外层 mixRgba / blendWithMask 的 t 定强度）。
+//   统一在「dst 已经算好之后」乘一次，四条路径就都管住了，而且 gain=1 时可以
+//   整段跳过 —— 逐字节等于原实现。
+//
+// 为什么乘在 dst−src 上是安全的：这个差值就是 (even − c)·I·keepEye，
+// 而 even 是低频重建（B2 主导），本身是平滑场。线性放大平滑场不会产生振铃，
+// 只是把「低频被拉向 B2 的程度」加大。mask==0 处 dst−src 恒为 0，背景不动。
+void amplifySmooth(const unsigned char* src, unsigned char* dst,
+                   int w, int h, float gain, int threads) {
+    if (!src || !dst || w <= 0 || h <= 0) return;
+    if (gain <= 1.0001f && gain >= 0.9999f) return;   // gain==1：逐字节不变
+    runRange(0, h, threads, [&](int yBegin, int yEnd) {
+        for (int y = yBegin; y < yEnd; y++) {
+            const size_t rowOff = (size_t)y * (size_t)w * 4;
+            for (int x = 0; x < w; x++) {
+                const size_t o = rowOff + (size_t)x * 4;
+                for (int c = 0; c < 3; c++) {
+                    const int s = (int)src[o + (size_t)c];
+                    const int d = (int)dst[o + (size_t)c];
+                    // 用整数算：delta·k 可能为负，+0.5 前先判符号再取整
+                    const float v = (float)s + (float)(d - s) * gain;
+                    int iv = (int)(v + (v >= 0.0f ? 0.5f : -0.5f));
+                    if (iv < 0) iv = 0;
+                    if (iv > 255) iv = 255;
+                    dst[o + (size_t)c] = (unsigned char)iv;
+                }
+                // alpha 保持 src（磨皮从不改 alpha）
+                dst[o + 3] = src[o + 3];
+            }
+        }
+    });
+}
+
+
+// ---------------------------------------------------------------------------
 // 细节回填（锐化 / 全局锐化）
 // ---------------------------------------------------------------------------
 

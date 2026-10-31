@@ -9,29 +9,19 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 echo [install.bat v3] running
 
-rem Administrator check
-net session >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Not running as Administrator.
-    echo Right-click install.bat and choose Run as administrator.
-    pause
-    exit /b 1
-)
-
 rem Locate engine assets dir whose name starts with 07_ and holds onnxruntime.dll
 set "P=%~dp0"
 set "P=%P:~0,-1%"
 for %%I in ("%P%") do set "PARENT=%%~dpI"
 set "ENGINE="
 for /d %%D in ("%PARENT%\*") do (
-    set "NM=%%~nxD"
-    if /i "!NM:~0,3!"=="07_" (
-        if exist "%%D\onnxruntime.dll" set "ENGINE=%%D"
+    if exist "%%D\onnxruntime.dll" (
+        if exist "%%D\yunet.onnx" set "ENGINE=%%D"
     )
 )
 if "%ENGINE%"=="" (
-    echo [ERROR] Cannot find engine assets 07_*/onnxruntime.dll.
-    echo Make sure the 07_ engine assets folder still has onnxruntime.dll.
+    echo [ERROR] Cannot find engine assets folder containing onnxruntime.dll + yunet.onnx.
+    echo Make sure the 02_ÒýÇæ×Ê²ú folder still has both files.
     pause
     exit /b 1
 )
@@ -71,6 +61,15 @@ if "%COMMONPROGRAMFILES%"=="" (
 set "OFXDIR=%COMMONPROGRAMFILES%\OFX\Plugins"
 set "TARGET=%OFXDIR%\DaVinciBeauty.ofx.bundle\Contents\Win64"
 if not exist "%TARGET%" mkdir "%TARGET%" 2>nul
+rem Write-access probe. Elevation is not the criterion: a restricted admin
+rem token can still hold the destination ACL, and an elevated shell can still
+rem be denied by policy. Creating the directory is the honest test.
+if not exist "%TARGET%" (
+    echo [ERROR] Cannot create %TARGET%
+    echo Right-click install.bat and choose Run as administrator.
+    pause
+    exit /b 1
+)
 
 rem Auto-clean legacy NamaSDK leftovers, v3.0.0 dropped NamaSDK
 echo cleaning legacy NamaSDK leftovers

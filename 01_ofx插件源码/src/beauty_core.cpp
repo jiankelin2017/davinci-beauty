@@ -485,6 +485,46 @@ struct SmoothCfg {
     // 两者的取舍正好相反，所以不能共用一个阈值。
     float blurRefillThr = 0.8f;
 
+    // ---- 磨皮强度总增益（3.0.7 新增）------------------------------------
+    // 语义：把磨皮**已产出的改动量**整体放大 gain 倍，即
+    //     dst' = src + (dst − src) · gain
+    // gain=1 时逐字节等于原实现（这条路径直接跳过）。
+    //
+    // 为什么需要它（用户实测反馈「磨皮 0 → 100 无明显变化」）：
+    //   真机帧 1080×1920、面板磨皮 100，人脸区内与源帧的平均绝对差只有
+    //   **0.955 灰阶**、峰值 13 灰阶、改动>3 的像素仅 14.2%。这不是接线问题
+    //   （日志里 blurType/smoothMode 都已确认送达），是**幅度**问题。
+    //   而 I 在 100 档已经是 0.976（查表上限）、e 已经 0.95，两条曲线都顶死了，
+    //   想再强只能动合成式本身。
+    //
+    // 为什么用「事后放大」而不是直接让 I 突破 1：
+    //   ① 数学上等价 —— surface3 的合成是 res = c + (even − c)·I，
+    //      keepEye=1 时 I>1 与事后乘 gain 是同一个式子；
+    //   ② 覆盖面更全 —— 高斯档、legacy 盒式、25 tap、降采样四条老路径
+    //      I 根本不是同一条腿（有的压根没有 I），事后统一乘一次就都管住了；
+    //   ③ 不动标定 —— lvI/lvE 是按「产品五档强度占比 0.005/0.211/0.588/1.0」
+    //      反解出来的，改表就毁掉了那份标定；乘 gain 只缩放幅度、不改形状，
+    //      平坦/纹理比（产品 1.39）原样保持。
+    // 风险：gain 过大时 (dst−src) 被外推到失真 —— 磨皮区的低频被推过 B2，
+    //   表现为「蜡像感 / 边界发灰」。所以上限卡在 3.0，且可用
+    //   BEAUTY_SMOOTH_GAIN 现场调。
+    // 默认值 1.8（3.0.7 真机帧扫描定档）。定档依据（src.raw 1080×1920，
+    // 磨皮 100，人脸区 400–780 × 330–710）：
+    //   gain  res(与源帧平均差)  maxd  p>3%   tex(高频保留率)
+    //   1.00      1.014           13   16.2%      0.942   ← v3.0.6 现状
+    //   1.30      1.308           17   26.0%      0.946
+    //   1.60      1.619           21   27.5%      0.950
+    //   1.80      1.82            23   ~30%      ~0.953   ← 取这里
+    //   2.00      1.976           26   34.2%      0.957
+    //   2.40      2.334           31   35.5%      0.998   ← 纹理回涨，开始「加噪」
+    // 为什么卡在 1.8 而不是 2.4：res 虽然还在涨，但 tex 从 0.957 跳回 0.998 ——
+    // 那不是「磨得更狠」，是 (dst−src) 里的**振幅门控结构**被一起放大到压过了
+    // 磨皮本身，观感变成「平了但发毛」。1.8 留了余量，且可用
+    // BEAUTY_SMOOTH_GAIN 现场加（上限 3.0，但 2.2 以上自己看画面）。
+    // 附带核对：开美白 67 + 清晰 31 时 |gain1.8 − gain1.0| 仍有 0.762 灰阶均值、
+    // 6.5% 像素改动 >3，增益不会被美白曲线吃掉。
+    float smoothGain = 1.8f;
+
     // ---- 细节层时序 EMA（0.7.2）----
     // 锐化会把相机白噪一起放大，而噪点帧间独立 → 静止的脸呈「沸腾」式闪动。
     // 把算高通用的亮度平面做一次运动自适应 EMA：静止强平滑、头一动立刻放开。
@@ -1204,6 +1244,14 @@ public:
             if (brm && *brm) g_cfg.blurRefillMinI = (float)atof(brm);
             const char* brd = getenv("BEAUTY_BLUR_REFILL_DELTA");
             if (brd && *brd) g_cfg.blurRefillDelta = atoi(brd);
+            // 磨皮强度总增益（3.0.7）。1 = 原实现；见配置段 smoothGain 的说明。
+            const char* sg = getenv("BEAUTY_SMOOTH_GAIN");
+            if (sg && *sg) {
+                float v = (float)atof(sg);
+                if (v < 0.25f) v = 0.25f;
+                if (v > 3.0f)  v = 3.0f;
+                g_cfg.smoothGain = v;
+            }
             // 细节层时序 EMA：BEAUTY_EMA=0 关掉（做 A/B 用），其余三个是阈值与 beta
             const char* em = getenv("BEAUTY_EMA");
             if (em && *em) g_cfg.emaOn = (em[0] != '0');
@@ -1430,8 +1478,52 @@ public:
         maskFresh_ = false;   // 新鲜度只对「到货那帧」有效，过了这帧就作废
 
         bool didSurface3 = false;
+        // v3.0.6：实际用于混合的强度。默认就等于 t —— 除「高斯档 + 轻磨皮」之外
+        // 所有路径都满足 tBlend == t，因此逐字节不变。
+        // 为什么需要它：surface3 分支有自己的 I（含 `smooth_mode==3` 的 ×0.55），
+        // 但高斯分支只产出 sm、强度完全由 blendWithMask 的 t 决定，没有 I 可打折。
+        // 不打 tBlend 的话，「轻磨皮」在高斯档下就没有任何效果。
+        float tBlend = t;
         if (t > 0.0f) {
-            if (g_cfg.smoothModel == 1) {
+            // v3.0.5：磨皮算法三档**真正接线**。
+            // 此前 blur_type 只是被塞进 BeautySettings，process() 从不读它 ——
+            // 三档输出逐位相同（基线里 mode1/2/3 与 blur62_wh30 是同一个 md5，
+            // 那就是空接线最直接的证据）。面板顺序见 ofx_plugin.cpp 的
+            // kBlurTypeChoices = {双边滤波, 高斯, 弱磨皮}。
+            //   0 双边滤波 = 现状 surface3 保边路径，逐字节不变（基线依赖它）
+            //   1 高斯     = 同一套空间核，值域 sigma 放到 255 → 双边退化成纯高斯
+            //   2 弱磨皮   = 仍走 surface3，强度 I 打对折（见下面的 I 计算处）
+            if (s.blur_type == 1) {
+                beautycore::RoiRect groi;
+                if (haveMask && g_cfg.roi && !bounds_.empty()) {
+                    groi = bounds_;
+                } else {
+                    groi.x0 = 0; groi.y0 = 0; groi.x1 = w; groi.y1 = h;
+                }
+                // sigmaColor = 255：任何灰阶差都算「同色」，值域权重恒为 1，
+                // 于是双边只剩空间高斯核。不叠五官保护 —— 「高斯」本来就该把
+                // 边缘一起糊掉，这是这一档与「双边」唯一但决定性的区别。
+                //
+                // v3.0.7：半径 ×2。v3.0.6 实测这一档与「双边」距源帧只差 2.0×
+                // （0.12162 vs 0.06098），肉眼几乎分不出。但**只去保边不够** ——
+                // 保边与否改变的是「糊不糊边缘」，不改变糊的**范围**。
+                // 出厂 r=2、σs=7：exp(−r²/2σ²)=exp(−4/98)=0.96，核几乎是平的，
+                // 5×5 盒平均的等效标准差只有 1.4px，本来就没糊开。
+                // 半径翻到 4（9×9 盒平均，σ≈2.6px，1.8×）才让「高斯」这一档
+                // 在 1:1 下看得出来。σs 不动：它在这个量级下几乎不起作用，
+                // 改了只会让注释里的标定值失效。
+                const int gRad = g_cfg.radius * 2;
+                beautycore::bilateralRgbaRoi(src, sm, w, h,
+                                             gRad, g_cfg.sigmaSpace,
+                                             255.0f, groi, g_cfg.threads);
+                // v3.0.6：这条分支不产生 surface3 的 I，所以
+                //   · 「轻磨皮」（模式 3）改打 t；
+                //   · 回填强度 blurRefillI 也用 tBlend 顶上。
+                // 不补的话 blurRefillI 恒为 0 → wantModeRefill 恒假 →
+                // 磨皮模式在这一档彻底失效（v3.0.5 实测四档距源帧完全相同）。
+                if (s.smooth_mode == 3) tBlend = t * 0.40f;
+                blurRefillI = tBlend;
+            } else if (g_cfg.smoothModel == 1) {
                 // ---- surface3：三层表面模糊（C22）------------------------
                 // 档位曲线用 参考实现的 I = min(1, k·t)（不是 legacy 的饱和曲线），
                 // 所以这里用 tLin 而不是上面的 t。
@@ -1475,7 +1567,25 @@ public:
                     I = (tLin >= g_cfg.s3ESat) ? 1.0f : (tLin * g_cfg.s3K);
                 }
                 if (I > 1.0f) I = 1.0f;
+                // v3.0.5：弱磨皮档（blur_type=2）—— 同一套 surface3，强度压低。
+                // 放在两条档位曲线都算完之后，保证与档位曲线正交（不改变手感形状，
+                // 只整体压低一档）。
+                // v3.0.7：0.5 → 0.30。0.5 档实测距源帧 0.02230，只有「双边」的
+                // 0.37×，与「弱」字对得上却小到看不出来；0.30 把它压到 0.22×，
+                // 成为四档里最轻的一档（比「轻磨皮」0.40 还轻），档位之间才拉得开。
+                if (s.blur_type == 2) I *= 0.30f;
+                // v3.0.5：轻磨皮档（smooth_mode=3）—— 整体最轻。
+                // 依据是 OBS 侧四档实测的「细频保留率」92.3 / 94.3 / 96.8 / 96.7%：
+                // 第 4 档与第 3 档几乎并列，所以它靠**降强度**而不是靠多回填来
+                // 实现，才与「轻」这个字对得上（原名「朦胧磨皮」是错的，见
+                // ofx_plugin.cpp kSmoothModeChoices 的注释）。
+                // v3.0.7：0.55 → 0.40，同样是为了把「轻磨皮」从「比双边略轻」推到
+                // 「明显更轻」，与「弱磨皮」形成 0.22× / 0.40× 两个可分辨的台阶。
+                if (s.smooth_mode == 3) I *= 0.40f;
                 sp.I = I;
+                // v3.0.5：surface3 路径也要把实际强度交出去，磨皮模式的基准回填
+                // （wantModeRefill）才有强度可依。此前只有 band 分支给它赋值。
+                blurRefillI = I;
                 // evenfactor = mix(E0, intensity − E0, step(0.6, intensity))
                 // 三段：[0,0.42] 恒 0.3；(0.42,0.70] 升到 0.7；[0.70,1] 恒 0.7。
                 float e;
@@ -1580,15 +1690,38 @@ public:
                                           g_cfg.sigmaColor, g_cfg.threads);
             }
 
+            // ---- v3.0.7：磨皮强度总增益（混合路径这一半）------------------
+            // 位置很关键：必须在「sm 已算好」之后、「混合写 dst」之前，
+            // 且只在**非 surface3** 的路径上生效（surface3 在上面用
+            // amplifySmooth 做，见那段注释）。
+            //
+            // 为什么混合路径不外推：这几条路的强度就是混合权重 tBlend，
+            // tBlend>1 的语义是「比完全平滑还平滑」，落到模糊图上等于反向补偿
+            // 边缘 —— 观感是硬边 + 光晕（实测高斯档外推到 1.51 时人脸区最大
+            // 改动 87 灰阶，就是边缘过冲）。所以乘完直接封顶 1.0：
+            // 「尽量磨到完全平滑为止，但不多走一步」。
+            // 高斯档本身靠 v3.0.7 的半径翻倍已经强了 2×，这里封顶足够。
+            if (!didSurface3) {
+                tBlend *= g_cfg.smoothGain;
+                if (tBlend > 1.0f) tBlend = 1.0f;
+            }
+
             if (didSurface3) {
                 // dst 已由 surface3Rgb 写满（含 I / e / skin / eye 四步），
                 // 不能再走 blendWithMask —— 否则 skin 与 t 会被应用两遍。
+                // v3.0.7：磨皮强度增益走 amplifySmooth（外推 dst−src），
+                // 只给这条重建路径用 —— 见下面 tBlend 处的说明。
+                beautycore::amplifySmooth(src, dst, w, h, g_cfg.smoothGain,
+                                          g_cfg.threads);
             } else if (haveMask) {
                 const unsigned char* pr =
                     (protect_.size() == (size_t)w * h) ? &protect_[0] : nullptr;
-                blendWithMask(src, sm, dst, w, h, t, &mask_[0], pr, g_cfg.protectK);
+                // v3.0.6：用 tBlend（除高斯档外恒等于 t，逐字节不变）
+                // v3.0.7：tBlend 已在上面的分支之后乘过 smoothGain 并封顶 1.0
+                blendWithMask(src, sm, dst, w, h, tBlend, &mask_[0], pr,
+                              g_cfg.protectK);
             } else {
-                beautycore::mixRgba(src, sm, dst, w, h, t);
+                beautycore::mixRgba(src, sm, dst, w, h, tBlend);
             }
         } else {
             // 磨皮为 0：其余各项仍要在原图基础上生效，所以先把原图铺到 dst
@@ -1648,7 +1781,20 @@ public:
         //   · 加在 dst 上，不会再被磨皮平均掉，也不会被美白曲线压平；
         //   · 全局锐化在「没有掩码」时也要跑 —— 否则掩码一丢，背景锐度跟着跳档，
         //     这正是参考实现 3.0.13 修过的那个 bug，core 不能重演。
-        if (wantFaceDetail || wantGlobalDetail || wantBlurRefill) {
+        // v3.0.5：磨皮模式 1/2 自带「基准细节回填」，不依赖面板「锐化」。
+        // 语义：磨皮模式控制的是「磨皮削掉的那些细节按什么策略还回去」。
+        //   0 人像磨皮 = 不回填（现状，逐字节不变，基线依赖它）
+        //   1 清晰磨皮 = 回填 1.0×，细频软阈值用 0.8（比锐化那套 3.0 低得多）
+        //   2 精细磨皮 = 回填 1.6×，并补一点中频 → 结构最完整
+        //   3 轻磨皮   = 不回填，靠降低强度 I 实现（见上面 I 计算处）
+        // 为什么必须自带而不是复用 wantBlurRefill：那条路要求「锐化=0 且清晰=0」，
+        // 而且只在 band 分支里求值。用户拖「磨皮模式」时锐化通常是 0，
+        // 不另开一条的话这个下拉框依旧是死的。
+        const bool wantModeRefill =
+            (s.smooth_mode == 1 || s.smooth_mode == 2) && t > 0.0f && haveMask &&
+            (g_cfg.blurRefill > 0.0f) && (blurRefillI >= g_cfg.blurRefillMinI);
+
+        if (wantFaceDetail || wantGlobalDetail || wantBlurRefill || wantModeRefill) {
             // 运动判据每帧算一次（4×4 抽样，720p 约 5.7 万次比较，可忽略）。
             // 只在真的要跑锐化时才算 —— 锐化关着就没有噪点放大问题。
             const double motion = updateMotion(src, w, h);
@@ -1686,6 +1832,27 @@ public:
                 dp.mid = 0.0f;
                 dp.deltaRefill = g_cfg.blurRefillDelta != 0;
             }
+            if (wantModeRefill) {
+                // 模式 1/2 的基准回填。倍率是相对 blurRefill 的增益。
+                //
+                // 为什么倍率远大于 1、而且模式 1 也要带一点中频：
+                // blurRefill=0.06 是给 band 路径标定的，单靠细频在这条路上
+                // 只回填 5% 的细频带，落在 8bit 上四舍五入后**一格都不动**
+                // （实测 mode1 与默认档 md5 完全相同）。真正能推动像素的是中频，
+                // 所以两档都带中频，只是模式 2 带得更多。
+                // v3.0.7：2.2/0.18 → 4.0/0.45（清晰）、3.2/0.40 → 5.5/0.75（精细）。
+                // 依据是 v3.0.6 的实测：清晰 0.06355 / 精细 0.06667 对 人像 0.06098，
+                // 只有 1.04× / 1.09× —— 三个档位在 1:1 下不可分辨。
+                // 注意这两档**不能靠调 I 来加强**：I 同时驱动磨皮本身，动它就把
+                // 「磨皮」和「磨皮模式」两个旋钮绑在一起了。回填是正交的那条腿，
+                // 加大它才是「磨得多、细节还回去更多」的本意。
+                static const float kModeFineGain[4] = {0.0f, 4.0f, 5.5f, 0.0f};
+                static const float kModeMidGain[4]  = {0.0f, 0.45f, 0.75f, 0.0f};
+                const int mm = (s.smooth_mode > 3) ? 3 : s.smooth_mode;
+                dp.fine = g_cfg.blurRefill * blurRefillI * kModeFineGain[mm];
+                dp.mid = kModeMidGain[mm] * blurRefillI;
+                dp.deltaRefill = false;
+            }
             if (wantGlobalDetail) {
                 // 全局锐化用**自己**的中频/细频基准（3.1.22 从 detailMidGain 拆出）。
                 // 参照路径那边也是两条独立曲线（见 g_cfg.globalMidGain 的注释）。
@@ -1698,7 +1865,8 @@ public:
             // 基准回填用自己的一套细频阈值（默认 0.8，比锐化那套的 3.0 低得多）：
             // 磨皮要还的就是「小幅值细频」，而锐化要防的是「噪点被放大」，
             // 两者的取舍正好相反，所以不能共用一个阈值。
-            dp.thrFine = wantBlurRefill ? g_cfg.blurRefillThr : g_cfg.detailThrFine;
+            dp.thrFine = (wantBlurRefill || wantModeRefill) ? g_cfg.blurRefillThr
+                                                            : g_cfg.detailThrFine;
 
             // 有全局档就整帧跑（掩码只决定「用哪一档权重」）；否则只跑掩码包围盒。
             beautycore::RoiRect droi;
@@ -1752,8 +1920,13 @@ public:
             if (wp.thin > 0.0f || wp.eye > 0.0f || wp.chin > 0.0f) {
                 // 逐脸处理。多张脸时 ROI 互不重叠（检测框本身就不会大面积交叠），
                 // 所以串行就地修改是安全的。
+                // v3.0.5：必须把帧行序传下去。三项里「嘴在眼下、下巴在嘴下」
+                // 是有方向的语义，faces_ 里的 y 是缓冲行号，不告诉 warpFace
+                // 行序就会把瘦脸压到眉眼、下巴压到发际线（大眼是径向的，
+                // 所以它是三项里唯一「看起来正常」的一个）。
                 for (size_t i = 0; i < faces_.size(); i++)
-                    beautycore::warpFace(dst, w, h, faces_[i], wp, warpScratch_);
+                    beautycore::warpFace(dst, w, h, faces_[i], wp, warpScratch_,
+                                         imgBottomUp_);
             }
         }
 

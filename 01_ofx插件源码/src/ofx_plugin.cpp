@@ -16,6 +16,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -202,7 +203,7 @@ static const ParamDef kParams[P_COUNT] = {
      "v2.0.2 起独立生效（此前必须先把「锐化」推起来它才有反应）。", false, "Main"},
     {"color_level", "美白", 30, "美白。只提亮肤色，无脸帧逐字节不动。默认 30。", false, "Main"},
     {"red_level", "红润", 30, "红润。实测满量程改动 58% 像素。默认 30。", false, "Main"},
-    // 已隐藏（secret）。两个独立原因，详见 02_测试夹具beauty_probe/锐化无效排查报告.md：
+    // 已隐藏（secret）。两个独立原因，详见 03_测试夹具/锐化无效排查报告.md：
     //   1) SDK 自身行为：磨皮 > 0 时锐化对输出的贡献恒为 0（字节级确证 0/252160）；
     //   2) 1.51 起语义掩码把锐化改动撤掉 93%（锐化增强的是眼睛/眉毛/嘴唇/发丝，
     //      恰好在皮肤掩码外）。想要锐利感请用「清晰」——它不受磨皮影响。
@@ -282,6 +283,9 @@ struct InstanceData {
     bool warned = false;
     // v2.0.1：输入像素编码自检只在首帧做一次，结果进日志（见 probeInputEncoding）
     bool probedInput = false;
+    // 上一次打进日志的「面板参数签名」。必须是每实例一份：以前是函数级 static，
+    // 两个实例参数不同就会每帧各打一整行（render 路径里的磁盘 I/O + 数据竞争）。
+    double lastSig = -1e30;
 };
 
 // ---------------------------------------------------------------------------
@@ -309,14 +313,36 @@ static void readParams(InstanceData* d, NamaSettings& s) {
         double v = kParams[i].dflt;
         if (d && d->p[i] && gParamHost->paramGetValue(d->p[i], &v) != kOfxStatOK)
             v = kParams[i].dflt;
+        // NaN/Inf 绝不能进引擎。宿主侧的正常滑块是 0..100，但损坏的工程文件、
+        // 表达式或脚本可以直接写进 NaN —— 而引擎里所有 `if (v < 0)` / `if (v > 100)`
+        // 对 NaN 都是 false，最后落到 `(int)(NaN * 4)` = INT_MIN，越界读 LUT。
+        if (!std::isfinite(v)) {
+            static bool nanWarned = false;
+            if (!nanWarned) {
+                nanWarned = true;
+                ofxLog("参数 %s 是非有限值（NaN/Inf），已回落默认 %.0f", kParams[i].name,
+                       kParams[i].dflt);
+            }
+            v = kParams[i].dflt;
+        }
+        if (v < 0.0) v = 0.0;
+        if (v > 100.0) v = 100.0;
         s.panel[i] = v;
     }
     if (d && d->blurType) {
         int c = 0;
         gParamHost->paramGetValue(d->blurType, &c);
-        // Choice 索引对应昵称；SDK 的 blur_type：1=双边滤波，0=高斯，2=弱磨皮
-        static const int map[3] = {1, 0, 2};
-        s.blur_type = (c >= 0 && c < 3) ? map[c] : 1;
+        // v3.0.6：**直通面板索引，不再做任何重映射。**
+        // 旧代码这里是 `static const int map[3] = {1, 0, 2}`，把面板序
+        // {双边, 高斯, 弱磨皮} 换成 NamaSDK 时代的 blur_type 序
+        // {1=双边, 0=高斯, 2=弱磨皮}。v3.0.5 起 SDK 早已不存在，引擎侧的档位
+        // 语义（beauty_core.cpp 里 `s.blur_type == 1` 走高斯）直接按**面板序**
+        // 定义，这层 map 就把「双边」和「高斯」对调了。
+        //
+        // 为什么上一版没测出来：baseline.py 走 NamaSelfTest 的 NAMA_ST_ALG 钩子，
+        // 绕过了 readParams()，只有真机拖下拉框才会经过这里。现在
+        // mock_host.py 的「下拉框接线」用例覆盖了这条路径。
+        s.blur_type = (c >= 0 && c < 3) ? c : 0;
     }
     if (d && d->skinDetect) {
         int b = 0;
@@ -586,7 +612,7 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
     gPropHost->propSetString(props, kOfxImageEffectPluginPropGrouping, 0, "DaVinci Beauty");
     gPropHost->propSetString(props, kOfxPropShortLabel, 0, "DaVinci Beauty");
     gPropHost->propSetString(props, kOfxPropLongLabel, 0, "DaVinci Beauty");
-    gPropHost->propSetString(props, kOfxImageEffectPluginPropSingleInstance, 0, "false");
+    gPropHost->propSetInt(props, kOfxImageEffectPluginPropSingleInstance, 0, 0);
 
     // 能被当作滤镜（Edit / Color 页面）使用
     gPropHost->propSetString(props, kOfxImageEffectPropSupportedContexts, 0,
@@ -654,15 +680,18 @@ static OfxStatus getRegionOfDefinition(OfxImageEffectHandle instance,
     OfxImageClipHandle src = nullptr;
     gEffectHost->clipGetHandle(instance, kOfxImageEffectSimpleSourceClipName, &src, nullptr);
 
-    OfxRectI rod;
+    // RoD 的属性类型是 double×4（ofxImageEffect.h:1660）。以前这里用 propGetIntN /
+    // propSetIntN：类型不符时宿主直接返回错误 → haveRod 恒 false → 本动作永远
+    // ReplyDefault（等于没实现），render 里的面积兜底与「空窗口用源 RoD」也一起失效。
+    OfxRectD rod;
     memset(&rod, 0, sizeof(rod));
     bool haveRod = false;
     if (src) {
         OfxPropertySetHandle cp = nullptr;
         gEffectHost->clipGetPropertySet(src, &cp);
         if (cp &&
-            gPropHost->propGetIntN(cp, kOfxImageEffectPropRegionOfDefinition, 4, &rod.x1) ==
-                kOfxStatOK &&
+            gPropHost->propGetDoubleN(cp, kOfxImageEffectPropRegionOfDefinition, 4,
+                                      &rod.x1) == kOfxStatOK &&
             rod.x2 > rod.x1 && rod.y2 > rod.y1) {
             haveRod = true;
         }
@@ -673,7 +702,7 @@ static OfxStatus getRegionOfDefinition(OfxImageEffectHandle instance,
     // 「输出范围是空的」，某些宿主会把这一段判成黑帧/空帧（旧报告的 A4）。
     if (!haveRod) return kOfxStatReplyDefault;
 
-    gPropHost->propSetIntN(outArgs, kOfxImageEffectPropRegionOfDefinition, 4, &rod.x1);
+    gPropHost->propSetDoubleN(outArgs, kOfxImageEffectPropRegionOfDefinition, 4, &rod.x1);
     return kOfxStatOK;
 }
 
@@ -1072,11 +1101,13 @@ static bool isThrowawayRender(OfxPropertySetHandle inArgs, int w, int h,
                               int refW, int refH) {
     // 规范 1.5.1 起提供的显式信号：宿主自认这是 UI 缩略图渲染。
     // ofxImageEffect.h 里明确建议插件可以「turning itself off in IsIdentity」。
+    // 类型是 enum（"false"/"true"），不是 int —— 以前用 propGetInt 读，类型不符
+    // 直接失败，这条缩略图短路从未生效（161×80 的缩略图仍要白跑 13~18ms）。
     if (inArgs) {
-        int thumb = 0;
-        if (gPropHost->propGetInt(inArgs, kOfxImageEffectPropThumbnailRender, 0, &thumb) ==
-                kOfxStatOK &&
-            thumb != 0)
+        char* thumbTxt = nullptr;
+        if (gPropHost->propGetString(inArgs, kOfxImageEffectPropThumbnailRender, 0,
+                                     &thumbTxt) == kOfxStatOK &&
+            thumbTxt && strcmp(thumbTxt, "true") == 0)
             return true;
     }
 
@@ -1196,17 +1227,27 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
 
     // 源 clip 的真实 RoD：既是渲染窗口的兜底，也是「面积兜底判定代理帧」的参考面积
     // 来源（旧代码把参考面积写死成 960×540，4K/8K 工程的判定会整体偏移）。
-    OfxRectI srcRod;
-    memset(&srcRod, 0, sizeof(srcRod));
+    // 属性类型是 double×4（ofxImageEffect.h:1660），不能用 propGetIntN。
+    OfxRectD srcRodD;
+    memset(&srcRodD, 0, sizeof(srcRodD));
     bool haveRod = false;
     {
         OfxPropertySetHandle cp = nullptr;
         gEffectHost->clipGetPropertySet(sourceClip, &cp);
         if (cp &&
-            gPropHost->propGetIntN(cp, kOfxImageEffectPropRegionOfDefinition, 4, &srcRod.x1) ==
-                kOfxStatOK &&
-            srcRod.x2 > srcRod.x1 && srcRod.y2 > srcRod.y1)
+            gPropHost->propGetDoubleN(cp, kOfxImageEffectPropRegionOfDefinition, 4,
+                                      &srcRodD.x1) == kOfxStatOK &&
+            srcRodD.x2 > srcRodD.x1 && srcRodD.y2 > srcRodD.y1)
             haveRod = true;
+    }
+    OfxRectI srcRod;
+    memset(&srcRod, 0, sizeof(srcRod));
+    if (haveRod) {
+        // RoD 是浮点画布坐标；渲染窗口是整数像素，取整后使用。
+        srcRod.x1 = (int)std::floor(srcRodD.x1);
+        srcRod.y1 = (int)std::floor(srcRodD.y1);
+        srcRod.x2 = (int)std::ceil(srcRodD.x2);
+        srcRod.y2 = (int)std::ceil(srcRodD.y2);
     }
     const int rodW = haveRod ? (srcRod.x2 - srcRod.x1) : 0;
     const int rodH = haveRod ? (srcRod.y2 - srcRod.y1) : 0;
@@ -1326,12 +1367,11 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
         //   · 参数正常但检不出脸 → sdk≥15ms、faces=0、score 是个小正数。
         // 只在参数真的变化时打，稳态零开销。
         {
-            static double lastSig = -1e30;
             double sig = 0.0;
             for (int i = 0; i < P_COUNT; i++) sig = sig * 1.618 + s.panel[i];
             sig = sig * 1.618 + s.blur_type * 3.1 + s.skin_detect * 5.7 + s.smooth_mode * 9.3;
-            if (sig != lastSig) {
-                lastSig = sig;
+            if (d && sig != d->lastSig) {
+                d->lastSig = sig;
                 char pl[512];
                 int off = 0;
                 for (int i = 0; i < P_COUNT && off < (int)sizeof(pl); i++)
@@ -1348,7 +1388,7 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
         // ---- 输入编码自检：每实例只采一次（v2.0.1）----
         // 放在代理/全 0 分支之前，保证「第一次真正出图」就能采到。
         // 采样本身约 3 万次循环，对首帧的耗时影响在 0.1ms 量级。
-        if (!d->probedInput) {
+        if (d && !d->probedInput) {
             probeInputEncoding(srcPtr, srcRowBytes, w, h, isFloatDepth(srcDepth));
             d->probedInput = true;
         }
@@ -1404,16 +1444,30 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
         };
 
         // ---- 转成一整块连续 RGBA8（按线程复用缓冲，不再每帧分配 16MB）----
+        // 直通优化：输入输出都是 8bit、行无填充、bounds 一致时，引擎直接读源图、
+        // 写目标图，省掉「拷进 scratch → 处理 → 拷回 dst」两次全帧搬运
+        // （1080p 每帧 2×8.3MB）。src / dst 是宿主给的两张不同图像，引擎只读 src
+        // （见 beauty_core.h：「process() 允许 src == dst；实现方自己准备输出暂存」）。
         size_t need = (size_t)w * (size_t)h * 4;
         Scratch* scr = scratch();
-        scr->ensure(need);
-        if (scr->cap < need) {
-            status = kOfxStatErrMemory;
-            break;
+        const bool directIo = !isFloatDepth(srcDepth) && !isFloatDepth(dstDepth) &&
+                              srcRowBytes == w * 4 && dstRowBytes == w * 4 &&
+                              dw == w && dh == h;
+        unsigned char* pin;
+        unsigned char* pout;
+        if (directIo) {
+            pin = (unsigned char*)srcPtr;
+            pout = (unsigned char*)dstPtr;
+        } else {
+            scr->ensure(need);
+            if (scr->cap < need) {
+                status = kOfxStatErrMemory;
+                break;
+            }
+            pin = scr->in;
+            pout = scr->out;
+            blitFrame(srcDepth, srcPtr, srcRowBytes, kOfxBitDepthByte, pin, w * 4, w, h);
         }
-        unsigned char* pin = scr->in;
-        unsigned char* pout = scr->out;
-        blitFrame(srcDepth, srcPtr, srcRowBytes, kOfxBitDepthByte, pin, w * 4, w, h);
         double tIn = ms();
 
         // ---- 美颜 ----
@@ -1421,10 +1475,10 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
         // 仍失败则走透传 + 报错（旧报告 B5）。
         NamaEngine& engine = NamaEngine::inst();
         int slot = d ? d->slot : -1;
-        if (slot < 0) {
+        if (d && slot < 0) {
             std::string serr;
             slot = engine.acquireSlot(serr);
-            if (slot >= 0 && d) d->slot = slot;
+            if (slot >= 0) d->slot = slot;
         }
         // 非顺序渲染（随机访问 / 单帧）时不让引擎推进人脸跟踪帧序。
         bool ok = (slot >= 0) && engine.process(slot, pin, pout, w, h, s, sequential);
@@ -1450,8 +1504,9 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
             }
         }
 
-        // ---- 写回目标深度 ----
-        blitFrame(kOfxBitDepthByte, pout, w * 4, dstDepth, dstPtr, dstRowBytes, w, h);
+        // ---- 写回目标深度（直通模式下引擎已经直接写在目标图上）----
+        if (!directIo)
+            blitFrame(kOfxBitDepthByte, pout, w * 4, dstDepth, dstPtr, dstRowBytes, w, h);
         wroteDst = true;
         double tOut = ms();
         double tTotal = tOut;   // 与 ms() 共用同一个 QPC 起点，它本身就是总耗时
@@ -1472,7 +1527,8 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
     } while (0);
 
     // bounds 不一致时，把目标图主区域之外的剩余部分补满，杜绝边缘花屏（B8）。
-    if (wroteDst && (dw > w || dh > h))
+    // dstDepth 为空（宿主没给像素深度属性）时无从判断像素大小，宁可不补。
+    if (wroteDst && dstDepth && (dw > w || dh > h))
         edgeFillDst(dstDepth, dstPtr, dstRowBytes, dw, dh, w, h);
 
     gEffectHost->clipReleaseImage(sourceImg);

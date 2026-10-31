@@ -39,8 +39,14 @@ struct WarpParams {
 // 边界归零，所以 ROI 内外的像素不会出现错位接缝。
 // scratch 是调用方持有的复用缓冲（避免每帧 malloc），函数内部按需扩容。
 //
+// flipY（v3.0.5，必须与 detect() 收到的一致）：源缓冲第 0 行是不是画面
+// **最下面**一行。OFX/Resolve 是 true。三项里「上/下」是有语义的
+// （嘴线在眼线之下、下巴在嘴线之下），方向搞反会让瘦脸压到眉眼、
+// 下巴压到发际线 —— 而大眼是径向各向同性，反了也看不出来。
+//
 // 三项全 0 或脸框太小（< 8px）时直接返回，逐字节不动。
 void warpFace(unsigned char* rgba, int w, int h, const FaceBox& f,
-              const WarpParams& p, std::vector<unsigned char>& scratch);
+              const WarpParams& p, std::vector<unsigned char>& scratch,
+              bool flipY = true);
 
 }  // namespace beautycore
