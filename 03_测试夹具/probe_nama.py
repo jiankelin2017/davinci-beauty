@@ -7,8 +7,8 @@
 import os, sys, ctypes, zlib, struct, struct as _s
 from ctypes import wintypes
 
-BIN = r"C:\Users\Administrator\AppData\Local\Temp\e2e_beauty\bin"
-ASSETS = r"C:\Users\Administrator\AppData\Local\Temp\e2e_beauty\assets"
+BIN = os.path.expanduser("~") + r"\AppData\Local\Temp\e2e_beauty\bin"
+ASSETS = os.path.expanduser("~") + r"\AppData\Local\Temp\e2e_beauty\assets"
 
 
 # ---------- 极简 PNG 解码（纯 stdlib，仅支持 8bit / 非隔行） ----------

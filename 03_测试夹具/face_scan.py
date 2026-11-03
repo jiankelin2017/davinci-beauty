@@ -12,7 +12,7 @@ sys.path.insert(0, HERE)
 import sweep_v2 as sv  # noqa: E402  (复用 Driver/load_frame/掩码构建)
 
 PHOTO_DIR = os.environ.get(
-    "PHOTO_DIR", r"C:\Users\Administrator\Pictures")
+    "PHOTO_DIR", os.path.expanduser("~") + r"\Pictures")
 
 
 def main():

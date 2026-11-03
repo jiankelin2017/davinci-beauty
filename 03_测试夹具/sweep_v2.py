@@ -32,7 +32,7 @@ GW, GH = 80, 30
 RAMP = " .:-=+*#%@"
 EXTRA_FILE = os.path.join(HERE, "_sweep_extra.txt")
 PHOTO = os.environ.get("AB_PHOTO",
-                       r"C:\Users\Administrator\Pictures\A7300538.jpg")
+                       os.path.expanduser("~") + r"\Pictures\A7300538.jpg")
 
 CANDS = ["use_new_whiten", "color_level_v2", "whiten_v2", "beauty_mask_v",
          "lower_quality", "manual_scale"]

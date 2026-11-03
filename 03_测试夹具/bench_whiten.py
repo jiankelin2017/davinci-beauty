@@ -97,7 +97,7 @@ class Driver(object):
 
 
 def main():
-    photo = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\Administrator\Pictures\A7300538.jpg"
+    photo = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~") + r"\Pictures\A7300538.jpg"
     if not os.path.exists(photo):
         print("找不到照片：%s" % photo)
         return 2
