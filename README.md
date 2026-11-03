@@ -75,8 +75,10 @@ Resolve（OFX 宿主）
 
 ## 安装
 
+> **下载安装包**：[`DaVinciBeauty_Setup_v3.0.8.exe`](https://github.com/jiankelin2017/davinci-beauty/releases/download/v3.0.8/DaVinciBeauty_Setup_v3.0.8.exe)（4.57 MB，SHA256 `19A8F888…198B3F2`）　·　[全部版本](https://github.com/jiankelin2017/davinci-beauty/releases)
+
 1. **完全退出 DaVinci Resolve**（否则 DLL 被占用，安装会留下 `.locked-*` 残留文件）
-2. 以管理员身份运行 `01_ofx插件源码\install.bat`，或双击安装包 `DaVinciBeauty_Setup_v3.0.8.exe`
+2. 运行上面下载的安装包，或以管理员身份运行 `01_ofx插件源码\install.bat`（从源码安装）
 3. 启动 Resolve → 效果库 → **OpenFX → DaVinci Beauty → DaVinci Beauty 美颜** → 拖到片段上
 
 > 更新插件后必须**重启 Resolve**；OFX 缓存按「mtime + size」判断插件是否失效。
