@@ -3,9 +3,11 @@ DaVinci Beauty 源码备份
 备份时间：2026-10-14
 最后修订：2026-10-31（v3.0.8）
 
+
 一、版本要点
 v3.0.8 是交付前的工程收口版：画面算法零改动（18/18 逐字节不变），修好构建链路（中文路径 + 代码页导致的编译失败）、装机权限判据、每帧两次多余的 8.3MB 拷贝（1080p 24.5→20.5 ms），并把 14 个滑块全部纳入单项接线测试。
 v3.0.0 已把引擎从旧版闭源商业 SDK 整体替换为自研纯 CPU 美颜引擎（CoreEngine 3.1.39），人脸检测用自带 ONNX 模型，引擎内自动检测 GPU（仅 Windows）：换成带 GPU 支持的 onnxruntime.dll 即走 GPU，否则退回 CPU。公开接口不变，宿主零改动。
+
 
 二、当前状态
 
@@ -28,6 +30,7 @@ Resolve 内实测：空项目 1080p 播放稳定流畅
 仓库体积：约 2.5 MB（只有源码/文档/脚本）
 
 回滚：源码已纳入 git，用 git log / git checkout <commit> -- 01_ofx插件源码/src/
+
 
 三、目录与交付物
 
@@ -55,9 +58,11 @@ PROGRESS.md / README.md：状态、设计决策、参数、性能、自测说明
 
 FILELIST.txt：文件清单（SHA256 + 大小）；gen_filelist.py：清单生成器
 
+
 四、重新编译
 双击 build.bat，再跑 install.bat。
 编译环境 MSVC（沙箱拦截 reg.exe，vcvars64.bat 用不了，需手动设 INCLUDE/LIB/PATH）。本机验证：MSVC 14.51.36231 + Windows SDK 10.0.26100.0。
+
 
 五、未收录内容（需另行备份）
 
@@ -68,6 +73,7 @@ FILELIST.txt：文件清单（SHA256 + 大小）；gen_filelist.py：清单生�
 编译产物：obj\、out\、bundle\，可重建
 
 运行日志与任务队列：C:\ProgramData\DaVinciBeauty\logs\、jobs\、live\
+
 
 六、恢复方法
 
