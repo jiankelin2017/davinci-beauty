@@ -1,0 +1,16 @@
+{
+  "src": "C:/Users/Administrator/WorkBuddy/2026-10-14-13-17-08/beauty_probe/test_src.mp4",
+  "out": "C:/Users/Administrator/WorkBuddy/2026-10-14-13-17-08/beauty_probe/test_out.mp4",
+  "params": {
+    "blur_level": 70,
+    "clarity": 20,
+    "color_level": 15,
+    "red_level": 30,
+    "sharpen": 0,
+    "face_threed": 30,
+    "eye_bright": 50,
+    "remove_pouch_strength": 50
+  },
+  "blur_type": 1,
+  "preset": "libx264"
+}
