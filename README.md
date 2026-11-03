@@ -1,86 +1,146 @@
-DaVinci Beauty 源码备份
+# DaVinci Beauty
 
-备份时间：2026-10-14
-最后修订：2026-10-31（v3.0.8）
+> **DaVinci Resolve 的 OpenFX 美颜插件** —— 纯 CPU 实时处理，自动人脸识别，14 项美颜 / 美型参数，1080p 单帧约 20 ms。当前版本 **v3.0.8**（Windows）。
 
+---
 
-一、版本要点
-v3.0.8 是交付前的工程收口版：画面算法零改动（18/18 逐字节不变），修好构建链路（中文路径 + 代码页导致的编译失败）、装机权限判据、每帧两次多余的 8.3MB 拷贝（1080p 24.5→20.5 ms），并把 14 个滑块全部纳入单项接线测试。
-v3.0.0 已把引擎从旧版闭源商业 SDK 整体替换为自研纯 CPU 美颜引擎（CoreEngine 3.1.39），人脸检测用自带 ONNX 模型，引擎内自动检测 GPU（仅 Windows）：换成带 GPU 支持的 onnxruntime.dll 即走 GPU，否则退回 CPU。公开接口不变，宿主零改动。
+## 概览
 
+剪辑和调色时想给人物做「轻美颜」，但不想为每段素材导出到第三方软件再导回，也不想依赖云端授权的美颜 SDK。
 
-二、当前状态
+DaVinci Beauty 直接挂在 Resolve 的效果库里：
 
-编译：通过（build.ps1；build.bat 为薄壳；产物 252928 B，md5 40df78a2dc7bce61ed6f8f5e027114fe）
+- 参数随项目保存，渲染时逐帧处理，和调色链一起走；
+- 人脸检测 + 皮肤掩码，效果只落在皮肤区，眼睛、嘴巴自动保护；
+- 全部计算在本机 CPU 上完成（GPU 可选加速），无联网、无外部进程。
 
-装机：已装到 C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle，行为等价校验通过
+\* 八项美颜全 0 时，输出与输入**逐字节相同**。
 
-无宿主回归：23/23 PASS（含 14 个滑块逐个独奏）
+---
 
-逐字节回归：18/18
+## 功能
 
-一键验收：25 PASS / 0 FAIL / 0 WARN
+**7 项美肤 + 3 项细节/立体 + 3 项美形 = 14 个滑块**
 
-性能：1080p 8bit 单帧 24.5→20.5 ms
+| 组 | 参数 | 作用 |
+|---|---|---|
+| 美肤 | 磨皮 / 美白 / 红润 / 祛斑痘 / 黑眼圈 / 去法令纹 / 去眼袋 | 只作用于皮肤区 |
+| 细节 | 清晰 / 锐化 / 全局锐化 | 找回磨皮丢失的中高频细节 |
+| 立体 | 立体 | 鼻梁、颧骨高光 + 阴影塑形 |
+| 美形 | 瘦脸 / 大眼 / 下巴 | 基于人脸关键点的局部形变 |
 
-安装包：已构建 DaVinciBeauty_Setup_v3.0.8.exe（4.6 MB，含卸载器）
+**2 个下拉框**
 
-Resolve 内实测：空项目 1080p 播放稳定流畅
+| 下拉框 | 档位 | 说明 |
+|---|---|---|
+| 磨皮算法 | 双边滤波 / 高斯 / 弱磨皮 | 决定磨皮的滤波方式 |
+| 磨皮模式 | 人像 / 清晰 / 精细 / 轻磨皮 | 决定细节回填的强度与频段 |
 
-仓库体积：约 2.5 MB（只有源码/文档/脚本）
+**默认值**：磨皮 50、美白 30、红润 30，其余 0 —— 拖上去就有轻度美颜。
 
-回滚：源码已纳入 git，用 git log / git checkout <commit> -- 01_ofx插件源码/src/
+---
 
+## 技术架构
 
-三、目录与交付物
+```
+Resolve（OFX 宿主）
+   └─ ofx_plugin.cpp        OFX 协议：describe / render / 参数面板
+        └─ nama_engine.cpp  适配层：OFX 请求 → 引擎参数
+             └─ CoreEngine（beauty_core.cpp）   自研纯 CPU 美颜引擎
+                  ├─ beauty_face / beauty_onnx   人脸检测（ONNX 模型 + 推理运行时）
+                  ├─ beauty_smooth / beauty_freq 磨皮、清晰、频段回填
+                  ├─ beauty_warp                 瘦脸 / 大眼 / 下巴（几何形变）
+                  └─ beauty_region               语义区域（肤色掩码）
+```
 
-开发指南.md：开发入口，含 5 步工作流、目录地图、换机恢复、外部依赖
+几个关键设计：
 
-01_ofx插件源码/：OFX 插件 C++ 源码（当前主线）
+1. **皮肤掩码**：人脸框 + 10 个关键点 → 椭圆 ROI × 逐像素肤色权重 × 羽化；眼睛/嘴巴画保护区，避免眼白被磨糊；可选延伸到脖子。
+2. **异步检测**：人脸检测跑在独立线程，检测跟不上时沿用上一帧掩码（最多 6 帧），播放不卡顿；首帧同步兜底，避免「按需渲染」宿主里永久透传。
+3. **GPU 可选**：把推理运行时换成带 GPU 支持的构建版即自动走 GPU，否则自动退回 CPU，**画面结果不变**，只有速度差异。
+4. **无编译期硬依赖**：GPU 后端靠运行时动态探测，切换不需要重新编译。
 
-src/ofx_plugin.cpp：OFX 协议实现主体
+---
 
-src/nama_engine.cpp / .h：自研引擎适配层（纯 CPU 美颜 + ONNX 人脸检测）
+## 性能
 
-sdk/include/：OFX 官方头文件（编译必需）
+| 场景 | 数据 |
+|---|---|
+| 1080p 8bit 单帧 | 24.5 → **20.5 ms**（v3.0.8 直通优化，省掉两次全帧拷贝） |
+| 4K | 锐化中间结果改行缓存（-7.3%，v2.3.0 起） |
+| 引擎常驻 + 挂载预热 | 检测会话构建约 2.5 s，仅首次 |
+| 分发体积 | v3.0.0 起约 12 MB（旧方案约 160 MB） |
 
-build.bat / install.bat：编译与安装
+---
 
-PROGRESS.md / README.md：状态、设计决策、参数、性能、自测说明
+## 安装
 
-02_引擎资产/：仓库内只有 stage.bat（把 onnxruntime.dll + yunet.onnx 放回 ProgramData），二进制不入库
+1. **完全退出 DaVinci Resolve**（否则 DLL 被占用，安装会留下 `.locked-*` 残留文件）
+2. 以管理员身份运行 `01_ofx插件源码\install.bat`，或双击安装包 `DaVinciBeauty_Setup_v3.0.8.exe`
+3. 启动 Resolve → 效果库 → **OpenFX → DaVinci Beauty → DaVinci Beauty 美颜** → 拖到片段上
 
-03_测试夹具/：mock_host.py（19 项断言，支持 --bench）、bench_whiten.py、selftest_ofx.py、各阶段探针脚本
+> 更新插件后必须**重启 Resolve**；OFX 缓存按「mtime + size」判断插件是否失效。
 
-04_验收工具/：acceptance.py（一键验收 15 项）、baseline.py（逐字节回归）、perf_ab.py（性能 A/B）、baseline_manifest.txt、input_face.png
+### 重新编译
 
-05_安装包/：davincibeauty.nsi、build_nsis.py、davincibeauty_setup.py
+```
+01_ofx插件源码\build.bat      # 内部转调 build.ps1，需要 VS C++ 工具链 + Windows SDK
+01_ofx插件源码\install.bat    # 打包并安装到 OFX 插件目录
+```
 
-FILELIST.txt：文件清单（SHA256 + 大小）；gen_filelist.py：清单生成器
+构建产物体积约 247 KB，装机件与 `out\DaVinciBeauty.ofx` 行为等价。
 
+---
 
-四、重新编译
-双击 build.bat，再跑 install.bat。
-编译环境 MSVC（沙箱拦截 reg.exe，vcvars64.bat 用不了，需手动设 INCLUDE/LIB/PATH）。本机验证：MSVC 14.51.36231 + Windows SDK 10.0.26100.0。
+## 工程质量
 
+除了「能跑」，还带了完整的验收闭环：
 
-五、未收录内容（需另行备份）
+| 环节 | 内容 |
+|---|---|
+| **mock host** | Python 模拟最小 OFX 宿主，直接驱动插件跑 `describe → createInstance → render`，23 项断言（含 14 个滑块逐个独奏） |
+| **逐字节回归** | 18 条基线用例，改算法前后比对 md5 |
+| **一键验收** | `acceptance.py` 覆盖版本一致性、参数三表对齐、回归、接口契约、装机完整性，共 25 项 |
+| **构建可复现** | 链接加 `/Brepro`，同源码重编逐字节一致 |
 
-引擎运行时资产：02_引擎资产\（onnxruntime.dll 约 11MB、yunet.onnx 约 0.2MB），从交付包或已装机 bundle 取回
+---
 
-已安装插件：由 install.bat / 安装包生成，可重建
+## 版本演进
 
-编译产物：obj\、out\、bundle\，可重建
+| 版本 | 里程碑 |
+|---|---|
+| v2.0 | 引擎层替换为自研引擎，宿主层不动 |
+| v2.2.0 | 性能 3.2×（热点是锐化，不是磨皮） |
+| v2.3.1 | 统一更名 DaVinci Beauty |
+| **v3.0.0** | 彻底脱离旧版闭源商业 SDK，纯 CPU 引擎全量移植 + 人脸检测；分发体积 160 MB → 12 MB |
+| v3.0.2 | 修人脸检测预处理（归一化错误，导致清晰正脸却全局磨皮） |
+| v3.0.4 | 修帧行序（Resolve 给的是 bottom-up 帧，此前检测读反 → 0 脸） |
+| v3.0.5 | 修美形三项的 y 方向（此前只有大眼正常） |
+| v3.0.6 | 修下拉框参数映射（双边/高斯对调、高斯档回填恒 0） |
+| v3.0.7 | 放大四组档位差异（磨皮强度总增益 ×1.8） |
+| **v3.0.8** | 工程收口：构建链路、装机判据、性能直通、测试覆盖；**画面逐字节不变** |
 
-运行日志与任务队列：C:\ProgramData\DaVinciBeauty\logs\、jobs\、live\
+---
 
+## 仓库结构
 
-六、恢复方法
+```
+01_ofx插件源码/    C++ 源码（src/ + OFX 官方头文件）
+03_测试夹具/       无宿主回归测试、性能基准、诊断脚本
+04_验收工具/       一键验收、逐字节基线、性能 A/B、打包
+05_安装包/         NSIS 安装包构建脚本
+02_引擎资产/       运行时资产说明（二进制本身不入库）
+FILELIST.txt       全量文件清单（SHA256 + 大小）
+```
 
-把 01_ofx插件源码 放回任意目录，在 02_引擎资产\ 放好 onnxruntime.dll + yunet.onnx（从交付包或已装机 bundle 取回）
+仓库只包含源码、文档与脚本。二进制运行时、人脸检测模型、安装包与本地归档都不入库 —— 需要时从交付包或已装机的 bundle 取回。
 
-运行 build.bat 编译，再运行 install.bat 安装
+---
 
-启动 DaVinci Resolve，效果库 → OpenFX → DaVinci Beauty → 「DaVinci Beauty 美颜」
+## 已知边界
 
-注意：改了插件之后必须重启 Resolve。OFX 缓存按「mtime + size」判断插件是否失效。
+- **仅 Windows**：MSVC 构建，目标为 Resolve 的 Windows 版。
+- 磨皮 > 0 时「锐化」不生效（两者互斥）；需要锐利感请用「清晰」。
+- GPU 只是可选加速；没有 GPU 时效果完全一致，速度略慢。
+- 插件 ID `com.nama.davinci.beauty` 不可更改，否则 Resolve 找不到效果。
+- 面板改动后必须重启 Resolve 才会刷新。
