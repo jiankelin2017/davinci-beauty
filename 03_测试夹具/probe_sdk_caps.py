@@ -38,7 +38,7 @@ DLL = os.environ.get(
     "NAMA_OFX_DLL",
     r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
 ENGINE = os.environ.get("NAMA_ENGINE_DIR", os.path.dirname(DLL))
-PHOTO = os.environ.get("NAMA_PROBE_PHOTO", r"C:\Users\Administrator\Pictures\A7300538.jpg")
+PHOTO = os.environ.get("NAMA_PROBE_PHOTO", os.path.expanduser("~") + r"\Pictures\A7300538.jpg")
 W, H = 640, 394
 RAW = os.path.join(tempfile.gettempdir(), "nama_caps_in_%dx%d.raw" % (W, H))
 

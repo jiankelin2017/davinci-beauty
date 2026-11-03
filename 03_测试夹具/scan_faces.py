@@ -23,7 +23,7 @@ import sys
 import numpy as np
 from PIL import Image
 
-DEFAULT_DIR = r"C:\Users\Administrator\Pictures"
+DEFAULT_DIR = os.path.expanduser("~") + r"\Pictures"
 
 
 def _cascade_path():

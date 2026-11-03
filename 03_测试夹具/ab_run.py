@@ -16,7 +16,7 @@ import probe_ab as pa  # noqa: E402
 
 PHOTO = os.environ.get(
     "AB_PHOTO",
-    r"C:\Users\Administrator\Pictures\A7300538.jpg")
+    os.path.expanduser("~") + r"\Pictures\A7300538.jpg")
 
 
 def _load_panel(arg, default):

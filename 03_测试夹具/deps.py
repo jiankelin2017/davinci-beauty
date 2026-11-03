@@ -68,7 +68,7 @@ def try_load(dll):
 
 
 if __name__ == "__main__":
-    BIN = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\Administrator\AppData\Local\Temp\e2e_beauty\bin"
+    BIN = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~") + r"\AppData\Local\Temp\e2e_beauty\bin"
     for nm in ("CNamaSDK.dll", "fuai.dll", "w32-pthreads.dll"):
         p = os.path.join(BIN, nm)
         if not os.path.exists(p):
