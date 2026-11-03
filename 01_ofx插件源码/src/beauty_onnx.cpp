@@ -32,7 +32,7 @@ void onnxSetRuntimeDir(const char* dir) {
 namespace {
 // 动态加载 ONNX Runtime。
 //
-// 为什么不用导入库硬链接：那会让 obs-beauty.dll 在**加载阶段**就依赖
+// 为什么不用导入库硬链接：那会让上一代宿主的插件 DLL 在**加载阶段**就依赖
 // onnxruntime.dll —— 用户少装一个文件，整个滤镜就加载失败。动态加载后最坏
 // 情况只是「自研引擎降级」，默认的 core 路径完全不受影响。
 //

@@ -82,7 +82,7 @@ public:
 //
 // 用途有两个：
 //   * 证明 A/B 开关确实接上了（切过去画面应当变成完全没美颜的原图）；
-//   * 作为自研引擎出错时的安全降级目标（比「滤镜整体直通」更安全：OBS 侧的
+//   * 作为自研引擎出错时的安全降级目标（比「滤镜整体直通」更安全：上一代宿主 侧的
 //     尺寸/纹理/自检逻辑仍然照常跑一遍，不会因为降级而悄悄失效）。
 //
 // 刻意**不**做任何图像处理：一旦它产出与输入不一致的像素，就说明骨架接错了。
@@ -123,7 +123,7 @@ public:
     void release() override {}
 };
 
-// smoothstep 的 C++ 版（OBS 的 effect 里没有内置，这里自己写）
+// smoothstep 的 C++ 版（上一代宿主 的 effect 里没有内置，这里自己写）
 inline float smoothStep(float a, float b, float x) {
     if (b <= a) return (x < a) ? 0.0f : 1.0f;
     float t = (x - a) / (b - a);
@@ -1312,13 +1312,13 @@ public:
     // 预热：加载 YuNet 人脸模型（一次性，约 100~300 ms）。
     //
     // 3.1.4 修：这里以前是空壳（只 clear err 就返回），而 ensureReady() 是**唯一**
-    // 做 face_.load() 的地方，obs-beauty.cpp 又从不直接调 ensureReady() —— 结果
-    // OBS 里 faceOk_ 永远是 false，updateMask() 第 764 行第一句就 return false：
+    // 做 face_.load() 的地方，上一代宿主的插件实现又从不直接调 ensureReady() —— 结果
+    // 上一代宿主 里 faceOk_ 永远是 false，updateMask() 第 764 行第一句就 return false：
     //   · 磨皮退回全帧（背景一起磨，CPU 顶到最高）；
     //   · 清晰 / 美白 / 红润 / 五官五项 / 脸内锐化全部落在 if (haveMask) 里，
     //     整片不执行 —— 面板 11 项只剩磨皮和全局锐化能用。
     // 离线脚本（core_probe / golden_capture）是显式调 ensureReady() 的，所以离线
-    // 对拍一直是带掩码的：OBS 里跑的画面和验收过的画面根本不是一回事。
+    // 对拍一直是带掩码的：上一代宿主 里跑的画面和验收过的画面根本不是一回事。
     bool preheat(std::string& err, bool& didInit) override {
         didInit = false;
         err.clear();
@@ -1575,7 +1575,7 @@ public:
                 // 成为四档里最轻的一档（比「轻磨皮」0.40 还轻），档位之间才拉得开。
                 if (s.blur_type == 2) I *= 0.30f;
                 // v3.0.5：轻磨皮档（smooth_mode=3）—— 整体最轻。
-                // 依据是 OBS 侧四档实测的「细频保留率」92.3 / 94.3 / 96.8 / 96.7%：
+                // 依据是 上一代宿主 侧四档实测的「细频保留率」92.3 / 94.3 / 96.8 / 96.7%：
                 // 第 4 档与第 3 档几乎并列，所以它靠**降强度**而不是靠多回填来
                 // 实现，才与「轻」这个字对得上（原名「朦胧磨皮」是错的，见
                 // ofx_plugin.cpp kSmoothModeChoices 的注释）。
@@ -1977,7 +1977,7 @@ public:
         maskValid_ = false;
         everHadMask_ = false;
         maskAge_ = 999;
-        // 3.1.21：持久线程池也要收掉。否则 OBS 卸载滤镜后 worker 线程还在，
+        // 3.1.21：持久线程池也要收掉。否则 上一代宿主 卸载滤镜后 worker 线程还在，
         // 它们持有本 DLL 里的代码地址 —— 模块卸载时就是一次野跳转。
         beautycore::poolShutdown();
     }
@@ -2048,7 +2048,7 @@ private:
         if (asyncOn_) {
             // v3.0.3：**从没拿到过掩码时，先同步做一次检测**。
             //
-            // 异步的前提是「宿主会连续渲染很多帧」—— OBS 30fps 下成立；但
+            // 异步的前提是「宿主会连续渲染很多帧」—— 上一代宿主 30fps 下成立；但
             // Resolve / 单帧导出这类按需渲染的宿主可能只渲染一两帧，worker 的
             // 结果永远赶不回来，everHadMask_ 恒为 false，process() 就一直走
             // 「首帧透传」分支：表现为**插件完全没效果**（实测日志 sdk≈1ms、
@@ -3297,7 +3297,7 @@ IBeautyEngine* createEngine() {
 }  // namespace
 
 // 皮肤判据快照（C20，只用于日志）。定义放在匿名命名空间外面 —— 否则外部
-// （obs-beauty.cpp）链接不到，与上面 beautyCoreSetSmoothParams 同一规则。
+// （上一代宿主的插件实现）链接不到，与上面 beautyCoreSetSmoothParams 同一规则。
 // 内部的 g_skin* 仍在匿名空间里，同一 TU 内可见。
 const char* beautyCoreSkinInfo() {
     static char buf[192];

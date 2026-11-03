@@ -1,10 +1,10 @@
 # DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v3.0.8）
 
-一个给 DaVinci Resolve Studio 21.1 用的 OpenFX 滤镜，效果引擎是 OBS 美颜 3.1.39 自研的
-纯 CPU 美颜引擎（CoreEngine），人脸检测用 ONNX YuNet，并在引擎内部**自动检测 GPU**
-（仅 Windows DirectML）：把 onnxruntime.dll 换成 onnxruntime-directml 构建版，人脸推理
+一个给 DaVinci Resolve Studio 21.1 用的 OpenFX 滤镜，效果引擎是自研引擎 3.1.39 的
+纯 CPU 美颜引擎（CoreEngine），人脸检测用 ONNX 模型，并在引擎内部**自动检测 GPU**
+（仅 Windows）：把 onnxruntime.dll 换成带 GPU 支持的构建版，人脸推理
 就自动走 GPU，否则自动退回 CPU。装上以后它就是一个普通滤镜：拖到片段上，拖滑块，
-检视器实时刷新。v3.0.0 起彻底脱离闭源 FaceUnity NamaSDK。
+检视器实时刷新。v3.0.0 起彻底脱离旧版闭源商业 SDK。
 
 这是本项目当前的主交付形态。早期做的「工作区 → 脚本」Lua 版已移出脚本菜单
 （代码保留在 `C:\ProgramData\DaVinciBeauty\disabled_scripts\`），两条路线不再并存。
@@ -45,7 +45,7 @@ DLL（此前 MSVC 会写 PE 时间戳，每次重编 md5 都变，「装机 == �
 文档里的 md5 也永远过期）。本次连续两次 `build.ps1` 的 md5 都是
 `40df78a2dc7bce61ed6f8f5e027114fe`，acceptance 的字节判据从此是硬判据。
 
-**（6）清死代码 + 两处 UB 苗头。** 删掉 v2.x NamaSDK 遗留的 GL 隐藏窗口、SDK 道具池
+**（6）清死代码 + 两处 UB 苗头。** 删掉 v2.x 旧版闭源 SDK 遗留的 GL 隐藏窗口、SDK 道具池
 `Slot`（60 行结构体 + 注释）、渲染临时缓冲、区域映射表等 20 个成员，以及 7 个只有声明
 没有定义的方法。另修：`faceScore_` 是 `float` 却接收 `double`（C4244 告警，改 double）；
 `version()` 返回可变函数静态 `std::string` 的 `c_str()`，而调用方写的是
@@ -216,20 +216,20 @@ v3.0.3 修完三个「假故障」后，Resolve 里 `sdk` 耗时已正常（≥1
 
 ## v3.0.2 变更（2026-10-31，人脸检测预处理修正）
 
-**修复「清晰正脸却全局磨皮」**：YuNet 检测输入预处理从归一化（`(x-127.5)/128`）改回**原始 0-255**（实跑模型验证归一化会让检测全部归零）。详见 `开发文档.md` §2。版本号 `3.0.1 → 3.0.2`（修订位 +1）。
+**修复「清晰正脸却全局磨皮」**：人脸检测输入预处理从归一化（`(x-127.5)/128`）改回**原始 0-255**（实跑模型验证归一化会让检测全部归零）。详见 `开发文档.md` §2。版本号 `3.0.1 → 3.0.2`（修订位 +1）。
 
 ## v3.0.0 变更（2026-10-31，开源引擎 + 人脸推理 GPU 自动检测）
 
-**架构级变更：移除闭源 FaceUnity NamaSDK，引擎层整体替换为 OBS 美颜 3.1.39 的自研
-纯 CPU 美颜引擎（CoreEngine），人脸检测用 ONNX YuNet。**
+**架构级变更：移除旧版闭源商业 SDK，引擎层整体替换为自研引擎 3.1.39 的
+纯 CPU 美颜引擎（CoreEngine），人脸检测用 ONNX 模型。**
 
 - **CPU 全量移植**：14 项美颜 / 美型效果全部在 CPU 上逐字节还原，不再依赖任何闭源 DLL；
   引擎接口（`IBeautyEngine::process`）与 `BeautySettings` 内存布局与旧版 `NamaSettings`
   逐字段一致（美型三项下标 11/12/13 = 瘦脸 / 大眼 / 下巴），宿主 `ofx_plugin.cpp` 零改动。
-- **人脸推理 GPU 自动检测（DirectML）**：引擎启动探测 ONNX Runtime 的 DirectML 执行提供器。
-  把 `02_引擎资产/onnxruntime/onnxruntime.dll` 换成 `onnxruntime-directml` 构建版即启用 GPU，
+- **人脸推理 GPU 自动检测**：引擎启动探测 GPU 推理后端。
+  把 `02_引擎资产/onnxruntime/onnxruntime.dll` 换成带 GPU 支持的构建版即启用 GPU，
   否则自动退回 CPU。零编译耦合 —— 完全靠"换 DLL"切换，用 `BEAUTY_GPU` 环境变量可强制。
-- **装机资产从 ~160MB NamaSDK 降到两个文件**：`onnxruntime.dll`（CPU 构建版，约 11MB）
+- **装机资产从 ~160MB 旧版闭源 SDK 降到两个文件**：`onnxruntime.dll`（CPU 构建版，约 11MB）
   + `yunet.onnx`（约 0.23MB）。`install.bat` / NSIS 安装包 / acceptance 三表同步切换。
 - **版本号主版本 +1**（2.3.1 → 3.0.0）：按"大版本 + 架构重写"递增规则。
 
@@ -346,17 +346,17 @@ v3.0.3 修完三个「假故障」后，Resolve 里 `sdk` 耗时已正常（≥1
 | 4K DCI | 8.85 M | 180.7 ms | 5.5 fps |
 
 数字来自 C ABI 自测路径（直接调 `NamaEngine::process`，绕开 OFX 与宿主），
-每档 3 次取中位。比 OBS 侧线性拟合外推的 226 ms 好一些，但 **4K 实时预览仍然跑不动**，
+每档 3 次取中位。比引擎侧线性拟合外推的 226 ms 好一些，但 **4K 实时预览仍然跑不动**，
 需要开 Render Cache 或降预览分辨率。
 
 ## v2.0 变更（2026-10-26，引擎回移）
 
-v2.0 把 **OBS 美颜插件 v3.0.19 的引擎层整体回移**到本工程，宿主层（OpenFX 协议、
+v2.0 把 **上一代引擎 v3.0.19 的引擎层整体回移**到本工程，宿主层（OpenFX 协议、
 装机、验证夹具）保持 v1.51 不动。决策依据与代价见文末「为什么是回移而不是重做」。
 
 | 项 | v1.51 | v2.0 |
 |---|---|---|
-| 引擎来源 | 自研（1.x 线） | OBS 3.0.19（同一套代码的回移） |
+| 引擎来源 | 自研（1.x 线） | 上一代引擎 3.0.19（同一套代码的回移） |
 | 参数数量 | 8 个滑块 + 2 个选项 | 11 个滑块 + 3 个选项（含 2 个隐藏） |
 | 磨皮曲线 | 10 档即接近饱和 | 线性（0 → 100 单调递增） |
 | 默认磨皮 | 20 | **62**（v2.0.3；v2.0 曾是 50，按竞品 GT 插值上移到 62） |
@@ -377,11 +377,11 @@ v2.0 把 **OBS 美颜插件 v3.0.19 的引擎层整体回移**到本工程，宿
 **两个隐藏参数**（`OfxParamPropSecret`，面板不显示但接线保留）
 
 - 锐化：磨皮 > 0 时 SDK 贡献恒为 0，这是 v1.51 就有的结论。
-- 祛斑痘：v2.0 回移后实测在当前调用链上逐字节无变化（blur=0/50、delspot=50/100 四种组合改动像素都是 0）。OBS 侧记录的效果量 +9.4% 出现在「同时带 sharpen=4」的那一组，而磨皮开启时本项目不下发 sharpen，所以那个增益很可能来自 sharpen。
+- 祛斑痘：v2.0 回移后实测在当前调用链上逐字节无变化（blur=0/50、delspot=50/100 四种组合改动像素都是 0）。引擎侧记录的效果量 +9.4% 出现在「同时带 sharpen=4」的那一组，而磨皮开启时本项目不下发 sharpen，所以那个增益很可能来自 sharpen。
 
 ## 为什么是回移而不是重做（决策记录）
 
-两条代码线是同一份引擎的两个宿主壳：v1.51 的引擎曾移植进 OBS，OBS 那条线随后
+两条代码线是同一份引擎的两个宿主壳：v1.51 的引擎曾移植进上一代宿主，那条线随后
 独立迭代了 3.0.x 共十九个版本，现在把成果回移回来。
 
 | 证据 | 数值 |
@@ -394,10 +394,10 @@ v2.0 把 **OBS 美颜插件 v3.0.19 的引擎层整体回移**到本工程，宿
 回移后必须重新标定的两项，原因都是**曲线模型变了**，不是回移出错：
 
 1. **磨皮**：v1.51 的滑块 10 档就接近饱和（实测 mad 10 档 0.167、100 档 0.207，只差
-   1.24 倍），OBS 3.0.8 改成了「SDK 满强度 + CPU 线性混合」，所以同名的 20 档在 v2.0
+   1.24 倍），上一代引擎 3.0.8 改成了「SDK 满强度 + CPU 线性混合」，所以同名的 20 档在 v2.0
    里只有 v1.51 的约 1/5 强度。处理办法是把默认值提上去（v2.0 提到 50，
    v2.0.3 按竞品 GT 插值提到 62），文档写明换算。
-2. **美白**：OBS 3.0.18 以第三方商业美颜为锚点（55 档 +5.66、满档约 +10）反解出
+2. **美白**：上一代引擎 3.0.18 以第三方商业美颜为锚点（55 档 +5.66、满档约 +10）反解出
    kMax=0.16；v1.51 的 0.40 对应满档 +25，比商业产品强约 2.5 倍。v2.0 采用 0.16。
 
 两项都属可回退决策：想回到 v1.51 的强度，改 `applyRegionEffects` 的 kMax 与
@@ -452,7 +452,7 @@ Resolve 把扫描结果缓存在
 3. 把 **DaVinci Beauty 美颜** 拖到片段上
 4. 右侧 **Inspector** 里出现参数面板，拖滑块调效果
 
-分组名叫 `DaVinci Beauty`，搜不到就在搜索框输入 `Nama`。
+分组名叫 `DaVinci Beauty`。
 
 **注意：OFX 插件不在「工作区 → 脚本」里。** 那是 Fusion 脚本的入口，两条通道完全独立。
 
@@ -496,7 +496,7 @@ Resolve 把扫描结果缓存在
 
 1. **磨皮和锐化互斥。** 磨皮一开，锐化的改动量实测恒为 0。想要锐化，先把磨皮拉到 0。
 2. **全局滤镜已永久关闭。** 引擎的 `face_beautification` 道具里挂着一个作用于**整帧**的
-   色调滤镜（`filter_name` + `filter_level`）。v1.3 早期版本照抄 OBS 插件，把它设成
+   色调滤镜（`filter_name` + `filter_level`）。v1.3 早期版本照抄上一代插件，把它设成
    `ziran2` / `0.4`，并且「只要任意一项效果不为 0 就打开」——结果是把磨皮从 0 拉到 1，
    整帧（含背景、衣服、字幕）会被提亮 **+16/+14/+14**，灰阶曲线上是抬暗部：
    输入 25→34、128→144、229→230。这就是「磨皮会给所有画面加亮度」的成因。
@@ -522,8 +522,8 @@ Resolve 把扫描结果缓存在
 | 8bit（Byte） | ~0.8 ms | 11–15 ms | ~0.8 ms | **~13–16 ms** | 60–75 fps |
 | 32bit 浮点（Float） | ~3.5 ms | 15–16 ms | ~3.5 ms | **~18–20 ms** | 50–55 fps |
 
-耗时的大头在人脸检测（ONNX YuNet）+ 美颜处理，像素格式转换只占 2–7 ms。
-（表内毫秒数为 NamaSDK 基线期实测，v3.0.0 开源引擎版将在实机上重新标定。）
+耗时的大头在人脸检测（ONNX 模型推理）+ 美颜处理，像素格式转换只占 2–7 ms。
+（表内毫秒数为旧引擎基线期实测，v3.0.0 开源引擎版将在实机上重新标定。）
 同机负载高时 SDK 那一段会涨到 20–30 ms，仍够 30fps 时间线实时预览。
 
 **4K 全开单帧的演进**：v2.1.2 是 205 ms → v2.2.0（多线程 + SIMD + 合并转换）
@@ -535,7 +535,7 @@ Resolve 把扫描结果缓存在
 美白那一路是插件自己的 CPU 掩码（SDK 的 `color_level` 是整帧提亮，已恒关）：
 1080p 约 **4.5 ms/帧**，只在「检出人脸 + 美白 > 0」时运行。这一项在 v1.4 验收时
 从 **38 ms 优化到 4.5 ms**（8.4 倍）：掩码降到 1/4 分辨率、可分离羽化、缓冲复用、
-提亮量预生成整数表。基准脚本：`beauty_probe\bench_whiten.py`。
+提亮量预生成整数表。基准脚本：`03_测试夹具\bench_whiten.py`。
 
 四条关键设计：
 
@@ -613,19 +613,19 @@ ofx\
 
 ```
 :: 协议回归：load → describe → describeInContext → createInstance → render
-python C:\...\beauty_probe\mock_host.py
+python ..\03_测试夹具\mock_host.py
 
 :: 再加 1080p 性能基准
-python C:\...\beauty_probe\mock_host.py --bench
+python ..\03_测试夹具\mock_host.py --bench
 ```
 
 用真实素材帧跑基准（比合成图准，纯黑底会干扰人脸检测）：
 
 ```
-set NB_BENCH_RAW=C:\...\beauty_probe\real_frame.raw
+set NB_BENCH_RAW=..\03_测试夹具\real_frame.raw
 set NB_BENCH_W=1080
 set NB_BENCH_H=1920
-python C:\...\beauty_probe\mock_host.py --bench
+python ..\03_测试夹具\mock_host.py --bench
 ```
 
 `real_frame.raw` 是裸 RGBA 帧，用 ffmpeg 从素材抽：
@@ -645,11 +645,11 @@ ffmpeg -ss 5 -i 素材.mp4 -frames:v 1 -pix_fmt rgba -f rawvideo real_frame.raw
 
 ```
 :: 引擎直测（不经过 OFX 协议）：初始化 → 渲染 → 落盘
-python C:\...\beauty_probe\selftest_ofx.py 70 15
-python C:\...\beauty_probe\selftest_ofx.py 0 0     :: 全 0 应逐字节透传
+python ..\03_测试夹具\selftest_ofx.py 70 15
+python ..\03_测试夹具\selftest_ofx.py 0 0     :: 全 0 应逐字节透传
 
 :: 美白 CPU 掩码成本（同一帧只切 color_level=0/100）
-python C:\...\beauty_probe\bench_whiten.py [照片] [宽] [高] [次数]
+python ..\03_测试夹具\bench_whiten.py [照片] [宽] [高] [次数]
 ```
 
 ## 卸载

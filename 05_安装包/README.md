@@ -6,7 +6,7 @@
 
 | 文件 | 说明 |
 |---|---|
-| `build\DaVinciBeauty_Setup_v<版本>.exe` | **单文件安装包**。双击即装，内置插件 + 自研美颜/AI 引擎（ONNX Runtime + YuNet 模型，约 12 MB），不再依赖闭源 SDK。v3.0.8 已构建（4.6 MB，含卸载器），可用 `build_nsis.py` 重建 |
+| `build\DaVinciBeauty_Setup_v<版本>.exe` | **单文件安装包**。双击即装，内置插件 + 自研美颜/AI 引擎（推理运行时 + 人脸检测模型，约 12 MB），不再依赖闭源 SDK。v3.0.8 已构建（4.6 MB，含卸载器），可用 `build_nsis.py` 重建 |
 | `build\DaVinciBeauty_Setup_v<版本>_sandbox.exe` | 沙箱包，仅 `--sandbox` 构建时产出。装到 `DaVinciBeautySandbox.ofx.bundle`，不影响正式安装 |
 | `davincibeauty.nsi` | NSIS 安装脚本（安装/卸载逻辑都在这里） |
 | `build_nsis.py` | 构建器：收集资源 + 调 makensis 编译出 exe |
@@ -23,7 +23,7 @@
 ```
 :: 直接出正式包（日常就用这条）
 python build_nsis.py
-→ build\DaVinciBeauty_Setup_v<版本>.exe（版本取自 src\nama_engine.h，当前 3.0.8），已复制到 D:\插件\ 根目录同名文件
+→ build\DaVinciBeauty_Setup_v<版本>.exe（版本取自 src\nama_engine.h，当前 3.0.8），并复制一份到仓库根目录同名文件
 
 :: 改过安装脚本、想先试一遍又不想弄脏正式安装时，才需要沙箱
 python build_nsis.py --sandbox
@@ -36,11 +36,11 @@ python build_nsis.py --sandbox
 
 | 位置 | 说明 |
 |---|---|
-| `D:\插件\01_验证沙箱安装.bat` | **根目录快捷入口**（`01_` 前缀，排最前），双击即可，内部转调本目录真身 |
+| `..\01_验证沙箱安装.bat` | **上级目录快捷入口**（`01_` 前缀，排最前），双击即可，内部转调本目录真身 |
 | `DaVinciBeauty\05_安装包\验证沙箱安装.bat` | 真身（改逻辑只改这个） |
-| 资源管理器地址栏粘贴 `D:\插件\DaVinciBeauty\05_安装包` | 直接进目录找 |
+| 资源管理器地址栏粘贴 `..\05_安装包` | 直接进目录找 |
 
-脚本会自动找安装包（同目录 / 上级 / `D:\插件` 根 / `build\`），放哪都能跑。
+脚本会自动找安装包（同目录 / 上级 / 再上级 / `build\`），放哪都能跑。
 运行过程弹两次 UAC，点「是」。第一阶段跑完会 `pause`，看清楚结果再按任意键继续卸载。
 
 ## 使用
@@ -72,7 +72,7 @@ C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\
     Contents\
         Win64\                        <- OFX 规范要求的二进制层
             DaVinciBeauty.ofx            插件本体
-            onnxruntime.dll  约 11 MB   ONNX Runtime（CPU 构建版；换 onnxruntime-directml 构建版即可启用 GPU）
+            onnxruntime.dll  约 11 MB   推理运行时（CPU 构建版；换带 GPU 支持的构建版即可启用 GPU）
             yunet.onnx        约 0.2 MB  本地人脸检测模型
 ```
 

@@ -8,36 +8,38 @@
   `net session` 改为「能否创建目标目录」，受限管理员令牌下不再误报；③ 8bit 且无行填充
   时引擎直接读写宿主图像，省掉两次全帧拷贝，1080p 实测 24.5→20.5 ms（-16%）；
   ④ mock host 新增「14 个滑块逐个独奏」用例（23 项），补上立体/亮眼/去眼袋/去法令纹/
-  祛斑/红润从未单独测过的空白；⑤ 清掉 v2.x NamaSDK 遗留的 20 个死成员与死方法声明，
+  祛斑/红润从未单独测过的空白；⑤ 清掉 v2.x 旧版闭源 SDK 遗留的 20 个死成员与死方法声明，
   修掉 `faceScore_` 的 double→float 截断告警与 `version()` 的可变静态串悬空风险。
-  v3.0.7：加强磨皮强度并放大四组档位差异 —— 磨皮引入「强度总增益」dst=src+(dst−src)×1.8（满档人脸区平均改动 1.01→1.82 灰阶、峰值 13→23），高斯档半径 ×2、弱磨皮 0.5→0.30、清晰/精细回填增益 4.0/5.5 + 中频 0.45/0.75、轻磨皮 0.55→0.40；v3.0.6：修「磨皮算法 / 磨皮模式」两个下拉框的面板侧缺陷 —— 参数读取里的 SDK 时代重映射把「双边滤波」和「高斯」对调，且高斯档下回填强度恒 0 使磨皮模式四档失效；v3.0.5：修美形三项的 y 方向 —— 瘦脸/下巴此前把「视觉下方」算到了额头发际线，只有径向各向同性的大眼不受影响；并把「磨皮算法」三档与「磨皮模式」四档真正接线；v3.0.4：修正帧行序 —— OFX/Resolve 给的是 bottom-up 帧，检测此前按 top-down 读，脸是上下颠倒的，真机 1080×1920 帧实测 score 0.2519/0 脸 → 0.9333/1 脸；v3.0.3：修掉三个「假故障」——离线自测夹具把文件路径当图像、异步检测在按需渲染宿主里永久透传、参数句柄失败静默给 0；v3.0.2 修正人脸检测预处理为 raw 0-255；v3.0.0 彻底移除 FaceUnity NamaSDK，改用 OBS 自研纯 CPU 美颜引擎 + ONNX 人脸检测，支持 GPU 自动检测）**
-- 备份内容：**源码、文档、脚本**。`out/`、`obj/`、`bundle/`、`__pycache__` 是本地
-  构建产物，不计入清单；`FILELIST.txt` 只列源码/文档，每个文件带 SHA256
-- 文件数：**140 个，合计约 3.25 MB**（含测试输入帧 `probe_in.raw` / `input_face.png`；
-  03/04/05 历史目录与探针输出不计入。以 `FILELIST.txt` 头部为准；由
-  `gen_filelist.py` 生成，改完源码重跑一次即可）
+  v3.0.7：加强磨皮强度并放大四组档位差异 —— 磨皮引入「强度总增益」dst=src+(dst−src)×1.8（满档人脸区平均改动 1.01→1.82 灰阶、峰值 13→23），高斯档半径 ×2、弱磨皮 0.5→0.30、清晰/精细回填增益 4.0/5.5 + 中频 0.45/0.75、轻磨皮 0.55→0.40；v3.0.6：修「磨皮算法 / 磨皮模式」两个下拉框的面板侧缺陷 —— 参数读取里的 SDK 时代重映射把「双边滤波」和「高斯」对调，且高斯档下回填强度恒 0 使磨皮模式四档失效；v3.0.5：修美形三项的 y 方向 —— 瘦脸/下巴此前把「视觉下方」算到了额头发际线，只有径向各向同性的大眼不受影响；并把「磨皮算法」三档与「磨皮模式」四档真正接线；v3.0.4：修正帧行序 —— OFX/Resolve 给的是 bottom-up 帧，检测此前按 top-down 读，脸是上下颠倒的，真机 1080×1920 帧实测 score 0.2519/0 脸 → 0.9333/1 脸；v3.0.3：修掉三个「假故障」——离线自测夹具把文件路径当图像、异步检测在按需渲染宿主里永久透传、参数句柄失败静默给 0；v3.0.2 修正人脸检测预处理为 raw 0-255；v3.0.0 彻底移除旧版闭源商业 SDK，改用自研纯 CPU 美颜引擎 + ONNX 人脸检测，支持 GPU 自动检测）**
+- 备份内容：**源码、文档、脚本**。二进制运行时/模型资产、构建产物（`out/`、`obj/`、
+  `bundle/`、`__pycache__`）与本地归档都不入库，不计入清单；`FILELIST.txt` 只列
+  仓库内的源码/文档/脚本，每个文件带 SHA256
+- 文件数：**123 个，合计约 2.54 MB**（含输入源图 `input_face.png`；`probe_in.raw`
+  等大体积素材不计入。以 `FILELIST.txt` 头部为准；由 `gen_filelist.py` 生成，
+  它只收录 git 已跟踪的文件，改完源码重跑一次即可）
 - 本地回滚副本（`src/_backup_before_*`）**不**计入清单，只作修复前留档
 
 ## 目录形态（2026-10-31 整合后）
 
-现在**只有一个目录** `D:\插件\DaVinciBeauty_整合_20261031\`，工作区与交付包合一：
+本仓库就是一个完整工作区：源码 + 文档 + 工具都在 `01_ofx插件源码 / 03_测试夹具 /
+04_验收工具 / 05_安装包 / 02_引擎资产` 下，根目录放清单与交付说明。
 
-- **工作区形态**（本目录）：主线源码 + 文档 + 工具 + 引擎资产，外加 `03/04/05` 历史目录、
-  `_dbgtest`、构建产物（`out/ obj/ bundle/`）与 `.git`（442 个跟踪文件）。
-- **交付包形态**：`04_验收工具\package.py` 用 `--name` 生成一个**独立目录**，只含主线
-  （`01_ofx插件源码 / 03_测试夹具 / 04_验收工具 / 02_引擎资产 / 05_安装包` + 文档），
-  **不含** `03/04/05`、`_dbgtest`、构建产物与 `.git`。
-- 本目录根的 `MANIFEST.txt`、`安装说明.txt`、`stage_engine.bat`、`DaVinciBeauty_Setup_v3.0.8.exe`
-  是 v3.0.8 那次交付的留档。`MANIFEST.txt` 只覆盖**交付子集**（140 个文件），
-  不覆盖 `03/04/05`、`.git`、构建产物；**全仓校验看 `FILELIST.txt` 与 `git status`**。
-- `package.py` 已加防呆：目标目录 == 本仓库时直接拒绝，避免把 `.git`（148 MB）哈希进清单，
+- **仓库里有什么**：源码、测试脚本、验收工具、文档，以及 `02_引擎资产/stage.bat`
+  ——「把运行时资产放回 ProgramData」的入口脚本。
+- **仓库里没有什么**（本地保留、不入库）：推理运行时 DLL 与人脸检测模型（体积大，
+  从交付包或已装机的 bundle 取回）、构建产物（`out/ obj/ bundle/`）、安装包 exe、
+  本地归档 `_archive/`。
+- 根目录的 `MANIFEST.txt`、`安装说明.txt`、`stage_engine.bat`、安装包 exe 是 v3.0.8 那次
+  交付的留档，只在本地（`MANIFEST.txt` 由 `package.py` 生成，覆盖含二进制的交付子集），
+  不入库；仓库内的完整性校验看 `FILELIST.txt` —— 它只列已跟踪的源码/文档。
+- `package.py` 已加防呆：目标目录 == 本仓库时直接拒绝，避免把 `.git` 哈希进清单，
   或 `--force` 把仓库删掉重来。
 
 ## 当前状态（2026-10-31，v3.0.8）
 
-**v3.0.0 已把引擎从闭源 FaceUnity NamaSDK 整体替换为 OBS 自研的纯 CPU 美颜引擎
-（CoreEngine，对应 OBS 3.1.39），人脸检测用自带 ONNX YuNet 模型，并在引擎内自动检测
-GPU（仅 Windows DirectML）：把 `onnxruntime.dll` 换成 `onnxruntime-directml` 构建版，
+**v3.0.0 已把引擎从旧版闭源商业 SDK 整体替换为自研的纯 CPU 美颜引擎
+（CoreEngine，对应引擎 3.1.39），人脸检测用自带的 ONNX 模型，并在引擎内自动检测
+GPU（仅 Windows）：把 `onnxruntime.dll` 换成带 GPU 支持的构建版，
 人脸推理就自动走 GPU，否则自动退回 CPU。公开接口不变，宿主（ofx_plugin.cpp）零改动。**
 
 **v3.0.8 是交付前的工程收口版：画面算法零改动（18/18 逐字节不变），修好构建链路
@@ -45,11 +47,11 @@ GPU（仅 Windows DirectML）：把 `onnxruntime.dll` 换成 `onnxruntime-direct
 （1080p 24.5→20.5 ms），并把 14 个滑块全部纳入单项接线测试。**
 变更细节见 `01_ofx插件源码/README.md` 的「v3.0.8 变更」与 `PROGRESS.md`。
 
-演进主线：v2.0 把**引擎层整体替换为 OBS 美颜插件 3.0.19**（宿主层保持 v1.51）；
+演进主线：v2.0 把**引擎层整体替换为自研引擎 3.0.19**（宿主层保持 v1.51）；
 之后 v2.2.0 做性能 3.2×、v2.2.3 整理面板与默认档、v2.3.0 再压内存流量、v2.3.1 统一更名
-DaVinci Beauty；v3.0.0 进一步**脱离 NamaSDK**，改用完全自研、可自由分发的引擎。
+DaVinci Beauty；v3.0.0 进一步**脱离旧版闭源 SDK**，改用完全自研、可自由分发的引擎。
 决策依据、标定数据、踩坑记录见 `01_ofx插件源码/PROGRESS.md`（精简版），
-完整历史流水账在 `_archive/PROGRESS_ARCHIVE_至v2.3.0.md`。
+完整历史流水账在 `_archive/PROGRESS_ARCHIVE_至v2.3.0.md`（本地留档，不入库）。
 
 | 项 | 状态 |
 |---|---|
@@ -59,10 +61,10 @@ DaVinci Beauty；v3.0.0 进一步**脱离 NamaSDK**，改用完全自研、可�
 | 逐字节回归 | **18/18**（`04_验收工具/baseline.py`） |
 | 一键验收 | **25 PASS / 0 FAIL / 0 WARN**（`04_验收工具/acceptance.py`） |
 | 性能 | 1080p 8bit 单帧 24.5→20.5 ms（直通优化，A/B 各 5 轮取最小值） |
-| 整合包 | **本目录即整合包**：`D:\插件\DaVinciBeauty_整合_20261031\`（v3.0.8，工作区 + 历史 + 交付留档；对外副本用 `package.py` 另生成） |
+| 整合包 | **本仓库即整合包**（v3.0.8，工作区 + 交付留档；对外副本用 `package.py` 另生成） |
 | 安装包 | **已构建** `DaVinciBeauty_Setup_v3.0.8.exe`（4.6 MB，含卸载器；`05_安装包/build_nsis.py` 可重建） |
 | Resolve 内实测 | **已做**：空项目 1080p 播放稳定流畅 |
-| 仓库体积 | 384 MB（含 `.git` 148 MB、旧安装包 v2.3.1 105 MB、`05_解密模型数据` 62 MB、构建产物 25 MB；删掉这些可回到 ~45 MB） |
+| 仓库体积 | 约 2.5 MB（只有源码/文档/脚本；运行时二进制、模型与本地归档都不入库） |
 
 回滚方式：源码已纳入 git，回滚请用 git 历史
 （`git log` / `git checkout <commit> -- 01_ofx插件源码/src/` 等）。
@@ -77,14 +79,14 @@ DaVinci Beauty；v3.0.0 进一步**脱离 NamaSDK**，改用完全自研、可�
 | `开发指南.md` | **开发入口**：5 步工作流、目录地图、换机恢复、外部依赖 |
 | `01_ofx插件源码/` | OFX 插件 C++ 源码（当前主线） |
 | `03_测试夹具/` | 无宿主回归测试与性能基准 |
-| `02_引擎资产/` | 自研引擎运行时资产：ONNX Runtime（CPU 构建版 `onnxruntime.dll`）+ 人脸检测模型 `yunet.onnx`（含 `stage.bat`） |
+| `02_引擎资产/` | 引擎运行时资产目录：仓库内只有 `stage.bat`（把 `onnxruntime.dll` + `yunet.onnx` 放回 `ProgramData` 的入口），二进制本身不入库 |
 | `04_验收工具/` | 一键验收、逐字节回归基线、性能 A/B 测量 |
-| `_archive/03_脚本版Python源码/` | 早期 Python 脚本版（已不再维护，留档） |
-| `_archive/04_脚本版Lua源码/` | 早期 Lua 脚本版（已移出菜单，留档） |
+| `_archive/03_脚本版Python源码/` | 早期 Python 脚本版（已不再维护；本地留档，不入库） |
+| `_archive/04_脚本版Lua源码/` | 早期 Lua 脚本版（已移出菜单；本地留档，不入库） |
 | `05_安装包/` | NSIS 安装包构建脚本 |
 | `FILELIST.txt` | 文件清单（SHA256 + 大小） |
 | `gen_filelist.py` | 清单生成器 |
-| `_archive/CODE_REVIEW.md` | v1.3 时期的代码审查记录（B1–B9 / G1–G4） |
+| `_archive/CODE_REVIEW.md` | v1.3 时期的代码审查记录（B1–B9 / G1–G4；本地留档，不入库） |
 
 ## 目录说明
 
@@ -93,13 +95,13 @@ DaVinci Beauty；v3.0.0 进一步**脱离 NamaSDK**，改用完全自研、可�
 | 路径 | 说明 |
 |---|---|
 | `src/ofx_plugin.cpp` | OFX 协议实现主体（describe / describeInContext / render / IsIdentity / GetClipPreferences） |
-| `src/nama_engine.cpp` / `.h` | 自研引擎适配层：把 OFX 宿主请求转给 OBS CoreEngine（纯 CPU 美颜 + ONNX 人脸检测），公开接口与旧 NamaSDK 版完全一致 |
+| `src/nama_engine.cpp` / `.h` | 自研引擎适配层：把 OFX 宿主请求转给 CoreEngine（纯 CPU 美颜 + ONNX 人脸检测），公开接口与旧版完全一致 |
 | `sdk/include/` | OFX 官方头文件（第三方，编译必需） |
 | `examples/` | 参考用 OFX 示例（不参与编译） |
 | `build.bat` | 编译脚本（MSVC，输出 `out\DaVinciBeauty.ofx`） |
 | `install.bat` | 打包 + 安装到 `%COMMONPROGRAMFILES%\OFX\Plugins` |
 | `PROGRESS.md` | **精简版**：当前状态、设计决策、宿主行为坑、GT 数据、版本索引 |
-| `_archive/PROGRESS_ARCHIVE_至v2.3.0.md` | 完整历史流水账（v1.4 → v2.3.0），需要追查过程时再翻 |
+| `_archive/PROGRESS_ARCHIVE_至v2.3.0.md` | 完整历史流水账（v1.4 → v2.3.0），需要追查过程时再翻（本地留档，不入库） |
 | `README.md` | 插件设计、参数、性能、自测说明 |
 
 **重新编译**：双击 `build.bat`，再跑 `install.bat`。
@@ -108,7 +110,7 @@ DaVinci Beauty；v3.0.0 进一步**脱离 NamaSDK**，改用完全自研、可�
 
 ### 03_测试夹具 —— 无宿主回归测试
 
-来自 `...\beauty_probe\`（只收录 .py / .lua / .json / .txt；raw 与 mp4 素材未收录）
+来自早期的探针工作目录（只收录 .py / .lua / .json / .txt；raw 与 mp4 素材未收录）
 
 - `mock_host.py` —— 模拟最小 OFX 宿主，直接驱动插件跑
   `describe → describeInContext → createInstance → render`，验证协议行为与像素结果。
@@ -163,7 +165,7 @@ MSVC 构建**不逐字节可复现**（PE 时间戳），判装机同步要用�
 - `FILELIST.txt` —— 本清单（每个文件的 SHA256）
 - `gen_filelist.py` —— 清单生成器，改完源码跑 `python gen_filelist.py` 即可重算
 - `.gitignore` —— 忽略 `out/`、`obj/`、`bundle/`、`__pycache__/`、`*.pyc`、`*.locked-*`
-- `_archive/CODE_REVIEW.md` —— v1.3 时期的代码审查记录（B1–B9 / G1–G4）
+- `_archive/CODE_REVIEW.md` —— v1.3 时期的代码审查记录（B1–B9 / G1–G4；本地留档，不入库）
 - `说明.txt` —— 面向使用者的简短交付说明
 
 ## v1.4 验收摘要（2026-10-21）
@@ -183,15 +185,16 @@ MSVC 构建**不逐字节可复现**（PE 时间戳），判装机同步要用�
 
 | 内容 | 位置 | 为什么没收 |
 |---|---|---|
-| 自研引擎运行时资产 | `02_引擎资产\`（`onnxruntime.dll` 约 11MB、`yunet.onnx` 约 0.2MB） | 已是源码仓库的一部分，可随仓库分发；如需启用 GPU 把它换成 `onnxruntime-directml` 构建版 |
+| 自研引擎运行时资产 | `02_引擎资产\`（`onnxruntime.dll` 约 11MB、`yunet.onnx` 约 0.2MB） | 二进制运行时资产，体积大，不入库；从交付包或已装机的 bundle 取回即可；如需启用 GPU，换成带 GPU 支持的构建版 |
 | 已安装的插件 | `C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\` | 由 `install.bat` / 安装包生成，可重建 |
 | 编译产物 | `01_ofx插件源码\obj\`、`out\`、`bundle\` | 可重建（`bundle\` 是 `install.bat` 的暂存副本） |
 | 运行日志与任务队列 | `C:\ProgramData\DaVinciBeauty\logs\`、`jobs\`、`live\` | 运行时数据 |
 
 ## 恢复方法
 
-1. 把 `01_ofx插件源码` 放回任意目录，确保引擎资源可用
-   （仓库内 `02_引擎资产\`，或 `bundle\...\Contents\Win64`，或已安装的 bundle）；
+1. 把 `01_ofx插件源码` 放回任意目录，并在 `02_引擎资产\` 放好引擎资源
+   （`onnxruntime.dll` + `yunet.onnx`，从交付包或已装机的 bundle 取回），
+   或直接用 `bundle\...\Contents\Win64`、已安装的 bundle；
 2. 运行 `build.bat` 编译，再运行 `install.bat` 安装；
 3. 启动 DaVinci Resolve，效果库 → OpenFX → DaVinci Beauty → 「DaVinci Beauty 美颜」。
 

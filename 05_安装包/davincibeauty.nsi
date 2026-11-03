@@ -132,7 +132,7 @@ Section "DaVinci Beauty Plugin" SecMain
   DetailPrint "复制插件与引擎资源 ..."
   ; 只装 bundle 需要的文件。${STAGE} 里可能还有构建期辅助目录
   ; （如 python\ 解释器），那些**不能**进 Contents\Win64 —— Resolve 会扫描这个目录。
-  ; 自研引擎（OBS CoreEngine + ONNX YuNet）只需要插件本体、ONNX Runtime 与本地
+  ; 自研引擎（上一代宿主 CoreEngine + ONNX 人脸检测模型）只需要插件本体、ONNX Runtime 与本地
   ; 人脸检测模型，不再依赖任何闭源 SDK。
   File "${STAGE}\DaVinciBeauty.ofx"
   File "${STAGE}\onnxruntime.dll"

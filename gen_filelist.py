@@ -10,7 +10,9 @@ FILELIST.txt 以前是手工维护的，结果很快就和实际文件脱节：�
 
 收录规则
 --------
-* 收录：本备份目录下所有「源码 / 文档 / 脚本」类文件。
+* 收录：本目录下所有「源码 / 文档 / 脚本」类文件；若本目录是 git 仓库，
+  则只收录 **git 已跟踪** 的文件（未跟踪的本地资产不写进清单，
+  这样清单与本仓库实际发布的内容一致）。
 * 排除：
     - 构建产物目录 out/ 、obj/ ，以及 .git / __pycache__ ；
     - 本地回滚副本目录（名字以 _backup_before 开头，见 README 的备份约定）；
@@ -25,6 +27,7 @@ FILELIST.txt 以前是手工维护的，结果很快就和实际文件脱节：�
 
 import hashlib
 import os
+import subprocess
 import sys
 import time
 
@@ -52,7 +55,43 @@ EXCLUDE_EXT = {
 }
 
 
+def git_tracked():
+    """返回 git 已跟踪的相对路径列表；不是 git 仓库时返回 None。"""
+    if not os.path.isdir(os.path.join(HERE, ".git")):
+        return None
+    try:
+        out = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "ls-files", "-z"],
+            cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [p for p in out.decode("utf-8", "replace").split("\0") if p]
+
+
+def keep(rel):
+    """按排除规则判断某个相对路径是否收录。"""
+    parts = rel.split("/")
+    if any(p in EXCLUDE_DIR_NAMES for p in parts[:-1]):
+        return False
+    if any(p.startswith(EXCLUDE_DIR_PREFIXES) for p in parts[:-1]):
+        return False
+    if parts[-1] in EXCLUDE_NAMES:
+        return False
+    if os.path.splitext(parts[-1])[1].lower() in EXCLUDE_EXT:
+        return False
+    return rel != "FILELIST.txt"
+
+
 def iter_files():
+    tracked = git_tracked()
+    if tracked is not None:
+        for rel in sorted(tracked):
+            if keep(rel) and os.path.isfile(os.path.join(HERE, rel)):
+                yield rel, os.path.join(HERE, rel)
+        return
+
     for dirpath, dirnames, filenames in os.walk(HERE):
         # 原地过滤目录名，避免 os.walk 继续下潜
         dirnames[:] = [
@@ -61,16 +100,10 @@ def iter_files():
             and not d.startswith(EXCLUDE_DIR_PREFIXES)
         ]
         for name in filenames:
-            if name in EXCLUDE_NAMES:
-                continue
-            ext = os.path.splitext(name)[1].lower()
-            if ext in EXCLUDE_EXT:
-                continue
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, HERE).replace("\\", "/")
-            if rel == "FILELIST.txt":
-                continue
-            yield rel, full
+            if keep(rel):
+                yield rel, full
 
 
 def sha256(path):

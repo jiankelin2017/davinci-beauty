@@ -163,7 +163,7 @@ void applyEllipses(unsigned char* dst, int w, int h,
                     const int nv = (int)lroundf((float)p[c] + acc);
                     p[c] = (unsigned char)(nv < 0 ? 0 : (nv > 255 ? 255 : nv));
                 }
-                // alpha 不动：OBS 的合成依赖它
+                // alpha 不动：上一代宿主 的合成依赖它
             }
         }
     });

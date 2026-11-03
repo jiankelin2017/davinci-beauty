@@ -1,6 +1,6 @@
 // beauty_engine_glue.cpp —— core_glue 桥接层的实现（唯一接触 CoreEngine 的翻译单元）
 //
-// 职责：把 NamaEngine 侧传来的原始参数转成 BeautySettings，再转调 OBS 自研
+// 职责：把 NamaEngine 侧传来的原始参数转成 BeautySettings，再转调自研
 // CoreEngine（纯 CPU 引擎，人脸检测走 ONNX，内部自动检测 GPU/DirectML）。
 // 本文件 include 了 beauty_core.h（含 beauty_params.h 的 P_* 枚举），但 nama_engine.cpp
 // 只通过 core_glue.h 调用本文件，因此不会把两份 P_* 枚举拉进同一个编译单元。

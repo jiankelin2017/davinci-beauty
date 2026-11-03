@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""可行性验证：用纯 stdlib + ctypes 直接驱动 FaceUnity NamaSDK（不经 BeautyCore.exe）。
+"""可行性验证：用纯 stdlib + ctypes 直接驱动 旧版闭源 SDK（不经 BeautyCore.exe）。
 
 目的：确认能否在单个 Python 进程内保持 SDK 常驻，从而对视频逐帧美颜。
 """
@@ -168,7 +168,7 @@ def main():
             print("[preload] %s -> 0x%X (err=%d)" % (pre, h or 0, ctypes.get_last_error()))
     hnama = k32.LoadLibraryExW(os.path.join(BIN, "CNamaSDK.dll"), None, DLLFLAGS)
     if not hnama:
-        raise RuntimeError("LoadLibrary CNamaSDK failed: %d" % ctypes.get_last_error())
+        raise RuntimeError("LoadLibrary 旧版闭源 SDK failed: %d" % ctypes.get_last_error())
     nama = ctypes.CDLL(os.path.join(BIN, "CNamaSDK.dll"), handle=hnama)
     nama.fuSetup.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
     nama.fuSetup.restype = ctypes.c_int

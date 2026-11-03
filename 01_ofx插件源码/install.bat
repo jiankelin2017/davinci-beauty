@@ -1,15 +1,15 @@
 @echo off
 rem =============================================================
 rem DaVinci Beauty OFX installer v3.0.0 self-contained open engine
-rem No FaceUnity NamaSDK, uses OBS CoreEngine plus ONNX YuNet
-rem Auto-cleans legacy NamaSDK leftovers in the target dir
+rem No legacy closed-source SDK, uses CoreEngine plus ONNX face model
+rem Auto-cleans legacy engine leftovers in the target dir
 rem Must run as Administrator to write under C:\Program Files
 rem =============================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 echo [install.bat v3] running
 
-rem Locate engine assets dir whose name starts with 07_ and holds onnxruntime.dll
+rem Locate engine assets dir that holds onnxruntime.dll + yunet.onnx (name-independent)
 set "P=%~dp0"
 set "P=%P:~0,-1%"
 for %%I in ("%P%") do set "PARENT=%%~dpI"
@@ -71,8 +71,8 @@ if not exist "%TARGET%" (
     exit /b 1
 )
 
-rem Auto-clean legacy NamaSDK leftovers, v3.0.0 dropped NamaSDK
-echo cleaning legacy NamaSDK leftovers
+rem Auto-clean legacy engine leftovers, v3.0.0 dropped the old SDK
+echo cleaning legacy engine leftovers
 for %%F in (
     "CNamaSDK.dll" "fuai.dll" "ai_face_processor_pc_plain.bundle"
     "auth_package.bin" "api-ms-win-downlevel-shlwapi-l1-1-0.dll" "w32-pthreads.dll"

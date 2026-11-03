@@ -83,7 +83,7 @@ obj/旧产物，每次构建都会重生）、`probe`（探针输出，`probe_in
 ## 生成整合包
 
 ```
-python package.py            # 生成 D:\插件\DaVinciBeauty_v<版本>_整合包
+python package.py            # 生成 ..\DaVinciBeauty_v<版本>_整合包
 python package.py --update   # 原地同步（不删整棵树）
 python package.py --force    # 重建
 python package.py --zip      # 额外打同名 .zip
@@ -97,8 +97,8 @@ python package.py --no-engine  # 不带 130MB 引擎资产
 
 ## 已知的噪声
 
-- 运行时 SDK 会往 stderr 打 `face_dde.cc:202] data check fail`。这是 NamaSDK
-  内部日志，不影响结果（回归仍 15/15），过滤掉即可。
+- 旧版 SDK 运行时会往 stderr 打一行内部校验日志（`data check fail`）。
+  不影响结果（回归仍 15/15），过滤掉即可。
 - `NamaSelfTest` 的错误消息里中文路径会乱码（UTF-8 被按本地码页输出）。
   只在初始化失败时才会看到，不影响正常路径。
 

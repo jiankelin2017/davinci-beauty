@@ -1,5 +1,5 @@
 #pragma once
-// core_glue.h —— NamaEngine 与 OBS 自研 CoreEngine 之间的桥接层。
+// core_glue.h —— NamaEngine 与自研 CoreEngine 之间的桥接层。
 //
 // 为什么需要这一层：nama_engine.h 自带一份面板参数枚举（P_*），而 beauty_params.h
 // 也有一份同名枚举；两者若同时进入同一个翻译单元会重定义。本桥接层只传原始数据

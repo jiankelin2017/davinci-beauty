@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""隔离验证 nama_region.cpp 的调用契约（不牵扯 CNamaSDK）。
+"""隔离验证 nama_region.cpp 的调用契约（不牵扯 旧版闭源 SDK）。
 
 背景：把 NamaRegion 接进 NamaEngine::process 之后，mock_host 在第一次 render
 就整进程退出（EXIT=127），日志停在 fuai 的 `Perform SetUseFaceLandmark`。
 在宿主进程里跑 fuai 和单独跑 fuai 有两处不同：
-  1) CNamaSDK 内部**也**加载了 fuai.dll（同一个模块），我们已经又开了一个
+  1) 旧版闭源 SDK 内部**也**加载了 fuai.dll（同一个模块），我们已经又开了一个
      FaceProcessor 实例；
   2) 我们是先 fuSetup + 建道具，之后才第一次调 FUAI_...Process。
 
-这个脚本只做第 1 步排查：**完全不含 CNamaSDK**，只按 nama_region.cpp 里的
-参数组合调 fuai，看是「契约本身错」还是「和 CNamaSDK 冲突」。
+这个脚本只做第 1 步排查：**完全不含 旧版闭源 SDK**，只按 nama_region.cpp 里的
+参数组合调 fuai，看是「契约本身错」还是「和 旧版闭源 SDK 冲突」。
 
 用法（每个变体必须单独起进程，崩了才看得出来）：
     python probe_region_contract.py <照片> --variant A

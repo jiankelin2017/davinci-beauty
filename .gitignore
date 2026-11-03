@@ -13,8 +13,8 @@
 # 仓库里只留 baseline_manifest.txt（md5 清单）。
 04_验收工具/*.raw
 
-# 02_引擎资产：第三方 NamaSDK + AI 模型，约 138MB，可从 NamaSDK 重取得或在装机 bundle
-# 里另取两份，不入库。但 stage.bat 要留 —— 它是这份资产的「放回 ProgramData」入口。
+# 02_引擎资产：推理运行时 + 人脸检测模型，二进制资产，不入库（从交付包或已装机的
+# bundle 取回即可）。但 stage.bat 要留 —— 它是这份资产的「放回 ProgramData」入口。
 02_引擎资产/*
 !02_引擎资产/stage.bat
 
@@ -32,6 +32,12 @@
 03_测试夹具/_phase2_gate_report.txt
 03_测试夹具/_aitype_probe.log
 
+# 早期专项探测的过程记录与导出清单：仅本地保留，不随仓库发布
+03_测试夹具/PHASE0_*.md
+03_测试夹具/PHASE1_*.md
+03_测试夹具/PHASE2_*.md
+03_测试夹具/all_exports.txt
+
 # 各类临时备份目录（清理前/改名前的回滚点，用完即删）
 _*残留备份*/
 _*迁移备份*/
@@ -39,9 +45,11 @@ _*迁移备份*/
 # 调试用临时目录（放调试版 ofx + onnxruntime + 模型做离线自测）
 _dbgtest/
 
-# ---- 本地归档与交付安装包不入库（2026-10-31 整理后确认） ----
-# _archive/ 为归档参考（含逆向闭源模型数据，约 63MB），仅本地保留，不入版本库；
+# ---- 本地归档与交付安装包不入库（2026-10-31 整理后确认） ----# _archive/ 为本地归档参考（约 63MB），仅本地保留，不入版本库；
 # 原跟踪文件若需恢复用 git restore。
 _archive/
 # 构建出的安装包 exe 为二进制交付物，不进 git（.ofx 插件 DLL 在 bundle/，已忽略）
 *.exe
+# MANIFEST.txt 是 package.py 生成的交付清单（覆盖含二进制的交付子集），
+# 每次打包哈希都会变，且与仓库跟踪内容不一致，故不入库；全仓校验看 FILELIST.txt。
+MANIFEST.txt

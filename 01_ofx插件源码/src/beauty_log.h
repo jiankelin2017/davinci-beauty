@@ -2,13 +2,13 @@
 // beauty_log.h —— 引擎层 → 宿主日志的唯一出口。
 //
 // 引擎层（legacy_engine.cpp / legacy_region.cpp）刻意不 include 任何宿主头文件，
-// 这样它既能在 OBS 插件里用，也能被自测程序直接 LoadLibrary 驱动。代价是它
+// 这样它既能在 上一代宿主 插件里用，也能被自测程序直接 LoadLibrary 驱动。代价是它
 // 自己不能写宿主的日志系统，所以这里挂一个函数指针：
 //
-//   OBS 插件在 obs_module_load 里调 beauty_set_log_fn() 指到 blog()；
+//   上一代宿主 插件在加载回调里调 beauty_set_log_fn() 指到 blog()；
 //   自测程序不设，消息落到 stderr（与原 OFX 版行为一致）。
 //
-// 日志级别沿用 OBS 的约定（0..4 见 obs-logging.h），这样插件层可以直接透传。
+// 日志级别沿用 上一代宿主 的约定（0..4 见宿主的日志头文件），这样插件层可以直接透传。
 
 enum {
     BEAUTY_LOG_ERROR = 1,

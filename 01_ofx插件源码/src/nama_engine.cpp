@@ -1,11 +1,11 @@
 // nama_engine.cpp —— DaVinciBeauty 引擎适配层（v3.0.0）
 //
-// 本层不再加载 FaceUnity NamaSDK。它把 ofx_plugin.cpp 的全部请求转给 OBS 自研的
-// 纯 CPU 美颜引擎（CoreEngine，对应 OBS 3.1.39），人脸检测（YuNet / ONNX）在引擎内部
+// 本层不再加载旧版闭源 SDK。它把 ofx_plugin.cpp 的全部请求转给自研的
+// 纯 CPU 美颜引擎（CoreEngine，对应上一代引擎 3.1.39），人脸检测（YuNet / ONNX）在引擎内部
 // 自动检测并优先使用 GPU（DirectML），无 GPU 则自动退回 CPU。
 // 所有渲染 / 检测逻辑都在 CoreEngine 里；这里只做参数搬运 + 转调（经 core_glue 桥接层）。
 //
-// 公开接口与旧版（NamaSDK 版）完全一致，ofx_plugin.cpp 一行都不用改。
+// 公开接口与旧版（闭源 SDK 版）完全一致，ofx_plugin.cpp 一行都不用改。
 
 #include "nama_engine.h"
 #include "core_glue.h"

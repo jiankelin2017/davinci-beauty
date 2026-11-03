@@ -27,9 +27,9 @@ PLUGIN_LABEL = "DaVinci Beauty 美颜"
 BUNDLE_NAME = "DaVinciBeauty.ofx.bundle"
 
 # bundle 内需要安装的文件清单（相对 Contents/Win64）
-# v3.0.0 起引擎为自研 OBS CoreEngine + ONNX Runtime，仅两个运行时资产：
+# v3.0.0 起引擎为自研 上一代宿主 CoreEngine + ONNX Runtime，仅两个运行时资产：
 # onnxruntime.dll（CPU 构建版，启用 GPU 时换成 onnxruntime-directml 构建版）
-# 与本地人脸模型 yunet.onnx。不再依赖任何闭源 NamaSDK 文件。
+# 与本地人脸模型 yunet.onnx。不再依赖任何闭源 旧版闭源 SDK 文件。
 PAYLOAD_FILES = [
     "DaVinciBeauty.ofx",
     "onnxruntime.dll",

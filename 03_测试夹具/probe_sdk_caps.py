@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Phase 0 探测：CNamaSDK 到底暴露了哪些「区域」能力。
+"""Phase 0 探测：旧版闭源 SDK 到底暴露了哪些「区域」能力。
 
 为什么需要它
 ------------

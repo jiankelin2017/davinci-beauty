@@ -1,8 +1,8 @@
 #pragma once
 // NamaEngine —— DaVinci Resolve OFX 美颜插件的引擎适配层。
 //
-// v3.0.0 起：本层不再加载 FaceUnity NamaSDK，而是把请求转给 OBS 自研的纯 CPU
-// 美颜引擎（beauty_core 里的 CoreEngine，对应 OBS 3.1.39）。人脸检测用 ONNX YuNet，
+// v3.0.0 起：本层不再加载旧版闭源 SDK，而是把请求转给自研的纯 CPU
+// 美颜引擎（beauty_core 里的 CoreEngine，对应 上一代宿主 3.1.39）。人脸检测用 ONNX 人脸检测模型，
 // 在引擎内部**自动检测 GPU**（仅 Windows DirectML）：只要把 onnxruntime.dll 换成
 // onnxruntime-directml 构建版，人脸推理就自动走 GPU；否则自动退回 CPU。本文件
 // 只做「NamaSettings → 原始参数 → 转调 CoreEngine」（经 core_glue 桥接层），
@@ -69,7 +69,7 @@ struct NamaSettings {
     //   1 高斯（纯空间高斯，不保边）
     //   2 弱磨皮（同一套保边算法，强度对折）
     // v3.0.5 之前这个字段**从未被读取**，三档输出逐位相同；旧注释写的
-    // 「1=双边 0=高斯」是 NamaSDK 时代的顺序，已作废。
+    // 「1=双边 0=高斯」是旧版闭源 SDK 时代的顺序，已作废。
     int blur_type;
     int skin_detect;         // 0/1 只磨皮肤区域（默认 1：不要把背景一起磨糊）
     // 3.0.17：磨皮模式（纯 CPU 侧，不是 SDK 参数）。
@@ -108,9 +108,9 @@ class NamaEngine {
 public:
     static NamaEngine& inst();
 
-    // 资源目录（<OBS>/obs-plugins/64bit/obs-nama-beauty）里必须含自研 CPU 引擎
+    // 资源目录（上一代宿主的插件资源目录）里必须含自研 CPU 引擎
     // 的运行时资产：onnxruntime.dll（ONNX Runtime，普通 CPU 版即可；如需 GPU
-    // 推理可换成 onnxruntime-directml 构建版）与 yunet.onnx（YuNet 人脸检测模型）。
+    // 推理可换成 onnxruntime-directml 构建版）与 yunet.onnx（人脸检测模型）。
     // 成功返回 true，失败时 err 描述原因。首次调用耗时主要在 ONNX 会话构建与
     // 人脸模型加载，所以调用方应当在「模块加载 / 滤镜创建」时预热，而不是等
     // 第一次渲染。线程安全：内部加锁并复检状态。
@@ -135,7 +135,7 @@ public:
     // process() 忽略 slot 与 advanceFrame —— 全进程只有一份引擎状态（含时序 EMA /
     // 混合历史 / 上一帧参数缓存）。因此**不要**把「每实例独立」当成保证：
     // 两个滤镜实例交替渲染时会共享同一份时序历史。参数本身逐帧全量下发，
-    // 不会像 v2.x 的 NamaSDK 缓存那样「A 的滑块改到 B」；受影响的是跨帧平滑量。
+    // 不会像 v2.x 旧版闭源 SDK 的缓存那样「A 的滑块改到 B」；受影响的是跨帧平滑量。
     // 真要隔离，得让 CoreEngine 持有 per-slot 状态，属于引擎层改造。
     int  acquireSlot(std::string& err);
     void releaseSlot(int slot);
@@ -178,7 +178,7 @@ private:
     NamaEngine(const NamaEngine&) = delete;
     NamaEngine& operator=(const NamaEngine&) = delete;
 
-    // v3.0.8：删掉 v2.x（NamaSDK）遗留的整组成员与方法声明 —— GL 隐藏窗口、
+    // v3.0.8：删掉 v2.x（旧版闭源 SDK）遗留的整组成员与方法声明 —— GL 隐藏窗口、
     // SDK 道具池 Slot、渲染临时缓冲、语义区域映射表。v3.0.0 起这些全部由
     // CoreEngine 内部持有，本层只剩「参数搬运 + 取回诊断」。
     bool ready_ = false;
@@ -197,7 +197,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// 自测入口：不经 OBS，直接跑通 加载→初始化→渲染→落盘 全链路。
+// 自测入口：不经 上一代宿主，直接跑通 加载→初始化→渲染→落盘 全链路。
 // 输入是裸 RGBA8（宽×高×4 字节），输出同尺寸的裸 RGBA8（便于像素比对）。
 // 返回 0 表示成功。故意用 C ABI，方便用 ctypes / LoadLibrary 调用
 // （blur_test 下的探针脚本用的就是它）。

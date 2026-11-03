@@ -2,7 +2,7 @@
 rem ------------------------------------------------------------
 rem Stage engine runtime assets into C:\ProgramData\DaVinciBeauty\engine
 rem
-rem The self-developed engine (OBS CoreEngine + ONNX YuNet) needs only two
+rem The self-developed engine (上一代宿主 CoreEngine + ONNX 人脸检测模型) needs only two
 rem runtime files next to the plugin: onnxruntime.dll and yunet.onnx.
 rem This copies them from 07_引擎资产 into the shared ProgramData engine dir.
 rem (install.bat can also read straight from 07_引擎资产, so this step is

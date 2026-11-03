@@ -33,7 +33,7 @@ ENGINE_CANDIDATES = [
 def resolve_engine_src():
     """返回第一个确实含引擎的目录；全都没有则返回 None（届时出不带引擎的轻包）。
 
-    v3.0.0 起引擎是自研 OBS CoreEngine + ONNX Runtime，目录标记是 onnxruntime.dll
+    v3.0.0 起引擎是自研 CoreEngine + ONNX Runtime，目录标记是 onnxruntime.dll
     （以及人脸模型 yunet.onnx）。
     """
     for d in ENGINE_CANDIDATES:
