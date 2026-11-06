@@ -1890,12 +1890,13 @@ public:
                             gpuSmoothStats(&n, &at, &ap);
                             NALOG(BEAUTY_LOG_INFO,
                                   "GPU 磨皮[%s] roi=%dx%d@%d,%d 平面=%dx%d r=%d/%d/%d P=%d"
-                                  " 上传=%.2f 算=%.2f 读回=%.2f 合计=%.2f ms"
+                                  " 上传=%.2f 算=%.2f 读回=%.2f(等GPU %.2f/拷 %.2f) 补齐=%.2f 合计=%.2f ms"
                                   " | 累计 %lld 帧 均合计=%.2f 均平面像素=%.0f",
                                   gpuSmoothModeName(),
                                   gst.imgW, gst.imgH, gst.imgX0, gst.imgY0,
                                   gst.pw, gst.ph, gst.r1, gst.r2, gst.ra, gst.passes,
-                                  gst.uploadMs, gst.computeMs, gst.downloadMs, gst.totalMs,
+                                  gst.uploadMs, gst.computeMs, gst.downloadMs,
+                                  gst.mapWaitMs, gst.mapCopyMs, gst.fillMs, gst.totalMs,
                                   n, at, ap);
                         }
                     }

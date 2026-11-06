@@ -1,6 +1,6 @@
 {
-  "src": "C:/Users/Administrator/WorkBuddy/2026-10-14-13-17-08/beauty_probe/test_src.mp4",
-  "out": "C:/Users/Administrator/WorkBuddy/2026-10-14-13-17-08/beauty_probe/test_out.mp4",
+  "src": "test_src.mp4",
+  "out": "test_out.mp4",
   "params": {
     "blur_level": 70,
     "clarity": 20,

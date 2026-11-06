@@ -75,6 +75,14 @@ struct GpuSmoothTiming {
     double mapMs      = 0.0;
     double fillMs     = 0.0;   // ROI 外 dst=src 补齐（只有 dst!=src 时才有）
 
+    // mapMs 再拆（1.0.8.0 加）。mapMs 混了「等 GPU 拷完」和「CPU 读 staging」两件事：
+    //   mapWaitMs  Map(READ) 调用本身耗时 —— PCIe 往返 + 等待同步点
+    //   mapCopyMs  拿到 pData 之后逐行 memcpy 到 dst 的耗时 —— 纯内存带宽
+    // 两者的优化手段完全相反（等待要靠重叠隐藏，搬运只能减少字节数），
+    // 不拆开就不知道该动哪一头。mapWaitMs + mapCopyMs 恒等于 mapMs。
+    double mapWaitMs  = 0.0;
+    double mapCopyMs  = 0.0;
+
     int    imgX0 = 0, imgY0 = 0, imgW = 0, imgH = 0;   // 实际上传的图像矩形
     int    planeX0 = 0, planeY0 = 0, planeW = 0, planeH = 0;
     int    pw = 0, ph = 0;                             // 半分辨率平面尺寸

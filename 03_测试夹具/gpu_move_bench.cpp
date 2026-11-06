@@ -140,6 +140,7 @@ struct Row {
     int outW, outH;          // 输出矩形
     double mbPack, mbMask, mbCopyUp, mbCopyDn, mbMap;   // 各段搬运量（MB）
     double pack, mask, copyUp, compute, copyDn, map, fill, total, cpu;
+    double mapWait, mapCopy;   // map 的两个组成：等 GPU / CPU 读 staging
     long long diff; int maxd;
 };
 
@@ -177,6 +178,7 @@ void oneCase(int w, int h, double areaPct, int reps, Row* out) {
     }
 
     double sp = 0, sm = 0, scu = 0, scomp = 0, scd = 0, smap = 0, sfill = 0, stot = 0;
+    double swait = 0, scopy = 0;
     for (int i = 0; i < reps; ++i) {
         std::memcpy(&outGpu[0], &src[0], (size_t)w * h * 4);   // 清掉上一轮痕迹
         GpuSmoothTiming g{};
@@ -186,6 +188,7 @@ void oneCase(int w, int h, double areaPct, int reps, Row* out) {
         }
         sp += g.packMs; sm += g.maskMs; scu += g.copyUpMs;
         scomp += g.computeMs; scd += g.copyDnMs; smap += g.mapMs; sfill += g.fillMs;
+        swait += g.mapWaitMs; scopy += g.mapCopyMs;
         stot += g.totalMs;
         if (i == 0) t = g;
     }
@@ -198,11 +201,21 @@ void oneCase(int w, int h, double areaPct, int reps, Row* out) {
     out->pack = sp / reps; out->mask = sm / reps; out->copyUp = scu / reps;
     out->compute = scomp / reps; out->copyDn = scd / reps; out->map = smap / reps;
     out->fill = sfill / reps;
-    out->total = stot / reps; out->cpu = cpuMs / reps;
+    out->mapWait = swait / reps; out->mapCopy = scopy / reps;
+    out->total = stot / reps;
+    // cpu 是 3 次单次耗时里的**最小值**，不是累加值 —— 与上面那批「sum / reps」
+    // 的均值口径本来就不同。1.0.7.0 第一版在这里多除了一次 reps：上面对 cpuMs
+    // 取的是 min 而不是 sum，再除 reps 等于把 CPU 基准压到真实值的 1/reps
+    // （默认 reps=5 时只剩两成），「GPU 比 CPU 慢 2~3 倍」的对比整段失真。
+    out->cpu = cpuMs;
 
     const double px4 = 4.0 / 1048576.0;
-    out->mbPack   = (double)t.imgW * t.imgH * px4;
-    out->mbMask   = out->mbPack;
+    out->mbPack   = (double)t.imgW * t.imgH * px4;      // RGBA8：4 字节/像素
+    // mask 与 protect 各是一张 R8_UINT（1 字节/像素），上传段分两次 Map、各传一遍，
+    // 合计 2 字节/像素。1.0.7.0 把掩码从 RGBA8 拆成两张 R8 时这行没跟着改，
+    // 仍按 mbPack 的 4 字节记，报出的搬运量是真实值的 2 倍 ——
+    // 拿它除出来的带宽只有真实带宽的一半。
+    out->mbMask   = (double)t.imgW * t.imgH * 2.0 / 1048576.0;
     out->mbCopyUp = out->mbPack * 2;
     out->mbCopyDn = (double)t.imgW * t.imgH * px4;
     out->mbMap    = (double)out->outW * out->outH * px4;
@@ -252,15 +265,26 @@ int main(int argc, char** argv) {
         if (r.diff != 0) ++badDiff;
     }
 
+    // map 的两半：等 GPU 与 CPU 读 staging。优化手段完全相反，必须分开看。
+    std::printf("\n%-20s %10s %10s %10s %10s\n",
+                "case", "mapWait", "mapCopy", "sum", "map");
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const Row& r = rows[i];
+        std::printf("%-20s %10.2f %10.2f %10.2f %10.2f\n",
+                    specs[i].note, r.mapWait, r.mapCopy,
+                    r.mapWait + r.mapCopy, r.map);
+    }
+
     // 机器可读：一行一份，便于多轮取中位数（上面的表格是给人看的）。
     std::printf("\n");
     for (size_t i = 0; i < rows.size(); ++i) {
         const Row& r = rows[i];
         std::printf("CSV,%dx%d,bbox=%dx%d,img=%dx%d,pack=%.3f,mask=%.3f,copyUp=%.3f,"
-                    "compute=%.3f,copyDn=%.3f,map=%.3f,fill=%.3f,total=%.3f,cpu=%.3f\n",
+                    "compute=%.3f,copyDn=%.3f,map=%.3f,fill=%.3f,total=%.3f,cpu=%.3f,"
+                    "mapWait=%.3f,mapCopy=%.3f\n",
                     r.w, r.h, r.bboxW, r.bboxH, r.imgW, r.imgH,
                     r.pack, r.mask, r.copyUp, r.compute, r.copyDn, r.map, r.fill,
-                    r.total, r.cpu);
+                    r.total, r.cpu, r.mapWait, r.mapCopy);
     }
 
     std::printf("\n[EXACT] byte-exact vs CPU:\n");

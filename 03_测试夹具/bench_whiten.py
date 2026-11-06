@@ -7,7 +7,7 @@ CPU 开销。本基准用同一帧、同一实例，只切换 color_level=0/100�
 
 用法：
     python bench_whiten.py [照片] [宽] [高] [重复次数]
-默认：C:\\Users\\Administrator\\Pictures\\A7300538.jpg  1920 1080  5
+默认：~/Pictures/A7300538.jpg  1920 1080  5
 环境变量：NAMA_OFX_DLL / NAMA_ENGINE_DIR（同 mock_host.py）
 """
 import ctypes

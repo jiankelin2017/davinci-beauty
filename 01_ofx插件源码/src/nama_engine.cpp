@@ -216,7 +216,7 @@ int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
     // ---- 读输入帧 ----
     // v3.0.3 修正：rawRgbaIn/rawRgbaOut 是**文件路径**，不是内存缓冲。
     // v2.0 移植到 CoreEngine 时把这里写成了「直接把入参当图像指针用」，
-    // 结果整条自测链路喂进去的是路径字符串（如 "C:\Users\..."），
+    // 结果整条自测链路喂进去的是路径字符串（如某个 mp4 的完整路径），
     // 检测必然 0 脸、输出也写不出来（还会把 Python 的 bytes 对象写崩）。
     // 这导致 v3.0.x 期间所有基于自测得出的「引擎 0 检出」结论都是假象。
     const size_t need = (size_t)width * (size_t)height * 4;

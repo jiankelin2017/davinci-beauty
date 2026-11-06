@@ -1,10 +1,10 @@
 ﻿{
-    "out":  "C:\\Users\\Administrator\\WorkBuddy\\2026-10-14-13-17-08\\beauty_probe\\中文测试目录\\美颜成品.mp4",
+    "out":  "中文测试目录\\美颜成品.mp4",
     "params":  {
                    "blur_level":  70,
                    "color_level":  15
                },
     "blur_type":  1,
     "preset":  "libx264",
-    "src":  "C:\\Users\\Administrator\\WorkBuddy\\2026-10-14-13-17-08\\beauty_probe\\中文测试目录\\测试素材 美颜.mp4"
+    "src":  "中文测试目录\\测试素材 美颜.mp4"
 }

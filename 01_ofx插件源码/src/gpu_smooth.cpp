@@ -47,12 +47,15 @@ namespace {
 //
 // 纹理寄存器布局（所有 kernel 共用一套）：
 //   t0 uint4   src（RGBA8 上传矩形）
-//   t1 uint4   mask/protect 打包（r=mask, g=protect）
+//   t1 uint    mask（R8_UINT，0=不磨皮 / 255=全量）
+//   t2 uint    protect（R8_UINT，保护强度 0~255）
 //   t3 float4  平面 A：box 的输入 / amp 的 C / compose 的 B1
 //   t4 float4  平面 B：amp 的 B2 / compose 的 B2
 //   t5 float4  平面 S：compose 的 amp
 //   u0 float4  平面输出
 //   u1 uint4   dst
+// 1.0.7.0 之前 t1/t2 是同一张 uint4 的 r/g 两个通道，拆开是为了让上传退化成
+// 整行 memcpy（见 gpuSmoothRgbBand 上传段的注释）。
 const char* kHlsl = R"HLSL(
 cbuffer P : register(b0)
 {
@@ -944,9 +947,12 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     g_ctx->Flush();
     const double t2 = nowMsQpc();
 
-    // ---- 3. 读回 ----
+    // ---- 3. 提交读回 ----
     // 声明在块外：Unmap 之后的时间戳要参与 t3 与 timing 的拆分。
     double timingMapOut = t2;
+    double timingMapWaitOut = 0.0;   // Map(READ) 调用本身的耗时
+    double timingMapCopyOut = 0.0;   // 拿到 pData 之后逐行 memcpy 的耗时
+    double timingFillOut = 0.0;      // ROI 外补齐（1.0.8.0 起挪到 Map 之前与 GPU 重叠）
     {
         // 只把**输出矩形**拷进 staging，而不是整块桶化尺寸的纹理。
         // 两者能差一倍以上：4K 典型人脸时输出 1353×1753（9.1MB），
@@ -962,8 +968,47 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         box.back   = 1;
         g_ctx->CopySubresourceRegion(g_stage, 0, 0, 0, 0, g_texDst, 0, &box);
         td = nowMsQpc();                // GPU→staging 拷贝已提交
+
+        // ---- 3b. ROI 外补齐：塞进「GPU 还在算 + 正拷回」这段等待里 ----
+        // 这一段此前排在 Map 之后，纯属排队：它写的是 dst 的 ROI **之外**，
+        // 读回写的是 ROI **之内**，两者不重叠、彼此无依赖。
+        // 台架实测（4K 典型人脸）：Map 等 GPU 5.81ms、补齐 2.78ms。
+        // 挪到 Map 前面之后，这 2.78ms 落在等待里跑，基本是白拿的。
+        //
+        // 位置很关键：必须在 CopySubresourceRegion **之后**。子区域拷贝提交得越早，
+        // GPU 越不会在算完之后空等命令；放在提交之前会让这条拷贝晚 2~3ms 才进队列，
+        // 反而把整帧拖长 —— 省下来的一头又赔回去。
+        //
+        // Map 失败时这里已经把 ROI 外写过了：无害。失败后本函数 return false，
+        // 调用方（beauty_core）改走 surface3RgbBand 整帧重算，dst 会被全量覆盖。
+        const double tf0 = nowMsQpc();
+        if (dst != src) {
+            // 大块上下两条 + 逐行左右两条。试过把大块换成 _mm_stream_si128
+            // 非时序写（省掉 read-for-ownership），三对交替实测 fill 反而稳定慢
+            // 3~4%：条带两端不满 cache line，NT 仍要读改写；而 mapCopy 也没因
+            // 「不污染 L3」受益到能被量出来。故保留普通 memcpy。
+            const size_t stride = (size_t)w * 4;
+            if (oy0 > 0)
+                std::memcpy(dst, src, (size_t)oy0 * stride);
+            if (oy1 < h)
+                std::memcpy(dst + (size_t)oy1 * stride, src + (size_t)oy1 * stride,
+                            (size_t)(h - oy1) * stride);
+            for (int y = oy0; y < oy1; ++y) {
+                unsigned char* d = dst + (size_t)y * stride;
+                const unsigned char* s = src + (size_t)y * stride;
+                if (ox0 > 0)
+                    std::memcpy(d, s, (size_t)ox0 * 4);
+                if (ox1 < w)
+                    std::memcpy(d + (size_t)ox1 * 4, s + (size_t)ox1 * 4,
+                                (size_t)(w - ox1) * 4);
+            }
+        }
+        timingFillOut = nowMsQpc() - tf0;
+
         D3D11_MAPPED_SUBRESOURCE m{};
+        const double tm0 = nowMsQpc();  // Map 之前
         const HRESULT hrMap = g_ctx->Map(g_stage, 0, D3D11_MAP_READ, 0, &m);
+        timingMapWaitOut = nowMsQpc() - tm0;   // 只算 Map() 本身：等同步点 + PCIe 往返
         if (FAILED(hrMap)) {
             // 带 HRESULT 与资源尺寸：只写「Map(stage) 失败」的话，
             // 分不清是设备丢了、资源尺寸不对、还是上一次没 Unmap。
@@ -993,56 +1038,41 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         }
         g_ctx->Unmap(g_stage, 0);
         timingMapOut = nowMsQpc();
+        timingMapCopyOut = (timingMapOut - tm0) - timingMapWaitOut;  // 逐行 memcpy 的耗时
     }
     const double t3 = timingMapOut;
 
     // ---- 4. ROI 外补齐 ----
-    // CPU 版 surface3RgbBand 是「整帧逐像素写 dst」：mask=0 处写 dst=src，
-    // mask>0 处写磨皮结果。上面只下载了输出矩形 [ox0,ox1)×[oy0,oy1)，
-    // ROI 外若不补，dst 会留下调用前的内容 —— 在 Resolve 里就是上一帧的残影。
+    // 已在 3b 处完成（挪到 Map 之前，与 GPU 重叠）。这里留一段说明，免得下次
+    // 有人照着 CPU 版 surface3RgbBand 的语义顺序以为漏了。
     //
-    // 生产调用点（beauty_core）在进来之前**不保证** dst 已拷过 src：
-    // 那里只有两条早退分支会 memcpy，正常路径直接进来。所以等价性必须在这里补全，
-    // 不能指望调用方。这一条是本函数能被当作 surface3RgbBand 直接替换的前提。
+    // CPU 版是「整帧逐像素写 dst」：mask=0 处写 dst=src，mask>0 处写磨皮结果。
+    // 所以本函数必须保证调用返回后 dst 全帧有效 —— 生产调用点（beauty_core）
+    // 进来之前**不保证** dst 已拷过 src，那里只有两条早退分支会 memcpy。
+    // 这一条是本函数能被当作 surface3RgbBand 直接替换的前提，不能指望调用方。
     //
     // 用四条带而不是整帧 memcpy：被替换掉的正是 ROI 那一块（4K 实测占 34%），
     // 上下两条是整行连续拷贝，左右两条在大矩形边上各拷一小段。
-    //
-    // dst == src（原地处理）时整段跳过：矩形外本来就已经是 src 的内容，
-    // 再 memcpy 一遍只是自己拷自己。CPU 版逐像素「读 src 写 dst」在同址下也是安全的。
-    if (dst != src) {
-        const size_t stride = (size_t)w * 4;
-        if (oy0 > 0)
-            std::memcpy(dst, src, (size_t)oy0 * stride);
-        if (oy1 < h)
-            std::memcpy(dst + (size_t)oy1 * stride, src + (size_t)oy1 * stride,
-                        (size_t)(h - oy1) * stride);
-        for (int y = oy0; y < oy1; ++y) {
-            unsigned char* d = dst + (size_t)y * stride;
-            const unsigned char* s = src + (size_t)y * stride;
-            if (ox0 > 0)
-                std::memcpy(d, s, (size_t)ox0 * 4);
-            if (ox1 < w)
-                std::memcpy(d + (size_t)ox1 * 4, s + (size_t)ox1 * 4,
-                            (size_t)(w - ox1) * 4);
-        }
-    }
+    // dst == src（原地处理）时整段跳过：矩形外本来就已经是 src 的内容。
 
-    // 补齐也算进 totalMs —— 它是这一帧的真实开销；但不算进 downloadMs，
-    // 那一项要能直接对上台架量的「读回」口径。
-    const double t4 = nowMsQpc();
+    // t4 = 帧尾。补齐已并入读回前的等待，所以帧尾就是 Unmap 返回那一刻。
+    const double t4 = t3;
 
     if (timing) {
         timing->uploadMs   = t1 - t0;
         timing->computeMs  = t2 - t1;
-        timing->downloadMs = t3 - t2;
+        // downloadMs 只算「读回」本身（提交拷贝 + 等 GPU + 读 staging），
+        // 要能直接对上台架量的读回口径；补齐虽然挪到了读回之前，但它不是读回。
+        timing->downloadMs = (t3 - t2) - timingFillOut;
         timing->totalMs    = t4 - t0;
         timing->packMs     = ta - t0;
         timing->maskMs     = tb - ta;
         timing->copyUpMs   = tc - tb;
         timing->copyDnMs   = td - t2;
-        timing->mapMs      = timingMapOut - td;
-        timing->fillMs     = t4 - t3;
+        timing->mapMs      = timingMapOut - td - timingFillOut;
+        timing->mapWaitMs  = timingMapWaitOut;
+        timing->mapCopyMs  = timingMapCopyOut;
+        timing->fillMs     = timingFillOut;
         timing->imgX0 = imgX0; timing->imgY0 = imgY0;
         timing->imgW = imgRW;  timing->imgH = imgRH;
         timing->planeX0 = plx0; timing->planeY0 = ply0;
