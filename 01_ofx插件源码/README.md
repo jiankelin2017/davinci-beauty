@@ -1,4 +1,4 @@
-# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.0.9.0）
+# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.0.10.0）
 
 一个给 DaVinci Resolve Studio 21.1 用的 OpenFX 滤镜，效果引擎是自研引擎 3.1.39 的
 纯 CPU 美颜引擎（CoreEngine），人脸检测用 ONNX 模型，并在引擎内部**自动检测 GPU**
@@ -15,6 +15,38 @@
 `LICENSE`；随包分发的 ONNX Runtime、YuNet 模型、OpenFX 头文件的版权与许可全文见
 `THIRD-PARTY-NOTICES.md`。注意 GPL-2.0 与 Apache-2.0 不兼容，与 MIT / BSD-3 兼容 ——
 现有三个第三方组件都是后者。
+
+## v1.0.10.0 变更（2026-11-07，修「适配器日志从未生效」）
+
+**修订位 +1，只改日志与注释。** 算法、默认值、纹理格式、HLSL、画面全部未动，
+`baseline.py` 18/18、搬运台架 5/5。
+
+**问题**：1.0.9.0 承诺「初始化日志打出适配器型号」，真机两轮（07:16、07:21）只有
+`GPU 磨皮[auto]` 行，适配器行一次都没出现过。
+
+**根因**：播报写在 `gpuSmoothInit()` 里，而插件本体从不调用它——生产走的是
+`gpuSmoothRgbBand` 内部的懒加载（`if (!g_ready) { if (!createDevice()) return false; g_ready = true; }`）。
+全仓唯一调用者是台架与 `_p2bench`。1.0.9.0 的产物里连 `GPU 磨皮后端已就绪` 这个字符串都不存在
+（按字节搜索 0 次；同文件 `GPU 磨皮[` 有 3 次、`[厂商 0x%04X` 有 1 次），说明播报所在的函数
+连同字符串一起没进最终产物。这也解释了「台架过、真机不过」。
+
+**改法**：
+
+1. 播报移到懒加载处，进过一次 GPU 磨皮就会打
+2. 新增 `g_initLogged`，生产与 `gpuSmoothInit()` 共用，避免台架重复打
+3. 失败只播报一次，但**每帧仍重试创建**（驱动重置后可能恢复），不因日志节流而放弃重试
+4. `teardownDevice()` 复位 `g_initLogged`，设备重建后重新播报（换卡 / 换驱动 / 驱动重置自愈）
+
+ini 注释同步改成事实描述：首次进入 GPU 磨皮写一行「后端已就绪」，之后首 3 帧与每 60 帧
+写一行「GPU 磨皮[auto] …」（周期由 `beauty_core.cpp` 的 `frameNo_ <= 2 || frameNo_ % 60 == 0` 决定）。
+
+**验证**：产物 324,608 B、md5 `a226fea59196fc1582ea5acb007dee42`；新产物里
+`GPU 磨皮后端已就绪` 出现 2 次、`GPU 磨皮初始化失败` 1 次；台架只打一行
+`GPU 磨皮后端已就绪：NVIDIA GeForce RTX 5060 Laptop GPU [厂商 0x10DE，显存 7.7 GB]`，无重复。
+安装包 `DaVinciBeauty_Setup_v1.0.10.0.exe`，装机件与 `out\` 逐字节一致。
+
+**遗留**：新日志行需重启 Resolve 后才可见（安装时宿主在运行）；判据侧仍有盲区——
+台架与 baseline 都用 `gpuSmoothInit()` 预热，覆盖不到生产懒加载分支。
 
 ## v1.0.9.0 变更（2026-11-07，`gpu_smooth` 出厂默认改为 `auto`）
 
@@ -36,12 +68,13 @@
 
 - **适配器型号进日志**：`GPU 磨皮后端已就绪：<型号> [厂商 0x????，显存 x.x GB]`。选卡只排除
   WARP 软件渲染器、不按厂商过滤，AMD 与 Intel 核显同样走 GPU，而这两家没有实测数据，
-  日志里有型号才能判断是硬件差异还是插件问题。
+  日志里有型号才能判断是硬件差异还是插件问题。**（1.0.10.0 更正：这一行在 1.0.9.0 里实际
+  从未打印过，播报点所在的函数在生产路径无人调用；1.0.10.0 已修好，详见上一节。）**
 - **特性等级显式检查**：`pFeatureLevels` 传 `nullptr` 时 D3D11 默认列表含 10.0/9.x，DX10 老卡会
   「创建设备成功、编译着色器才失败」。现在提前挡，报「特性等级 x.x 低于 11.0」而不是
   `CreateComputeShader` 失败——后者极易被误判成驱动坏了。
 
-安装包 `DaVinciBeauty_Setup_v1.0.9.0.exe`，装机件 md5 `3240451c365904e57976db7fe7c08849`。
+安装包 `DaVinciBeauty_Setup_v1.0.9.0.exe`（历史版本，已被 1.0.10.0 取代），装机件 md5 `3240451c365904e57976db7fe7c08849`。
 
 ## v1.0.8.0 变更（2026-11-07，GPU 磨皮计时拆分 + fill 前移；推翻旧结论）
 

@@ -364,6 +364,10 @@ struct Cb {
 std::mutex g_mtx;
 bool  g_tried = false;
 bool  g_ready = false;
+// 初始化结果只播报一次。1.0.9.0 把这条日志写在 gpuSmoothInit() 里，而生产路径从不调用
+// 它（走 gpuSmoothRgbBand 内的懒加载），整个函数连字符串一起被链接器当死代码丢掉，
+// 日志里永远看不到适配器型号——1.0.10.0 把播报移到懒加载处，两处共用本标志避免重复。
+bool  g_initLogged = false;
 char  g_err[512] = {0};
 
 ID3D11Device*        g_dev = nullptr;
@@ -499,6 +503,9 @@ void teardownDevice() {
     if (g_dev) { g_dev->Release(); g_dev = nullptr; }
     g_ready = false;
     g_tried = false;
+    // 设备重建后重新播报一次适配器（1.0.10.0）：驱动重置往往伴随换卡或换驱动版本，
+    // 日志里留两行比只留首行更有诊断价值。
+    g_initLogged = false;
 }
 
 bool createDevice() {
@@ -749,11 +756,16 @@ bool gpuSmoothInit() {
     if (g_tried) return g_ready;
     g_tried = true;
     g_ready = createDevice();
-    if (!g_ready)
-        NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮初始化失败：%s（回退 CPU，适配器 %s）",
-              g_err, g_adapterInfo[0] ? g_adapterInfo : "未选定");
-    else
-        NALOG(BEAUTY_LOG_INFO, "GPU 磨皮后端已就绪：%s", g_adapterInfo);
+    // 播报与首帧懒加载共用 g_initLogged：台架先调 gpuSmoothInit()、再进 RgbBand 时，
+    // 只会在前者打一行，不会重复。（1.0.10.0）
+    if (!g_initLogged) {
+        g_initLogged = true;
+        if (!g_ready)
+            NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮初始化失败：%s（回退 CPU，适配器 %s）",
+                  g_err, g_adapterInfo[0] ? g_adapterInfo : "未选定");
+        else
+            NALOG(BEAUTY_LOG_INFO, "GPU 磨皮后端已就绪：%s", g_adapterInfo);
+    }
     return g_ready;
 }
 
@@ -870,8 +882,22 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     // 覆盖 g_dev 的同时 ensureResources 因「尺寸没变」直接返回，留下一批属于旧设备的
     // 纹理。第二次 Map 就返回 DEVICE_REMOVED，表现成「首帧好用、之后每帧都回退 CPU」。
     if (!g_ready) {
-        if (!createDevice()) return false;
+        if (!createDevice()) {
+            // 失败只播报一次：这里每帧都会被重试（设备可能因驱动重置而恢复），
+            // 但日志不能每帧刷一行。
+            if (!g_initLogged) {
+                g_initLogged = true;
+                NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮初始化失败：%s（回退 CPU，适配器 %s）",
+                      g_err, g_adapterInfo[0] ? g_adapterInfo : "未选定");
+            }
+            return false;
+        }
         g_ready = true;
+        // 生产路径的适配器播报点（1.0.10.0 起）。台架走 gpuSmoothInit()，两处共用标志。
+        if (!g_initLogged) {
+            g_initLogged = true;
+            NALOG(BEAUTY_LOG_INFO, "GPU 磨皮后端已就绪：%s", g_adapterInfo);
+        }
     }
     if (!ensureResources(imgRW, imgRH, pw, ph)) return false;
 
