@@ -30,6 +30,24 @@
   它只收录 git 已跟踪的文件，改完源码重跑一次即可）
 - 本地回滚副本（`src/_backup_before_*`）**不**计入清单，只作修复前留档
 
+
+## 许可（License）
+
+本项目以 **GNU General Public License version 2（仅第 2 版，GPL-2.0-only）** 发布。
+
+- 许可全文：根目录 [`LICENSE`](LICENSE)
+- 随包分发的第三方组件（ONNX Runtime 1.20、YuNet 人脸模型、OpenFX 头文件）的
+  版权与许可全文：[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+
+两点需要说清楚：
+
+1. **「仅第 2 版」不是笔误**。文件头没有写 "or (at your option) any later version"，
+   所以下游不能自行按 GPLv3 使用。要改成「或更高版本」，只需改本段声明，
+   `LICENSE` 正文（GPLv2 官方文本）一个字都不用动。
+2. **GPL-2.0 与 Apache-2.0 不兼容**，与 MIT、BSD-3-Clause 兼容。现有三个第三方组件
+   都是 MIT / BSD-3，所以这个组合是成立的；将来若引入 Apache-2.0 组件，
+   整个授权结构必须重做。
+
 ## 目录形态（2026-10-31 整合后）
 
 本仓库就是一个完整工作区：源码 + 文档 + 工具都在 `01_ofx插件源码 / 03_测试夹具 /

@@ -181,6 +181,28 @@ roi 外抄 src 为什么等价于旧行为：`buildMaskInto` 先把掩码整帧�
   真正还想快，优先级应是「减少 GPU 路径的搬运」（4K 上传 2.9 + 读回 3.2ms，
   算法本身 0.15ms），而不是继续压 CPU。
 
+### (6) 同批补齐：许可证与第三方声明（纯文档，**未动版本号**）
+
+2026-11-06 21:50 补了仓库根 `LICENSE`（GNU GPL v2 全文，官方 `gpl-2.0.txt`）与
+`THIRD-PARTY-NOTICES.md`。按四段式规则纯文档改动应 REV +1（`1.0.6.1`），
+但那会让文档版本与已装机 DLL 的 `NAMA_BUILD_STR` 对不上，
+沿用 1.0.4.0 那次的做法：**留到下一次实际代码改动时一并进位**。
+
+核对到的三件事（都是这次逐个文件查的，不是照抄旧结论）：
+
+- `onnxruntime.dll` 的 PE 版本是 **1.20.20241119.10.5c1b7cc**，
+  不是源码注释里提到的 1.17.1（那是 PATH 里的另一份）。SHA-256 已写进声明。
+- `YuNet` 模型所在目录 `opencv_zoo/models/face_detection_yunet/` **自带 MIT LICENSE**
+  （Copyright (c) 2020 Shiqi Yu），而 **opencv_zoo 仓库根是 Apache-2.0**。
+  早先只写「MIT，via OpenCV Zoo」，结论对但依据写错了位置；这次写清了子目录优先。
+  这条很关键：GPL-2.0 与 Apache-2.0 **不兼容**，若模型真按仓库根授权，整个授权结构就得重做。
+- OFX 头 17 个文件全是 `BSD-3-Clause`，版权行是 "Copyright OpenFX and contributors
+  to the OpenFX project."（不是 2008 OE Association 那句老版权）。
+
+**还没做**：`install.bat` 与 NSIS 安装脚本目前只拷 DLL + 运行时 + 模型，
+没有把 `LICENSE` / `THIRD-PARTY-NOTICES.md` 打进 bundle。分发安装包前必须补，
+否则 MIT/BSD-3 要求的「随副本附带声明」不成立。
+
 ## 〇-最新、1.0.4.0 变更（2026-11-06，D1 修精度 + D3 真机长时验证通过）
 
 用户拍板 **「D1 → D3 串行，D2 兜底」**。**D1 与 D3 均已完成**：D1 把台架

@@ -48,6 +48,10 @@ mkdir "%WIN64%" 2>nul
 copy /y "%~dp0out\DaVinciBeauty.ofx" "%WIN64%\" >nul
 copy /y "%ENGINE%\onnxruntime.dll" "%WIN64%\" >nul
 copy /y "%ENGINE%\yunet.onnx" "%WIN64%\" >nul
+rem GPL / MIT / BSD-3 都要求「随副本附带声明」，所以许可文件跟 DLL 一起装。
+rem 用 if exist 保护：源码包可能被裁剪成只有 01_ofx插件源码 一层。
+if exist "%~dp0..\LICENSE" copy /y "%~dp0..\LICENSE" "%WIN64%\" >nul
+if exist "%~dp0..\THIRD-PARTY-NOTICES.md" copy /y "%~dp0..\THIRD-PARTY-NOTICES.md" "%WIN64%\" >nul
 
 echo [2/4] Bundle contents
 dir /s /b "%WIN64%" | findstr /v "^$"
@@ -86,6 +90,8 @@ set "FAILED=0"
 call :inst "%WIN64%\yunet.onnx"        "%TARGET%\yunet.onnx"
 call :inst "%WIN64%\onnxruntime.dll"   "%TARGET%\onnxruntime.dll"
 call :inst "%WIN64%\DaVinciBeauty.ofx" "%TARGET%\DaVinciBeauty.ofx"
+if exist "%WIN64%\LICENSE" call :inst "%WIN64%\LICENSE" "%TARGET%\LICENSE"
+if exist "%WIN64%\THIRD-PARTY-NOTICES.md" call :inst "%WIN64%\THIRD-PARTY-NOTICES.md" "%TARGET%\THIRD-PARTY-NOTICES.md"
 
 echo [4/4] Verifying
 set "MISSING=0"

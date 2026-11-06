@@ -9,6 +9,13 @@
 这是本项目当前的主交付形态。早期做的「工作区 → 脚本」Lua 版已移出脚本菜单
 （代码保留在 `C:\ProgramData\DaVinciBeauty\disabled_scripts\`），两条路线不再并存。
 
+## 许可
+
+本项目以 **GPL-2.0-only**（GNU GPL 第 2 版，不含「或更高版本」）发布，全文见仓库根
+`LICENSE`；随包分发的 ONNX Runtime、YuNet 模型、OpenFX 头文件的版权与许可全文见
+`THIRD-PARTY-NOTICES.md`。注意 GPL-2.0 与 Apache-2.0 不兼容，与 MIT / BSD-3 兼容 ——
+现有三个第三方组件都是后者。
+
 ## v1.0.6.0 变更（2026-11-06，CPU 磨皮按 ROI 裁剪；画面逐字节不变）
 
 **修订位 +1**（`1.0.5.0` → `1.0.6.0`）：只提速，操作与画面都不变（18/18 基线 md5 一致）。
