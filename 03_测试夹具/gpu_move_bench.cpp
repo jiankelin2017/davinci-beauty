@@ -15,6 +15,11 @@
 //
 // 同时做逐字节对拍：搬运怎么改都不能让画面变。差异不是 0 就判失败。
 //
+// 2026-11-07 追加「运动序列判据」（见文件下半部的 motionCase）：上面 5 个 case 都是
+// 静态图，帧 N 与帧 N-1 完全相同，对「用了上一帧的结果」这种缺陷**零分辨力**。
+// 新增一组帧间带位移的序列，并报出灵敏度（上一帧结果与本帧结果的差），
+// 让将来做 2c 双缓冲延迟取回时，缺陷不会静默通过。第二参数传 nomotion 可跳过。
+//
 // 编译：同目录 build_gpu_move.ps1（与生产 build.ps1 同参数）。
 
 #include "beauty_smooth.h"
@@ -223,6 +228,141 @@ void oneCase(int w, int h, double areaPct, int reps, Row* out) {
     out->diff = countDiff(&outCpu[0], &outGpu[0], (size_t)w * h * 4, &out->maxd);
 }
 
+// ==================== 运动序列判据（计划一 2c 的防护基座，2026-11-07）====================
+//
+// 为什么必须有这一组：上面 5 个 case 与 `baseline.py` 的 18 个画幅，输入都是**静态图**。
+// 同一张图连喂多次，帧 N 与帧 N-1 逐字节相同 —— 在这种输入下，「返回本帧结果」与
+// 「返回上一帧结果」的输出完全一致，逐字节判据**没有任何分辨力**。
+//
+// 后果很具体：计划一里的 2c（双缓冲延迟取回，把 Map 的等待挪到下一帧）若照现有台架
+// 验证，会轻松通过全部判据，却把「dst 的 ROI 被写进上一帧像素」的缺陷带进生产。
+//
+// 所以这里补一组帧间有位移的序列，并额外报一个**灵敏度**数字：把上一帧的 CPU 结果
+// 拿去和本帧的 CPU 结果比，得到的 diff 就是「一个按上帧返回的实现会被判成多少错」。
+// 灵敏度恒为 0 说明这组序列白跑（编不出可分辨的两帧），此时直接判失败，不允许静默失明。
+void shiftRgbaWrap(std::vector<unsigned char>& buf, int w, int h, int dx) {
+    if (dx <= 0) return;
+    dx %= w;
+    if (dx == 0) return;
+    std::vector<unsigned char> tmp((size_t)w * 4);
+    for (int y = 0; y < h; ++y) {
+        unsigned char* row = &buf[(size_t)y * w * 4];
+        std::memcpy(&tmp[0], row, (size_t)w * 4);
+        std::memcpy(row, &tmp[(size_t)dx * 4], (size_t)(w - dx) * 4);
+        std::memcpy(row + (size_t)(w - dx) * 4, &tmp[0], (size_t)dx * 4);
+    }
+}
+
+void shiftR8Wrap(std::vector<unsigned char>& buf, int w, int h, int dx) {
+    if (dx <= 0) return;
+    dx %= w;
+    if (dx == 0) return;
+    std::vector<unsigned char> tmp((size_t)w);
+    for (int y = 0; y < h; ++y) {
+        unsigned char* row = &buf[(size_t)y * w];
+        std::memcpy(&tmp[0], row, (size_t)w);
+        std::memcpy(row, &tmp[dx], (size_t)(w - dx));
+        std::memcpy(row + (w - dx), &tmp[0], (size_t)dx);
+    }
+}
+
+// 扫非零像素取包围盒（位移后 bbox 会跟着动，必须重算 —— 这也正好覆盖
+// 「上一帧的输出矩形与这一帧不同」这个 2c 才会遇到的坑）。
+beautycore::RoiRect maskBBox(const std::vector<unsigned char>& mask, int w, int h) {
+    beautycore::RoiRect r{};
+    int x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (int y = 0; y < h; ++y) {
+        const unsigned char* row = &mask[(size_t)y * w];
+        for (int x = 0; x < w; ++x) {
+            if (!row[x]) continue;
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+        }
+    }
+    if (x1 < 0) return r;      // 空掩码 → empty()
+    r.x0 = x0; r.y0 = y0; r.x1 = x1 + 1; r.y1 = y1 + 1;
+    return r;
+}
+
+struct MotionRow {
+    int frame, dx, bboxX0;
+    long long gpuVsCpu; int gpuMaxd;      // 本实现：本帧 GPU 结果 vs 本帧 CPU 结果
+    long long staleVsCpu; int staleMaxd;  // 上帧 CPU 结果 vs 本帧 CPU 结果（= 2c 会报的错）
+};
+
+// 返回值：被判为不一致的帧数。degenerate 置 true 表示这组序列没有分辨力。
+int motionCase(int w, int h, double areaPct, int frames, int shiftPx,
+               std::vector<MotionRow>* rows, bool* degenerate) {
+    std::vector<unsigned char> baseSrc, baseMask, baseProt;
+    fillImage(baseSrc, w, h);
+    beautycore::RoiRect bb0{};
+    buildMask(baseMask, baseProt, w, h, areaPct, &bb0);
+
+    beautycore::BandParams p;
+    std::vector<float> scratch;
+
+    std::vector<unsigned char> srcF, maskF, protF;
+    std::vector<unsigned char> outCpu, outGpu, prevCpu;
+    bool hasPrev = false;
+    int bad = 0;
+    long long maxStale = 0;
+
+    // 热身：scratch 的首次分配 + 设备纹理组的首次建立都不算进判据。
+    {
+        std::vector<unsigned char> warmS(baseSrc), warmD(baseSrc);
+        beautycore::surface3RgbBand(&warmS[0], &warmD[0], w, h,
+                                    &baseMask[0], &baseProt[0], p, bb0, 8, scratch);
+        std::vector<unsigned char> warmG(baseSrc);
+        GpuSmoothTiming tw{};
+        gpuSmoothRgbBand(&baseSrc[0], &warmG[0], w, h,
+                         &baseMask[0], &baseProt[0], p, bb0, &tw);
+    }
+
+    for (int f = 0; f < frames; ++f) {
+        const int dx = f * shiftPx;
+        srcF  = baseSrc;   shiftRgbaWrap(srcF, w, h, dx);
+        maskF = baseMask;  shiftR8Wrap(maskF, w, h, dx);
+        protF = baseProt;  shiftR8Wrap(protF, w, h, dx);
+        const beautycore::RoiRect bbox = maskBBox(maskF, w, h);
+
+        outCpu.assign((size_t)w * h * 4, 0);
+        outGpu.assign((size_t)w * h * 4, 0);
+
+        beautycore::surface3RgbBand(&srcF[0], &outCpu[0], w, h,
+                                    &maskF[0], &protF[0], p, bbox, 8, scratch);
+
+        GpuSmoothTiming g{};
+        if (!gpuSmoothRgbBand(&srcF[0], &outGpu[0], w, h,
+                              &maskF[0], &protF[0], p, bbox, &g)) {
+            std::printf("  [FAIL] frame %d: gpuSmoothRgbBand returned false: %s\n",
+                        f, gpuSmoothLastError());
+            ++bad;
+            hasPrev = false;   // 断了链，下一帧不再跨帧比较
+            continue;
+        }
+
+        MotionRow r{};
+        r.frame = f; r.dx = dx; r.bboxX0 = bbox.x0;
+        r.gpuVsCpu = countDiff(&outCpu[0], &outGpu[0], (size_t)w * h * 4, &r.gpuMaxd);
+        if (hasPrev)
+            r.staleVsCpu = countDiff(&outCpu[0], &prevCpu[0], (size_t)w * h * 4, &r.staleMaxd);
+        else
+            r.staleVsCpu = -1;   // 首帧没有上一帧
+
+        if (r.gpuVsCpu != 0) ++bad;
+        if (r.staleVsCpu > maxStale) maxStale = r.staleVsCpu;
+
+        rows->push_back(r);
+        prevCpu.swap(outCpu);
+        hasPrev = true;
+    }
+
+    *degenerate = (maxStale <= 0);
+    return bad;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -294,11 +434,48 @@ int main(int argc, char** argv) {
                     rows[i].diff == 0 ? "OK" : "MISMATCH");
     }
 
+    // ---- 运动序列：唯一能发现「用错帧」的判据（2c 上线前必须先有它）----
+    const bool skipMotion = (argc > 2 && std::strcmp(argv[2], "nomotion") == 0);
+    int  mBad = 0;
+    bool mDegen = false;
+    std::vector<MotionRow> mrows;
+    if (!skipMotion) {
+        // 1080p、22% 人脸、6 帧、每帧左移 3 px（累计 15 px，约半张脸的宽度）。
+        // 位移量要够大：太小则相邻两帧的磨皮结果几乎相同，灵敏度会被磨没。
+        mBad = motionCase(1920, 1080, 22.0, 6, 3, &mrows, &mDegen);
+
+        std::printf("\n[MOTION] 运动序列判据 1080p 22%% 6 帧 每帧左移 3px\n");
+        std::printf("  说明：gpuVsCpu 是本实现的错（应为 0）；staleVsCpu 是「上一帧 CPU 结果」\n"
+                    "        与本帧 CPU 结果的差，即「若改成返回上一帧结果」会报的错。\n");
+        std::printf("  %-6s %-5s %-8s %-21s %-21s\n",
+                    "frame", "dx", "bboxX0", "gpuVsCpu(diff/max)", "staleVsCpu(diff/max)");
+        for (size_t i = 0; i < mrows.size(); ++i) {
+            const MotionRow& m = mrows[i];
+            char s1[32], s2[32];
+            std::snprintf(s1, sizeof(s1), "%lld/%d", m.gpuVsCpu, m.gpuMaxd);
+            if (m.staleVsCpu < 0) std::snprintf(s2, sizeof(s2), "(首帧)");
+            else                  std::snprintf(s2, sizeof(s2), "%lld/%d", m.staleVsCpu, m.staleMaxd);
+            std::printf("  %-6d %-5d %-8d %-21s %-21s %s\n",
+                        m.frame, m.dx, m.bboxX0, s1, s2,
+                        m.gpuVsCpu == 0 ? "OK" : "MISMATCH");
+        }
+        if (mDegen) {
+            std::printf("  [FAIL] 灵敏度为 0：本组序列相邻帧的 CPU 结果完全相同，\n"
+                        "         说明它分辨不出「用错帧」，判据失效。请加大 shiftPx。\n");
+        } else {
+            std::printf("  [灵敏度] 有效：一个「返回上一帧结果」的实现会在上面每帧非首帧处\n"
+                        "           报出 staleVsCpu 那列的量级，本判据足以拦住 2c 的缺陷。\n");
+        }
+    }
+
     gpuSmoothShutdown();
-    if (badDiff) {
-        std::printf("\nRESULT: FAIL (%lld case(s) not byte-exact)\n", badDiff);
+    const long long totalBad = badDiff + (long long)mBad + (mDegen ? 1LL : 0LL);
+    if (totalBad) {
+        std::printf("\nRESULT: FAIL (%lld static + %d motion case(s); %s)\n",
+                    badDiff, mBad, mDegen ? "灵敏度为 0" : "见上");
         return 1;
     }
-    std::printf("\nRESULT: PASS (all cases byte-exact)\n");
+    std::printf("\nRESULT: PASS (静态 %d 例 + 运动 %d 帧 全部逐字节一致，运动判据灵敏度有效)\n",
+                (int)rows.size(), (int)mrows.size());
     return 0;
 }
