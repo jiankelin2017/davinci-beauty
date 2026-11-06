@@ -1892,7 +1892,11 @@ public:
                                       "GPU 磨皮[%s] 失败，本帧回落 CPU：%s",
                                       gpuSmoothModeName(), gpuSmoothLastError());
                             }
-                        } else if (frameNo_ <= 2 || (frameNo_ % 60) == 0) {
+                        // 采样周期 10 帧（1.0.10.2 起，原 60）。60 帧一行在 24fps 下要播 2.5 秒
+                        // 才出一条，实测只有 3 个样本，判断不了「等 GPU 尖峰」的频率；
+                        // 10 帧一行 ≈ 每秒 2~3 条，跑十秒就有几十个样本。诊断期临时加密，
+                        // 定位结束后应改回 60（每行日志本身有写文件开销，不该常开）。
+                        } else if (frameNo_ <= 2 || (frameNo_ % 10) == 0) {
                             long long n = 0; double at = 0.0, ap = 0.0;
                             gpuSmoothStats(&n, &at, &ap);
                             NALOG(BEAUTY_LOG_INFO,
