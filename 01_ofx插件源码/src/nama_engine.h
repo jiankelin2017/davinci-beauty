@@ -19,12 +19,30 @@
 // ---------------------------------------------------------------------------
 // 构建版本号 —— 唯一出处
 // ---------------------------------------------------------------------------
-// NamaVersion() 只编码 MAJOR/MINOR（对外 ABI 语义不变）；完整显示版本
-// （含 PATCH 位）看 NAMA_BUILD_STR，日志里的 "init OK (v2.1.2 ...)" 用它。
-#define NAMA_BUILD_MAJOR 3
+// 四段式 `主.功能.修订.构建`（2026-11-06 起，见 PROGRESS「版本号规则 v2」）。
+//
+//   MAJOR  不兼容变更（旧工程失效 / 参数编号变 / 引擎接口重写）
+//   MINOR  用户可见的新功能（新滑块、新配置项、新渲染路径）
+//   PATCH  修 bug / 调默认值 / 提速，但不加新东西
+//   REV    无行为变化（日志、注释、文档、打包、开关挪位置）
+//
+// **低位不进位**：PATCH 可以从 9 涨到 10、20，不必攒够就顶到 MINOR。
+// 这条是「版本号升太快」的解药 —— 日常改动全由后两位消化。
+//
+// 一次改动跨多档时取最高那档，低位归零，不叠加。
+//
+// 消费方：
+//   · NAMA_BUILD_STR  → 日志、面板「版本」参数（四段全显示）
+//   · MAJOR/MINOR     → OfxPlugin 结构体的 versionMajor/versionMinor
+//                        **OFX 结构体只有两段**，宿主列表里永远显示 "1.0"，
+//                        后两位只在日志与面板里可见。这是规范限制，不是 bug。
+//   · MAJOR/MINOR     → NamaVersion() 的 ABI 编码
+// ---------------------------------------------------------------------------
+#define NAMA_BUILD_MAJOR 1
 #define NAMA_BUILD_MINOR 0
-#define NAMA_BUILD_PATCH 8
-#define NAMA_BUILD_STR "3.0.8"
+#define NAMA_BUILD_PATCH 6
+#define NAMA_BUILD_REV   0
+#define NAMA_BUILD_STR "1.0.6.0"
 
 // 面板参数顺序（滤镜属性页滑块的顺序）
 enum {
@@ -158,6 +176,9 @@ public:
     const char* lastErr() const { return failReason_.c_str(); }
     // 上一次 process 内 SDK 自身的耗时（毫秒，不含调用方的像素格式转换）
     double lastSdkMs() const { return lastSdkMs_; }
+    // 诊断（BUG4）：上一次 process 是否把输入整帧换成了引擎缓存的 heldFrame_。
+    // 只读，不参与渲染决策；OFX 层把它写进 DIAG 行。
+    bool frameSubstituted() const;
 
     // ---- 语义区域（自研皮肤分割）状态，供日志读取 ----
     // 不可用（人脸模型未加载 / 区域推理失败）时全部效果退回 v1.4 的颜色启发式，

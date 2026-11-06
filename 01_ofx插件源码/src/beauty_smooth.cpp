@@ -791,6 +791,44 @@ static inline float planeBilinear(const float* p, int w, int h, float x, float y
     return ab + (cd - ab) * ty;
 }
 
+// ROI 裁剪版的双线性采样。p 是 (cw×ch) 的一块平面，它在**全局**平面里的
+// 左上角是 (ox,oy)，全局尺寸是 (gw,gh)。
+//
+// 关键约束：采样坐标 gx/gy 必须是**全局**坐标，不能先把 ox 减掉再传进来。
+// 先减再加会让 (x+0.5)·s − ox 与整帧版的 (x+0.5)·s 落在不同的浮点上，
+// 权重差 1 ULP —— 实测 1920×1080 的 8 个用例里有 3 个会因此差出 1 个灰阶。
+// 这里把 floor 与小数部分都放在全局坐标里做，ox/oy 只作用在整数索引上（精确）。
+static inline float planeBilinearRoi(const float* p, int cw, int ch,
+                                     int ox, int oy, int gw, int gh,
+                                     float gx, float gy) {
+    const float fx = gx - 0.5f;
+    const float fy = gy - 0.5f;
+    int x0 = (int)floorf(fx);
+    int y0 = (int)floorf(fy);
+    const float tx = fx - (float)x0;
+    const float ty = fy - (float)y0;
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+    // 先在**全局**范围 clamp（与整帧版同一套边界行为），再换算成局部索引
+    x0 = clampi(x0, 0, gw - 1) - ox;
+    x1 = clampi(x1, 0, gw - 1) - ox;
+    y0 = clampi(y0, 0, gh - 1) - oy;
+    y1 = clampi(y1, 0, gh - 1) - oy;
+    // 内存安全兜底：正常情况下上面算出来必在块内（halo 保证了这一点），
+    // 真出了界说明 halo 算错了，这里夹住至少不会读越界。
+    x0 = clampi(x0, 0, cw - 1);
+    x1 = clampi(x1, 0, cw - 1);
+    y0 = clampi(y0, 0, ch - 1);
+    y1 = clampi(y1, 0, ch - 1);
+    const float a = p[(size_t)y0 * (size_t)cw + (size_t)x0];
+    const float b = p[(size_t)y0 * (size_t)cw + (size_t)x1];
+    const float c = p[(size_t)y1 * (size_t)cw + (size_t)x0];
+    const float d = p[(size_t)y1 * (size_t)cw + (size_t)x1];
+    const float ab = a + (b - a) * tx;
+    const float cd = c + (d - c) * tx;
+    return ab + (cd - ab) * ty;
+}
+
 // 一趟 25 tap 表面模糊。四个必须照抄的细节（C23 §3.1）：
 //   ① 空间权重恒为 1（盒式，不是高斯）—— 换高斯会让高频衰减曲线变形
 //   ② 值域权重是二次抛物线截断 1−min(Δg²·yFactor, 1)
@@ -994,7 +1032,10 @@ void surface3Rgb25(const unsigned char* src, unsigned char* dst, int w, int h,
 // 详见 C23 §12，那里有扫描表和对不上的那一格（判据 2）的说明。
 
 // 盒宽：按处理宽度的比例换算成奇数。UV 固定（C23 §3.2），所以随画幅缩放。
-static inline int bandBoxW(int ww, float frac, int minW) {
+//
+// 导出给 GPU 侧（gpu_smooth.cpp）复用：半径必须两边算得一模一样，
+// 否则 B1/B2 的核就不同，逐字节一致直接失效。不要在 GPU 侧另抄一份。
+int bandBoxW(int ww, float frac, int minW) {
     int k = (int)(frac * (float)ww + 0.5f);
     if (k < minW) k = minW;
     if ((k & 1) == 0) k++;
@@ -1106,7 +1147,42 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
     const int ra = (wa - 1) / 2;
     const int nPass = (p.passes < 1) ? 1 : ((p.passes > 6) ? 6 : p.passes);
 
-    const size_t np = (size_t)ww * (size_t)wh;
+    // ---- ROI 裁剪（1.0.6.0）----------------------------------------------
+    // 旧版这里只判 roi.empty() 就返回，之后全部按 w,h 整帧算 —— 那个 roi 参数
+    // 从头到尾没被用过，脸外像素白算（P2 施工图第 0 节第 2 条坑）。
+    // 现在按「roi 外扩 halo」裁一块处理平面，只算这块，脸外的 dst 直接抄 src。
+    //
+    // halo 怎么来的（本条唯一容易错的地方，实测踩了两次）：
+    //   ① 卷积支持域：b1 要 nPass·r1、b2 要 nPass·r2；而 amp = blur(|C.g − b2.g|)
+    //      是在 b2 之上再 blur nPass·ra，所以它要的真值半径是 nPass·(r2 + ra)。
+    //   ② **滑动窗口的相位**：bandBoxH/V 每 32 像素重算一次窗口和（kFlush），
+    //      两次重算之间是「上一段的和 ± 增删」，所以 crop 边界那圈 clamp 出来的
+    //      假值不会只污染 r 个像素 —— 它会一路带到下一个重算点。实测只按 ① 取
+    //      halo（1080p 约 20 像素）时，台架 8 个用例全部差 1 个字节：差异小得像
+    //      浮点噪声，真因就是这一条。
+    //   ③ ② 的作用半径与 r 无关，是 32/趟；nPass 趟叠加，再乘上 amp 那一级（两级
+    //      级联：b2 的污染要再过一遍 amp 模糊）。合起来就是下面这条，与 P2 施工图
+    //      第 7.1 节「ROI 外扩必须 = passes×32 + passes×(r2+ra) + 2」是同一个式子。
+    //      实测：1080p 取到 nPass·(32+rMax)+2 = 118 时台架 20/20 全过；
+    //      只给 nPass·32+2 = 98 时会剩 1 个 4K 用例差 1 字节。
+    //
+    // 起点还要下对齐到 32（alignDown32），让重算点落在同一批全局坐标上 ——
+    // 与 boxRgbRoi 的注释同理，否则浮点累加相位不同，四舍五入会差出灰阶。
+    const int rMax = (r1 > r2 ? r1 : r2) + ra;
+    const int growP = nPass * (32 + rMax) + 2;
+    int px0 = (int)((long long)roi.x0 * ww / w) - growP;
+    int py0 = (int)((long long)roi.y0 * wh / h) - growP;
+    int px1 = (int)(((long long)roi.x1 * ww + w - 1) / w) + growP;
+    int py1 = (int)(((long long)roi.y1 * wh + h - 1) / h) + growP;
+    px0 = alignDown32(clampi(px0, 0, ww));
+    py0 = alignDown32(clampi(py0, 0, wh));
+    px1 = clampi(px1, 0, ww);
+    py1 = clampi(py1, 0, wh);
+    const int cw = px1 - px0;
+    const int ch = py1 - py0;
+    if (cw < 1 || ch < 1) return;
+
+    const size_t np = (size_t)cw * (size_t)ch;
     // 平面：src(3) + b1(3) + b2(3) + amp(1) + tmp(3) = 13，留 16
     if (scratch.size() < np * 16) scratch.resize(np * 16);
     float* sr  = &scratch[0];
@@ -1123,8 +1199,11 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
     float* tm1 = tm0 + np;
     float* tm2 = tm1 + np;
 
-    // 小画幅（640×394 半分辨率只有 63k 像素）时线程创建比计算还贵，退回单线程。
-    const int bt = (np >= 150000) ? threads : 1;
+    // 阈值按**裁剪后**的平面像素数判（1.0.5.1 起 np 不再是整帧）。
+    // 1080p 的人脸框裁完只剩约 9 万像素，沿用原来的 15 万门槛会让典型用例退回
+    // 单线程，反而比整帧多线程慢 —— 收益全被吃掉。4 万是持久线程池下并行仍然
+    // 划算的下限；线程数只影响速度，不影响任何一个像素的算术，所以逐字节无风险。
+    const int bt = (np >= 40000) ? threads : 1;
     float* srcp[3] = {sr, sg, sb};
     float* b1p[3]  = {b1r, b1g, b1b};
     float* b2p[3]  = {b2r, b2g, b2b};
@@ -1134,12 +1213,12 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
 
     // ---- 下采样到处理分辨率（2×2 盒式，与 25 tap 路径同口径【推断】）------
     if (ww == w && wh == h) {
-        runRange(0, h, threads, [&](int yBegin, int yEnd) {
+        runRange(0, ch, threads, [&](int yBegin, int yEnd) {
             for (int y = yBegin; y < yEnd; y++) {
-                const unsigned char* row = src + (size_t)y * (size_t)w * 4;
-                const size_t o = (size_t)y * (size_t)w;
-                for (int x = 0; x < w; x++) {
-                    const size_t q = (size_t)x * 4;
+                const unsigned char* row = src + (size_t)(py0 + y) * (size_t)w * 4;
+                const size_t o = (size_t)y * (size_t)cw;
+                for (int x = 0; x < cw; x++) {
+                    const size_t q = (size_t)(px0 + x) * 4;
                     sr[o + x] = (float)row[q + 0];
                     sg[o + x] = (float)row[q + 1];
                     sb[o + x] = (float)row[q + 2];
@@ -1147,15 +1226,15 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
             }
         });
     } else {
-        runRange(0, wh, threads, [&](int yBegin, int yEnd) {
+        runRange(0, ch, threads, [&](int yBegin, int yEnd) {
             for (int y = yBegin; y < yEnd; y++) {
-                const int y0 = y * 2;
+                const int y0 = (py0 + y) * 2;
                 const int y1 = (y0 + 1 < h) ? (y0 + 1) : y0;
                 const unsigned char* r0 = src + (size_t)y0 * (size_t)w * 4;
                 const unsigned char* r1 = src + (size_t)y1 * (size_t)w * 4;
-                const size_t o = (size_t)y * (size_t)ww;
-                for (int x = 0; x < ww; x++) {
-                    const int x0 = x * 2;
+                const size_t o = (size_t)y * (size_t)cw;
+                for (int x = 0; x < cw; x++) {
+                    const int x0 = (px0 + x) * 2;
                     const int x1 = (x0 + 1 < w) ? (x0 + 1) : x0;
                     const size_t i0 = (size_t)x0 * 4;
                     const size_t i1 = (size_t)x1 * 4;
@@ -1172,26 +1251,26 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
     // ---- B1 = 窄模糊，B2 = 宽模糊（两个不同尺度，这是 §11.5 的核心）------
     // 先把 src 拷进累加器再迭代（bandBoxN 的 acc 初值必须是 src）。
     for (int k = 0; k < 3; k++) memcpy(b1p[k], srcp[k], np * sizeof(float));
-    bandBoxN(b1p, tmpp, 3, ww, wh, r1, nPass, bt);
+    bandBoxN(b1p, tmpp, 3, cw, ch, r1, nPass, bt);
 
     for (int k = 0; k < 3; k++) memcpy(b2p[k], srcp[k], np * sizeof(float));
-    bandBoxN(b2p, tmpp, 3, ww, wh, r2, nPass, bt);
+    bandBoxN(b2p, tmpp, 3, cw, ch, r2, nPass, bt);
 
     // ---- 振幅代理 a = blur(|C.g − B2.g|)，只测绿通道（同 §3.1 ③）---------
     // 为什么用 |C−B2| 而不是 |B2−B1|：后者在高频处两者都≈0，相减也≈0，
     // 测不到高频振幅 —— §12.3 的对照表里 proxy=d 在 P=8 的振幅依赖是 1.0x，
     // 等于门控失效。|C−B2| 在整个频段都随振幅线性增长。
-    runRange(0, wh, threads, [&](int yBegin, int yEnd) {
+    runRange(0, ch, threads, [&](int yBegin, int yEnd) {
         for (int y = yBegin; y < yEnd; y++) {
-            const size_t o = (size_t)y * (size_t)ww;
-            for (int x = 0; x < ww; x++) {
+            const size_t o = (size_t)y * (size_t)cw;
+            for (int x = 0; x < cw; x++) {
                 float d = sg[o + x] - b2g[o + x];
                 amp[o + x] = (d < 0.0f) ? -d : d;
             }
         }
     });
     float* ampp[1] = {amp};
-    bandBoxN(ampp, tmpp, 1, ww, wh, ra, nPass, bt);
+    bandBoxN(ampp, tmpp, 1, cw, ch, ra, nPass, bt);
 
     // ---- 合成（与 surface3Rgb25 逐行同口径，多一步 ③ 振幅门控）----------
     const float I = (p.I < 0.0f) ? 0.0f : ((p.I > 1.0f) ? 1.0f : p.I);
@@ -1205,11 +1284,36 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
     const float sxw = (float)ww / (float)w;
     const float syw = (float)wh / (float)h;
 
-    runRange(0, h, threads, [&](int yBegin, int yEnd) {
+    // 合成只在 roi 内跑；roi 外 mask 恒为 0（buildMaskInto 保证掩码只落在它
+    // 自己统计出的包围盒里），旧版在那些像素上走的正是「dst = src」那一支，
+    // 所以这里先把 roi 外整块抄一遍，再只算 roi —— 与整帧版逐字节相同。
+    const int rx0 = clampi(roi.x0, 0, w);
+    const int rx1 = clampi(roi.x1, 0, w);
+    const int ry0 = clampi(roi.y0, 0, h);
+    const int ry1 = clampi(roi.y1, 0, h);
+    if (dst != src) {
+        for (int y = 0; y < ry0; y++)          // 上沿整行
+            memcpy(dst + (size_t)y * (size_t)w * 4, src + (size_t)y * (size_t)w * 4,
+                   (size_t)w * 4);
+        for (int y = ry1; y < h; y++)          // 下沿整行
+            memcpy(dst + (size_t)y * (size_t)w * 4, src + (size_t)y * (size_t)w * 4,
+                   (size_t)w * 4);
+        for (int y = ry0; y < ry1; y++) {      // 中间行的左右两段
+            const size_t rowOff = (size_t)y * (size_t)w * 4;
+            if (rx0 > 0)
+                memcpy(dst + rowOff, src + rowOff, (size_t)rx0 * 4);
+            if (rx1 < w)
+                memcpy(dst + rowOff + (size_t)rx1 * 4,
+                       src + rowOff + (size_t)rx1 * 4, (size_t)(w - rx1) * 4);
+        }
+    }
+
+    runRange(ry0, ry1, threads, [&](int yBegin, int yEnd) {
         for (int y = yBegin; y < yEnd; y++) {
             const size_t rowOff = (size_t)y * (size_t)w;
+            // vy/vx 保持**全局**平面坐标（与整帧版逐位相同），偏移交给采样函数
             const float vy = ((float)y + 0.5f) * syw;
-            for (int x = 0; x < w; x++) {
+            for (int x = rx0; x < rx1; x++) {
                 const size_t o = (rowOff + (size_t)x) * 4;
                 const int m = mask ? (int)mask[rowOff + (size_t)x] : 255;
                 if (m == 0) {
@@ -1219,6 +1323,7 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
                     dst[o + 3] = src[o + 3];
                     continue;
                 }
+                // 平面坐标保持全局（见 planeBilinearRoi 的注释：先减后算会差 1 ULP）
                 const float vx = ((float)x + 0.5f) * sxw;
                 const float skin = (float)m * inv255;
                 const float eye = protect
@@ -1229,17 +1334,17 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
 
                 // ③ 振幅门控：弱纹理 w→1（照磨），强纹理 w→0（放过）
                 //    gw = 1 / (1 + (a/T)^gwp)，gwp>2 时陡度更大 → 选择性的来源。
-                float a = planeBilinear(amp, ww, wh, vx, vy) * invT;
+                float a = planeBilinearRoi(amp, cw, ch, px0, py0, ww, wh, vx, vy) * invT;
                 const float ap = gwpSq ? (a * a)
                                        : ((a > 1e-6f) ? powf(a, gwp) : 0.0f);
                 float gw = 1.0f / (1.0f + ap);
 
-                const float v1[3] = {planeBilinear(b1r, ww, wh, vx, vy),
-                                     planeBilinear(b1g, ww, wh, vx, vy),
-                                     planeBilinear(b1b, ww, wh, vx, vy)};
-                const float v2[3] = {planeBilinear(b2r, ww, wh, vx, vy),
-                                     planeBilinear(b2g, ww, wh, vx, vy),
-                                     planeBilinear(b2b, ww, wh, vx, vy)};
+                const float v1[3] = {planeBilinearRoi(b1r, cw, ch, px0, py0, ww, wh, vx, vy),
+                                     planeBilinearRoi(b1g, cw, ch, px0, py0, ww, wh, vx, vy),
+                                     planeBilinearRoi(b1b, cw, ch, px0, py0, ww, wh, vx, vy)};
+                const float v2[3] = {planeBilinearRoi(b2r, cw, ch, px0, py0, ww, wh, vx, vy),
+                                     planeBilinearRoi(b2g, cw, ch, px0, py0, ww, wh, vx, vy),
+                                     planeBilinearRoi(b2b, cw, ch, px0, py0, ww, wh, vx, vy)};
                 for (int k = 0; k < 3; k++) {
                     const float c = (float)src[o + (size_t)k];
                     float even = c - v1[k] + v2[k];
@@ -1512,6 +1617,15 @@ void detailRefill(const unsigned char* src, unsigned char* dst, int w, int h,
             }
         }
     });
+}
+
+
+// 仅供离线台架调用：直接跑 CPU 的 bandBoxN，验证「生产路径的 box 结果」
+// 与「按同一份算法复刻出来的结果」是否一致。生产路径不调用。
+void beautyDebugBox1(float* acc, float* tmp, int bw, int bh, int r, int passes, int threads) {
+    float* a[1] = { acc };
+    float* t[1] = { tmp };
+    bandBoxN(a, t, 1, bw, bh, r, passes, threads);
 }
 
 }  // namespace beautycore

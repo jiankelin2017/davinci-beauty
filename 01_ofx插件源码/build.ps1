@@ -52,14 +52,16 @@ function Find-WindowsSdk {
     return @{ Root = $kits; Version = $ver.Name }
 }
 
-# Engine assets live in a sibling folder named 07_* (name is localized, so match
-# the numeric prefix instead of spelling it out).
+# Engine assets live in a sibling folder whose numeric prefix has changed over
+# time (02_*, 07_*). Match on the asset itself instead of the folder name, and
+# prefer a numbered folder when several copies exist.
 function Find-EngineDir {
     $parent = Split-Path $root -Parent
     $candidates = Get-ChildItem $parent -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like '07_*' } |
         Where-Object { Test-Path (Join-Path $_.FullName 'onnxruntime.dll') }
     if (-not $candidates) { return $null }
+    $numbered = $candidates | Where-Object { $_.Name -match '^\d\d_' }
+    if ($numbered) { return ($numbered | Select-Object -First 1).FullName }
     return $candidates[0].FullName
 }
 
@@ -114,7 +116,15 @@ $clArgs = @(
     # new md5 even from identical sources, which makes "installed == built" a
     # behaviour-only check and keeps stale md5s in the docs. With it, rebuilds are
     # byte-identical and acceptance can compare bytes honestly.
-    '/link', '/Brepro', 'opengl32.lib', 'gdi32.lib', 'user32.lib', "/IMPLIB:$(Join-Path $obj 'DaVinciBeauty.lib')"
+    #
+    # d3d11/dxgi/d3dcompiler: beauty_hwprobe.cpp 探测 GPU 能力并跑带宽校准。
+    # advapi32: 读注册表拿 CPU 基准频率（仅诊断用途，失败不影响功能）。
+    # opengl32/gdi32 是早期 GL 后端残留，代码里已无 wgl/glCreate 调用，保留只为
+    # 不改动既有链接行为；确认无隐式依赖后可删。
+    '/link', '/Brepro',
+    'd3d11.lib', 'dxgi.lib', 'd3dcompiler.lib', 'advapi32.lib',
+    'opengl32.lib', 'gdi32.lib', 'user32.lib',
+    "/IMPLIB:$(Join-Path $obj 'DaVinciBeauty.lib')"
 )
 
 Write-Host "[BUILD] MSVC $($msvc.Name) + SDK $sdkVer"

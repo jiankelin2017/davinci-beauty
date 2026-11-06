@@ -195,6 +195,10 @@ const char* NamaEngine::regionErr() const {
     return regionErr_.empty() ? "" : regionErr_.c_str();
 }
 
+// 诊断（BUG4）：本帧是否发生「整帧换帧」。见 beauty_core.cpp 的
+// g_beautyDiagFrameSubst 注释与 PROGRESS「BUG4 多实例串台」第 7 节。
+bool NamaEngine::frameSubstituted() const { return coreBeautyDiagFrameSubst() != 0; }
+
 // ---------------------------------------------------------------------------
 // 自测入口（C ABI，供 blur_test 探针 / acceptance 调用）
 // ---------------------------------------------------------------------------

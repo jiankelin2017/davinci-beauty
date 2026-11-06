@@ -77,3 +77,8 @@ double      coreBeautyLastCoreMs()    { return eng().lastCoreMs(); }
 bool        coreBeautyRegionActive()  { return eng().regionActive(); }
 const char* coreBeautyGpuProvider()  { return eng().gpuProvider(); }
 void        coreBeautyRelease()       { eng().release(); }
+
+// 诊断（BUG4）：beauty_core.cpp 里的进程级标志，见那里的注释。
+// 直接读全局而不是给 IBeautyEngine 加虚函数：这是临时诊断，不值得动接口契约。
+extern thread_local int g_beautyDiagFrameSubst;
+int  coreBeautyDiagFrameSubst() { return g_beautyDiagFrameSubst; }

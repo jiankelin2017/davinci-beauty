@@ -51,6 +51,11 @@ bool        coreBeautyRegionActive();
 const char* coreBeautyGpuProvider();
 void        coreBeautyRelease();
 
+// 诊断（BUG4）：上一次 process 是否把输入整帧换成了引擎缓存的 heldFrame_。
+// 1 = 换了（本帧处理的是「掩码所描述的那一帧」，可能来自另一个实例）。
+// 只读计数器，不参与任何渲染决策。
+int         coreBeautyDiagFrameSubst();
+
 #ifdef __cplusplus
 }
 #endif

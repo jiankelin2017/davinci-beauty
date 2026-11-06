@@ -369,4 +369,11 @@ void surface3RgbBand(const unsigned char* src, unsigned char* dst, int w, int h,
                      const BandParams& p, const RoiRect& roi, int threads,
                      std::vector<float>& scratch);
 
+// 盒宽 = round(frac × 处理宽度)，下限 minW，强制奇数。
+// 磨皮半径的唯一出处：CPU 与 GPU 必须调同一个函数（见 gpu_smooth.cpp）。
+int bandBoxW(int ww, float frac, int minW);
+
+// 离线台架专用：直接调用 CPU 的 bandBoxN（单平面）。生产路径不调用。
+void beautyDebugBox1(float* acc, float* tmp, int bw, int bh, int r, int passes, int threads);
+
 }  // namespace beautycore

@@ -16,7 +16,11 @@
 #include "beauty_pool.h"
 #include "beauty_region.h"
 #include "beauty_smooth.h"
+#include "beauty_log.h"
 #include "beauty_warp.h"   /* 3.1.27：美形三项的几何变形 */
+#include "gpu_beauty.h"    /* P1：D3D11 ROI 传输管道（beauty.ini 的 gpu_pipe 控制） */
+#include "gpu_smooth.h"    /* P2：磨皮生产路径的 D3D11 Compute 版（beauty.ini 的 gpu_smooth 控制） */
+#include "beauty_hwprobe.h" /* 3.3.0：beauty.ini 配置读取（gpu_pipe 三态） */
 
 #include <algorithm>
 #include <atomic>
@@ -24,6 +28,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <condition_variable>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -35,7 +41,44 @@
 #include "legacy_engine.h"
 #endif
 
+// ---------------------------------------------------------------------------
+// 诊断出口（BUG4 多实例塌陷）
+//
+// 「掩码↔帧对齐」那条优化会在检测结果到货的那一帧把 src 整体换成缓存的
+// heldFrame_（见下面 process() 里 3.1.10 那段）。单实例时这是对的；两个实例
+// 交替调用时，heldFrame_ 可能属于**另一个**实例 —— 一旦如此，本实例的输出就是
+// 对方的画面，表现为「两层合成塌成一层」。
+//
+// 这里只暴露一个「本帧是否发生了整帧替换」的标志给 OFX 层的诊断日志，用来把
+// 「我们自己换了帧」和「宿主给的就是同一张图」在日志上分开。不改任何渲染行为。
+// ---------------------------------------------------------------------------
+// 2026-11-06 复核（P1）：这个标志必须**每线程一份**。
+//
+// 它回答的是「本线程上一次 process 有没有换整帧」，而多个实例的 process 可能
+// 同时跑在不同渲染线程上。做成进程级 int 有两个后果：
+//   ① A 线程写 1、B 线程随后读到 —— 日志把「我方换了帧」记到对方头上，
+//      这条诊断的可信度就没了，而它存在的唯一意义就是判读串台；
+//   ② 无同步的跨线程写读按标准是 UB（编译器可以把它缓存进寄存器）。
+// thread_local 把两个问题一起解决，代价只是一次 TLS 访问。
+thread_local int g_beautyDiagFrameSubst = 0;
+
 namespace {
+
+// ---------------------------------------------------------------------------
+// 上一次 process() 的只读快照（供 OFX 层打日志 / 报错）
+//
+// BUG4 把实例状态做成了「换进换出」的共享成员，于是 process() 一退出，成员里
+// 装的就是**别的实例**的东西了。所以退出前必须留一份快照。
+//
+// 快照必须是 thread_local，不能用进程级成员：两个实例并发渲染时，对方的
+// process 会把快照覆盖掉。lastErr() 尤其致命 —— 它把 c_str() 交出去，对方
+// 只要往同一个 std::string 里赋一次值（可能触发重分配），调用方手里的指针
+// 就悬垂了，而 ofx_plugin.cpp 拿到它之后还要先过一遍 ofxLog 和宿主的 message()。
+// thread_local 之后，快照的写与读天然在同一个渲染线程上，顺序也天然成立。
+// ---------------------------------------------------------------------------
+thread_local int         t_lastFacesOut = 0;
+thread_local float       t_lastScoreOut = 0.0f;
+thread_local std::string t_lastErrOut;
 
 #ifdef BEAUTY_WITH_LEGACY_ENGINE
 // ---------------------------------------------------------------------------
@@ -643,6 +686,120 @@ void paintProtectEllipse(unsigned char* buf, int w, int h,
 }
 SmoothCfg g_cfg;
 
+// P1 的 GPU 管道开关（3.3.0 起三态，配置项 beauty.ini:gpu_pipe）。
+//
+// 该阶段**不改画面、只增加耗时**（上传+下载一圈再丢掉），纯粹用于在真实宿主
+// 里量搬运耗时并证明管道无损，所以默认不能每帧都跑。
+//
+// 取值与含义：
+//   off  = 完全不跑
+//   on   = 每帧都跑（验证用，4K 人脸约 +3.6ms/帧）
+//   auto = **首帧自检一次**（默认值）。播一下就能在日志里看到管道到底通不通，
+//          之后自动关闭，后续帧零额外开销。
+//
+// 为什么加 auto：2026-11-06 的教训是「必须用 launch.bat 启动才测得到管道」，
+// 而用户从桌面图标启动时环境变量继承不到，日志里一行管道都没有，被误判成
+// 管道坏了。默认 auto 之后，正常双击启动、随便播一下就能看到验收那行日志。
+enum GpuPipeMode { GPU_PIPE_OFF = 0, GPU_PIPE_ON = 1, GPU_PIPE_AUTO = 2 };
+
+static GpuPipeMode gpuPipeMode() {
+    static const GpuPipeMode m = []() -> GpuPipeMode {
+        // 1) 环境变量（最高优先级，临时排查用）
+        if (const char* e = getenv("BEAUTY_GPU_PIPE")) {
+            if (!*e) return GPU_PIPE_AUTO;
+            if (e[0] == '0' && e[1] == '\0') return GPU_PIPE_OFF;
+            return GPU_PIPE_ON;
+        }
+        // 2) 配置文件
+        if (const char* s = beautyCfgStr("gpu_pipe", nullptr)) {
+            if (!_stricmp(s, "off") || !strcmp(s, "0")) return GPU_PIPE_OFF;
+            if (!_stricmp(s, "on") || !strcmp(s, "1"))  return GPU_PIPE_ON;
+            if (!_stricmp(s, "auto"))                   return GPU_PIPE_AUTO;
+        }
+        // 3) 自动：首帧自检
+        return GPU_PIPE_AUTO;
+    }();
+    return m;
+}
+
+// P2 磨皮的 GPU 开关（3.3.0 的 beauty.ini 体系内，配置项 gpu_smooth）。
+//
+// 与 gpu_pipe 的关键差别：**默认 off**。
+// gpu_pipe 唯一的作用是量搬运耗时、证明管道无损，不改画面，所以敢默认 auto；
+// gpu_smooth 要替换生产磨皮路径，虽然离线对拍 4/4 画幅逐字节一致，
+// 但那是在合成图上验的（渐变 + 噪声 + 椭圆掩码），真实素材的掩码形状、
+// 画幅、色彩都与台架不同。第一次上真机必须由人目视一遍再改 auto。
+//
+// 取值：
+//   off  = 完全不碰 GPU（默认）
+//   auto = 用 GPU，任何一步失败（无卡 / 显存不足 / 画幅过小）当场回落 CPU
+//   on   = 同 auto，只是语义上表示「已确认，强制走」
+//
+// auto 与 on 目前行为一致 —— gpuSmoothRgbBand 内部本来就是「失败返回 false」，
+// 由调用方回落。留两个名字是为了日志里能看出当前是「试跑」还是「已确认」。
+enum GpuSmoothMode { GPU_SMOOTH_OFF = 0, GPU_SMOOTH_ON = 1, GPU_SMOOTH_AUTO = 2 };
+
+static GpuSmoothMode gpuSmoothMode() {
+    static const GpuSmoothMode m = []() -> GpuSmoothMode {
+        // 1) 环境变量（最高优先级，临时排查用）
+        if (const char* e = getenv("BEAUTY_GPU_SMOOTH")) {
+            if (!*e) return GPU_SMOOTH_OFF;
+            if (e[0] == '0' && e[1] == '\0') return GPU_SMOOTH_OFF;
+            return GPU_SMOOTH_ON;
+        }
+        // 2) 配置文件
+        if (const char* s = beautyCfgStr("gpu_smooth", nullptr)) {
+            if (!_stricmp(s, "off") || !strcmp(s, "0")) return GPU_SMOOTH_OFF;
+            if (!_stricmp(s, "on") || !strcmp(s, "1"))  return GPU_SMOOTH_ON;
+            if (!_stricmp(s, "auto"))                   return GPU_SMOOTH_AUTO;
+        }
+        // 3) 默认：不启用
+        return GPU_SMOOTH_OFF;
+    }();
+    return m;
+}
+
+static const char* gpuSmoothModeName() {
+    switch (gpuSmoothMode()) {
+        case GPU_SMOOTH_ON:   return "on";
+        case GPU_SMOOTH_AUTO: return "auto";
+        default:              return "off";
+    }
+}
+
+
+// on  ：永远跑。
+// off ：永不跑。
+// auto：只在「自检还没成功跑过、且本帧已经有掩码」时跑一次。
+//       不能按帧号（如 frameNo<=1）判断 —— 首帧进到这里时 updateMask 还没
+//       产出包围盒，bounds_ 是空的，按帧号会把唯一那次自检机会白白跳过，
+//       日志里就又是一片空白。
+//
+// 注意本函数有副作用（auto 模式下会把自检标记置位），所以只在渲染路径上
+// 调用一次，别放进断言或调试打印里。
+bool gpuPipeTakeThisFrame(bool maskReady) {
+    static std::atomic<bool> selftestDone{false};
+
+    switch (gpuPipeMode()) {
+        case GPU_PIPE_ON:  return true;
+        case GPU_PIPE_OFF: return false;
+        default: break;
+    }
+    if (selftestDone.load(std::memory_order_relaxed)) return false;
+    if (!maskReady) return false;
+    selftestDone.store(true, std::memory_order_relaxed);
+    return true;
+}
+
+// 日志里说明当前是哪种模式（自检跑完就没了，得在启动时报一次）。
+const char* gpuPipeModeName() {
+    switch (gpuPipeMode()) {
+        case GPU_PIPE_ON:  return "on（每帧）";
+        case GPU_PIPE_OFF: return "off";
+        default:           return "auto（首帧自检一次）";
+    }
+}
+
 // 异步掩码的提交计数（诊断用，只增不减）。
 // 为什么需要它：提交周期从 4 帧改成每帧，从「每帧毫秒」上完全看不出来 ——
 // 检测跑在 worker 上，渲染线程一分钱不多花。唯一直接可测的就是「多少帧提交了几次」。
@@ -854,7 +1011,7 @@ std::atomic<bool> g_skinAnnounce{false};
 // 返回 false = 采样不足（戴口罩、手挡脸、极暗），调用方保持默认/上一帧中心。
 bool estimateSkinCenter(const unsigned char* src, int w, int h,
                         const std::vector<beautycore::FaceBox>& faces,
-                        float& outCb, float& outCr) {
+                        float& outCb, float& outCr, bool flipY) {
     if (faces.empty()) return false;
     // 多脸时取最大的那张 —— 主脸的肤色才是要磨的对象，小脸样本少噪声大
     const beautycore::FaceBox* best = &faces[0];
@@ -863,8 +1020,11 @@ bool estimateSkinCenter(const unsigned char* src, int w, int h,
 
     const float fx0 = best->x + best->w * 0.30f;
     const float fx1 = best->x + best->w * 0.70f;
-    const float fy0 = best->y + best->h * 0.40f;
-    const float fy1 = best->y + best->h * 0.80f;
+    // 视觉 0.40~0.80 脸高那一段（脸颊/鼻/嘴，避开眼睛、额头高光与下巴阴影）。
+    // v3.0.9：bottom-up 下缓冲行号是反的，直接 +0.40h 采到的是**额头与头发**，
+    // 色度中位数被拉走 → 肤色椭圆整体偏移、掩码变薄（「效果不明显」的隐形推手）。
+    const float fy0 = best->y + best->h * (flipY ? 0.20f : 0.40f);
+    const float fy1 = best->y + best->h * (flipY ? 0.60f : 0.80f);
     int x0 = (int)fx0, x1 = (int)fx1, y0 = (int)fy0, y1 = (int)fy1;
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
@@ -1203,9 +1363,22 @@ public:
             asyncOn_ = g_cfg.asyncDetect;
             // 异步检测会和磨皮抢核：留一个核给 worker，否则磨皮那一帧会被拖慢
             // （实测 1080p 非检测帧从 6.4ms 涨到 13.7ms，等于尖峰换了个形状）。
+            //
+            // 3.3.0 之前这里写死「超过 9 核就用 8」。硬件探测模块
+            // （beauty_hwprobe）已经给出更准的值：物理核 − 1、上限 12、按内存余量
+            // 降档。本机 20 核：旧值 8 → 探测值 12 → 再给 worker 让 1 核 = 11。
+            //
+            // 为什么探测值之外还要再让一核：beautyHwCpuThreads() 让出的是
+            // 「Resolve 主线程 + 解码」那一核，异步检测的 worker 是另一份开销，
+            // 得单独算 —— 这就是上面那条 13.7ms 教训的来源。
+            //
+            // 收益边界：实测 1080p 8→16 线程 24.6→18.8ms；4K 几乎无变化
+            // （71.5→71.1ms，瓶颈是内存带宽不是核数）。所以这条只对中低
+            // 分辨率有效，4K 要靠 P2 的 GPU 路径。
             if (asyncOn_ && g_cfg.threads <= 0) {
-                const unsigned hc = std::thread::hardware_concurrency();
-                if (hc > 2) g_cfg.threads = (hc > 9) ? 8 : (int)hc - 1;
+                int t = beautyHwCpuThreads();
+                if (t > 2) t -= 1;
+                if (t > 1) g_cfg.threads = t;
             }
             const char* fm = getenv("BEAUTY_FREQ_MAG");
             if (fm && *fm) {
@@ -1334,9 +1507,24 @@ public:
         // 兜底：preheat 之外还有别的入口（宿主可能很久以后才建滤镜，或 preheat
         // 因故没跑到）。ensureReady 自身幂等，第二次调用只判一次 faceTried_。
         if (!ensureReady(err)) return -1;
-        return 0;
+        // BUG4（2026-11-06）：以前这里恒 return 0，于是「两个实例」在引擎眼里
+        // 长得一模一样 —— 日志里也都是 slot=0，也没法判断刚才那次渲染是不是
+        // 另一个实例。现在给每个实例一个唯一 id（只用于诊断与串台判据，
+        // 引擎状态仍然全局共享，见 nama_engine.h 的警示）。
+        static std::atomic<int> next{1};
+        return next.fetch_add(1);
     }
-    void releaseSlot(int) override {}
+    void releaseSlot(int slot) override {
+        // BUG4：实例销毁时把它那份状态（掩码 2MB + 对齐帧 8MB + …）真的释放掉。
+        // 宿主关掉片段/工程时不收，长工程会白占几百 MB。
+        //
+        // P0：必须先拿整帧状态锁。否则「另一个线程正在 process(同一个 slot)」
+        // 时把 SlotState 删掉，那边 SlotScope 手里的指针就成了野指针，析构时
+        // 对已释放内存做 10 次 swap —— 释放后使用。加锁后这里会等那一帧跑完。
+        std::lock_guard<std::recursive_mutex> st(slotStateMx());
+        std::lock_guard<std::mutex> lk(slotMx_);
+        slots_.erase(slot);
+    }
     void setDetectOptions(int, int, int) override {}
     // v3.0.4：OFX/Resolve 给的是 bottom-up 帧（默认 true，见 beauty_core.h）
     void setImageBottomUp(bool v) override { imgBottomUp_ = v; }
@@ -1346,11 +1534,15 @@ public:
         if (!on) stopAsync();
     }
 
-    bool process(int, const unsigned char* srcIn, unsigned char* dst,
+    bool process(int slot, const unsigned char* srcIn, unsigned char* dst,
                  int w, int h, const BeautySettings& s,
                  bool = true) override {
         const unsigned char* src = srcIn;
         if (!src || !dst || w <= 0 || h <= 0) return false;
+        g_beautyDiagFrameSubst = 0;   // 诊断：本帧未发生整帧替换
+        // BUG4：把本实例的掩码/帧缓存/EMA 状态换进来，离开作用域自动换回。
+        // 这一步之后 process() 里的成员访问就是「本实例的」了。
+        SlotScope slotScope(this, slot);
         const size_t need = (size_t)w * (size_t)h * 4;
         frameNo_++;   // 时序 EMA 用它判断历史有没有断帧（见 detailEmaGen_ 的注释）
 
@@ -1448,7 +1640,7 @@ public:
                               wantClarity || wantRegion || wantWarp;
         // 先更新掩码再磨皮：ROI 裁剪要用掩码的包围盒。顺序反了的话，
         // 磨皮那一遍全帧算完才知道 ROI，等于白算。
-        const bool haveMask = needMask ? updateMask(src, w, h) : false;
+        const bool haveMask = needMask ? updateMask(slot, src, w, h) : false;
         if (haveMask) everHadMask_ = true;
 
         // 3.1.21：**首次启用**这几帧直接透传，不退回全帧磨皮。
@@ -1473,8 +1665,53 @@ public:
         if (alignOn_ && maskFresh_ && haveMask && heldFrame_.size() == need) {
             src = &heldFrame_[0];
             g_alignUsed++;
+            g_beautyDiagFrameSubst = 1;   // 诊断：本帧整帧换成了缓存帧
         }
         g_alignTotal++;
+
+        // ---- P1：GPU 传输管道验证（beauty.ini: gpu_pipe，默认 auto 自检一次）--
+        // 这一步**不改画面**：只把 ROI 上传 → 恒等 CS → 下载，再与源逐字节比对。
+        //
+        // 为什么放在这里、又为什么不改画面：
+        //   · ROI 必须等 updateMask 算出包围盒才有，所以只能排在它后面；
+        //   · P1 的验收标准是「管道无损 + 量出真实搬运耗时」，算法移植是 P2。
+        //     提前接进画面会让「基准没跑通」和「算法写错」两种故障混在一起。
+        //
+        // P2 会把 GPU_BEAUTY_IDENTITY 换成磨皮 21 趟，届时 ROI 行直接写进 sm
+        // 缓冲，这段只剩「选路 + 计时」。
+        const bool pipeRoiReady = haveMask && !bounds_.empty();
+        if (pipeRoiReady && gpuPipeTakeThisFrame(pipeRoiReady)) {
+            static const bool gpuOk = gpuBeautyInit();
+            if (gpuOk) {
+                GpuBeautyRoi gr;
+                gr.x0 = bounds_.x0; gr.y0 = bounds_.y0;
+                gr.x1 = bounds_.x1; gr.y1 = bounds_.y1;
+                GpuBeautyTiming gt{};
+                int mism = -1;
+                int maxd = 0;
+                // 帧缓冲是 RGBA8（w*h*4 字节），每行 w 个像素 —— 不是 float32。
+                gpuBeautyVerifyRoi(src, w, h, w, gr, GPU_BEAUTY_IDENTITY,
+                                   &gt, &mism, &maxd);
+                // auto 模式下一次就是自检那一次：**必须无条件打日志**。
+                // 原来只按 frameNo_ 节流（<=2 或 %60），可是掩码常常要到几十帧
+                // 之后才到位，自检会撞在节流窗口外 —— 于是「管道跑了但日志空白」，
+                // 与「完全没跑」在日志上完全无法区分，这正是 2026-11-06 那次
+                // 误判的成因。
+                const bool isSelftest = (gpuPipeMode() == GPU_PIPE_AUTO);
+                if (isSelftest || frameNo_ <= 2 || (frameNo_ % 60) == 0) {
+                    long long n = 0; double au = 0, ag = 0, ad = 0;
+                    int lm = -1, lmd = 0;
+                    gpuBeautyStats(&n, &au, &ag, &ad, &lm, &lmd);
+                    NALOG(BEAUTY_LOG_INFO,
+                          "GPU 管道[%s] roi=%dx%d 上传=%.2f 提交=%.2f 读回=%.2f(含GPU) 合计=%.2f ms"
+                          " | 累计 %lld 帧 均上传=%.2f 均提交=%.2f 均读回=%.2f"
+                          " | 不一致=%d 字节 最大差=%d",
+                          gpuPipeModeName(),
+                          gt.roiW, gt.roiH, gt.uploadMs, gt.submitMs, gt.downloadMs,
+                          gt.totalMs, n, au, ag, ad, lm, lmd);
+                }
+            }
+        }
         maskFresh_ = false;   // 新鲜度只对「到货那帧」有效，过了这帧就作废
 
         bool didSurface3 = false;
@@ -1627,10 +1864,47 @@ public:
                                      (blurRefillI >= g_cfg.blurRefillMinI);
                     bp.e = e;
                     bp.protectK = g_cfg.s3EyeK;
-                    beautycore::surface3RgbBand(src, dst, w, h,
-                                                haveMask ? &mask_[0] : nullptr,
-                                                pr3, bp, s3roi, g_cfg.threads,
-                                                s3ScratchA_);
+
+                    // ---- P2：先试 GPU，失败当场回落 CPU ----
+                    // 两者同签名、同语义（包括 dst 全帧有效），所以这里就是二选一，
+                    // 不需要为 GPU 路径另做任何预处理。参数直接复用上面填好的 bp，
+                    // 半径由 gpu_smooth 内部调同一个 bandBoxW 求，两边的 r 必然一致。
+                    bool gpuSmoothOk = false;
+                    if (gpuSmoothMode() != GPU_SMOOTH_OFF) {
+                        GpuSmoothTiming gst{};
+                        gpuSmoothOk = gpuSmoothRgbBand(src, dst, w, h,
+                                                       haveMask ? &mask_[0] : nullptr,
+                                                       pr3, bp, s3roi, &gst);
+                        // 失败必须能追到原因，否则「为什么还是 CPU 那么慢」无从下手。
+                        // 只打前 3 次：低端卡上可能每帧都失败，否则日志会被刷满。
+                        static int gsFailLogs = 0;
+                        if (!gpuSmoothOk) {
+                            if (gsFailLogs < 3) {
+                                ++gsFailLogs;
+                                NALOG(BEAUTY_LOG_INFO,
+                                      "GPU 磨皮[%s] 失败，本帧回落 CPU：%s",
+                                      gpuSmoothModeName(), gpuSmoothLastError());
+                            }
+                        } else if (frameNo_ <= 2 || (frameNo_ % 60) == 0) {
+                            long long n = 0; double at = 0.0, ap = 0.0;
+                            gpuSmoothStats(&n, &at, &ap);
+                            NALOG(BEAUTY_LOG_INFO,
+                                  "GPU 磨皮[%s] roi=%dx%d@%d,%d 平面=%dx%d r=%d/%d/%d P=%d"
+                                  " 上传=%.2f 算=%.2f 读回=%.2f 合计=%.2f ms"
+                                  " | 累计 %lld 帧 均合计=%.2f 均平面像素=%.0f",
+                                  gpuSmoothModeName(),
+                                  gst.imgW, gst.imgH, gst.imgX0, gst.imgY0,
+                                  gst.pw, gst.ph, gst.r1, gst.r2, gst.ra, gst.passes,
+                                  gst.uploadMs, gst.computeMs, gst.downloadMs, gst.totalMs,
+                                  n, at, ap);
+                        }
+                    }
+                    if (!gpuSmoothOk) {
+                        beautycore::surface3RgbBand(src, dst, w, h,
+                                                    haveMask ? &mask_[0] : nullptr,
+                                                    pr3, bp, s3roi, g_cfg.threads,
+                                                    s3ScratchA_);
+                    }
                 } else if (g_cfg.s3Tap25) {
                     // 25 tap 表面模糊（第 2 批 #5/#6/#7）。与下面盒式路径的
                     // 唯一差别是「两个低频层怎么算」；合成段 I/e/skin/eye 逐行相同。
@@ -1934,7 +2208,7 @@ public:
         return true;
     }
 
-    int lastFaces() const override { return lastFaces_; }
+    int lastFaces() const override { return t_lastFacesOut; }
     // v3.0.4：返回**本帧掩码那次检测**的候选最高分。
     //
     // 以前直接读 face_.lastBestScore() —— 那只在 detect() 跑完的线程上有值。
@@ -1942,10 +2216,14 @@ public:
     // 日志里「faces=0 score=0.00」既可能是「参数全 0 透传」也可能是「真的没
     // 检出脸」，两种情况无法区分。现在由 updateMask / collectAsync 把 worker
     // 的值搬到 lastScore_ 上，渲染线程读到的就是本帧的真实分数。
-    float lastFaceScore() const override { return lastScore_; }
+    float lastFaceScore() const override { return t_lastScoreOut; }
     bool regionActive() const override { return faceOk_; }
     double lastCoreMs() const override { return lastMs_; }
-    const char* lastErr() const override { return faceErr_.c_str(); }
+    // BUG4：这三样取「上一次 process 的只读快照」。成员本身在 process 退出时
+    // 已经被换回别的实例了，直接读成员会读到邻居的值（或者空）。
+    // 快照是 thread_local 的，指针只在本线程下一次 process() 之前有效 —— 调用方
+    // （ofx_plugin.cpp）本来就是拿完即用，语义不变。
+    const char* lastErr() const override { return t_lastErrOut.c_str(); }
     int itemId() const override { return 0; }
     unsigned long ownerThread() const override { return (unsigned long)GetCurrentThreadId(); }
 
@@ -1958,8 +2236,10 @@ public:
         // 异步下「第 k 帧用哪份掩码」取决于线程调度，哈希会飘。
         stopAsync();
         asyncOn_ = false;
+        // BUG4：离线对拍用独立 slot（-1），不碰任何真实实例的掩码状态。
+        SlotScope slotScope(this, -1);
         maskAge_ = 999;                 // 让它走重算分支，不吃缓存
-        const bool ok = updateMask(src, w, h);
+        const bool ok = updateMask(-1, src, w, h);
         if (!ok) {
             memset(out, 0, (size_t)w * h);
             return false;
@@ -1969,14 +2249,21 @@ public:
     }
 
     void release() override {
+        // P0：整段释放与 process() 互斥。范围要覆盖到 stopAsync/poolShutdown ——
+        // 只锁 clear 的话，「渲染线程正在 updateMask、主线程在 join worker」这个
+        // 窗口仍然存在，而且 join 之后 poolShutdown 收掉的正是渲染线程即将要用的
+        // 线程池。recursive 锁允许下面 releaseSlot 那层再次进入。
+        std::lock_guard<std::recursive_mutex> st(slotStateMx());
         stopAsync();          // 先停 worker，否则它可能正在用 face_
         face_.release();
         faceTried_ = false;
         faceOk_ = false;      // 模型已经卸了，别再让 process() 以为掩码路径可用
-        // 关闭开关后再开，应当是「干净的一次启用」：掩码重新从零开始
-        maskValid_ = false;
-        everHadMask_ = false;
-        maskAge_ = 999;
+        // BUG4：per-slot 状态（掩码 / 对齐帧缓存 / EMA 历史）一并释放。
+        // 1080p 下每个实例约 16MB，工程里挂了很多片段时不能只靠析构。
+        {
+            std::lock_guard<std::mutex> lk(slotMx_);
+            slots_.clear();
+        }
         // 3.1.21：持久线程池也要收掉。否则 上一代宿主 卸载滤镜后 worker 线程还在，
         // 它们持有本 DLL 里的代码地址 —— 模块卸载时就是一次野跳转。
         beautycore::poolShutdown();
@@ -2035,7 +2322,7 @@ private:
     // 这个函数只做三件轻活：① 收走 worker 算好的结果（O(1) swap）；② worker 空闲
     // 时把本帧提交出去；③ 沿用上一份掩码。**检测本身不在这里跑** —— 1080p 下
     // YuNet 一次约 15ms，压在渲染线程上就是 60fps 每 4 帧掉 1 帧。
-    bool updateMask(const unsigned char* src, int w, int h) {
+    bool updateMask(int slot, const unsigned char* src, int w, int h) {
         if (!faceOk_) return false;
         if (mask_.size() != (size_t)w * h) {
             mask_.assign((size_t)w * h, 0);
@@ -2073,18 +2360,18 @@ private:
                 // 后面几帧还有机会补上。
                 maskAge_ = 0;
                 lastScore_ = face_.lastBestScore();
-                submitAsync(src, w, h);
+                submitAsync(src, w, h, slot);
                 return onDetectFailed(msg, face_.inputSize(), face_.lastBestScore());
             }
             startAsyncIfNeeded();
-            collectAsync();                 // 每帧都收，不受周期限制
+            collectAsync(slot);             // 每帧都收，不受周期限制
             // 到了重算周期：提交一帧给 worker。周期 0 = 每帧提交。
             // worker 忙时 submitAsync 会自己放弃这一轮（见它的注释），
             // 所以 60fps + 1080p 这种「推理 15ms / 帧 16.7ms」的极端情况
             // 会自我节流成「隔帧一次」，滞后从 1 帧变成 1~2 帧，不会堆积。
             if (maskAge_ >= g_cfg.maskEveryAsync) {
                 maskAge_ = 0;
-                submitAsync(src, w, h);
+                submitAsync(src, w, h, slot);
             } else {
                 maskAge_++;
             }
@@ -2162,7 +2449,7 @@ private:
         // <1 的系数只在真机防抖时用，理由见 g_skinAdaptEma 的定义处。
         if (g_skinAdapt) {
             float ecb = 0.0f, ecr = 0.0f;
-            if (estimateSkinCenter(src, w, h, faces, ecb, ecr)) {
+            if (estimateSkinCenter(src, w, h, faces, ecb, ecr, flipY)) {
                 if (!g_skinAdaptValid) {
                     g_skinCb = ecb;          // 首帧直接采纳，避免从旧值慢慢爬
                     g_skinCr = ecr;
@@ -2227,6 +2514,15 @@ private:
             if (x1 > w) x1 = w;
             if (y1 > h) y1 = h;
 
+            // v3.0.9：帧行序（开发指南 约束⑧）。
+            // f.y 是**缓冲行号**：bottom-up 时 y0 才是视觉下沿（下巴一侧）、
+            // y1 是视觉上沿（发际线一侧）；top-down 时反过来。
+            // 以前这里把 y1 一律当「下巴」，于是 Resolve 上整条脖子通道被铺到了
+            // 发际线以上 —— 实测高出 0.65 脸高、一直到画面顶边，用户看到的就是
+            // 「遮罩比额头还高一大截」，而且真正的脖子一点没磨到。
+            const int yChin = flipY ? y0 : y1;   // 视觉下沿（下巴一侧）
+            const int yTop = flipY ? y1 : y0;    // 视觉上沿（发际线一侧）
+
             // 脖子通道的横向范围。脸框底边在它之内时**不做下羽化**，否则下巴
             // 与脖子之间会出现一条水平接缝。
             int nx0 = (int)(cx - f.w * g_neck.halfW);
@@ -2280,8 +2576,9 @@ private:
             for (int y = y0; y < y1; y++) {
                 const unsigned char* row = src + ((size_t)y * w) * 4;
                 unsigned char* mrow = &mask[(size_t)y * w];
-                const int fTop = featherRamp(y - y0 + 1, fe);
-                const int fBot = featherRamp(y1 - y, fe);
+                // 羽化只削「远离脸」的边：上沿永远是发际线一侧，下沿是下巴一侧。
+                const int fTop = featherRamp((y > yTop ? y - yTop : yTop - y) + 1, fe);
+                const int fBot = featherRamp(yChin > y ? yChin - y : y - yChin, fe);
                 bool any = false;
                 for (int x = x0; x < x1; x++) {
                     const int dl = x - x0 + 1, dr = x1 - x;
@@ -2301,12 +2598,21 @@ private:
             }
             }
 
-            // 脖子通道：从脸框下沿接着往下，横向收窄到 0.45 脸宽，仍然只认肤色。
-            // y1 上面已经 clamp 过，所以 ny0 从它起算是安全的。
-            int ny0 = y1;
-            int ny1 = (int)(cy + hh + f.h * g_neck.len);
-            if (ny0 < 0) ny0 = 0;
+            // 脖子通道：从**下巴一侧**接着往视觉下方铺，横向收窄到 0.45 脸宽，
+            // 仍然只认肤色。
+            //
+            // v3.0.9：起点从写死的 y1 改成 yChin。bottom-up（Resolve）下 y1 是
+            // 发际线一侧，旧写法把「脖子」铺到了头顶以上；top-down 下 yChin==y1，
+            // 与旧版逐字节相同（离线基线因此不变）。
+            const int ny0 = yChin;
+            const float neckLen = f.h * g_neck.len;
+            int ny1 = (int)((flipY ? (float)yChin - neckLen : (float)yChin + neckLen) + 0.5f);
+            if (ny1 < 0) ny1 = 0;
             if (ny1 > h) ny1 = h;
+            // 统一按 [nyLo, nyHi) 走，羽化只削「远离脸」的那一端（ny1）。
+            const int nyLo = (ny0 < ny1) ? ny0 : ny1;
+            const int nyHi = (ny0 < ny1) ? ny1 : ny0;
+            const int nyFar = ny1;
             if (g_maskShape & 4) {
                 // 脖子：**逐行跟随肤色的实际边界**（3.1.20）。
                 //
@@ -2325,7 +2631,7 @@ private:
                 if (rowL < 0) rowL = 0;
                 if (rowR > w) rowR = w;
                 const int gap = 3;      // 连续 3 个非肤色像素算「到头」
-                for (int y = ny0; y < ny1; y++) {
+                for (int y = nyLo; y < nyHi; y++) {
                     const unsigned char* row = src + ((size_t)y * w) * 4;
                     unsigned char* mrow = &mask[(size_t)y * w];
                     for (int x = rowL; x < rowR; x++) {
@@ -2359,7 +2665,7 @@ private:
                     if (lo < rowL) lo = rowL;
                     if (hi > rowR - 1) hi = rowR - 1;
                     if (lo < 0) lo = 0;
-                    const int fBot = featherRamp(ny1 - y, feNeck);
+                    const int fBot = featherRamp(nyFar > y ? nyFar - y : y - nyFar, feNeck);
                     bool any = false;
                     for (int x = lo; x <= hi; x++) {
                         int feather = fBot;
@@ -2374,14 +2680,14 @@ private:
                     }
                 }
             } else if (g_maskShape & 2) {
-                // 脖子也用椭圆距离场（3.1.20）：最宽处落在下颌线 y1，向下按椭圆收窄。
+                // 脖子也用椭圆距离场（3.1.20）：最宽处落在下颌线（yChin），向下按椭圆收窄。
                 // 旧版是 nx0..nx1 的**竖直直边**，头部摆动时两条直边在脖子上来回扫，
                 // 用户看到的「遮罩残影」正是它们。椭圆没有直边段，收窄也连续。
                 const float A = f.w * g_neck.halfW;
                 const float B = f.h * g_neck.len;
                 const float ia2 = 1.0f / (A * A), ib2 = 1.0f / (B * B);
                 const float rEff = 0.5f * (A + B);
-                const float cyN = (float)y1;
+                const float cyN = (float)yChin;   // v3.0.9：下颌线，不是写死的 y1
                 int ey0 = (int)(cyN - B);
                 int ey1 = (int)(cyN + B);
                 if (ey0 < 0) ey0 = 0;
@@ -2405,10 +2711,10 @@ private:
                     }
                 }
             } else {
-            for (int y = ny0; y < ny1; y++) {
+            for (int y = nyLo; y < nyHi; y++) {
                 const unsigned char* row = src + ((size_t)y * w) * 4;
                 unsigned char* mrow = &mask[(size_t)y * w];
-                const int fBot = featherRamp(ny1 - y, feNeck);
+                const int fBot = featherRamp(nyFar > y ? nyFar - y : y - nyFar, feNeck);
                 bool any = false;
                 for (int x = nx0; x < nx1; x++) {
                     const int dl = x - nx0 + 1, dr = nx1 - x;
@@ -2531,6 +2837,10 @@ private:
         float bestScore = 0.0f;
         std::string msg;
         double ms = 0.0;
+        // BUG4：这个任务是谁提交的。只有提交者本人能取走结果 —— 否则
+        // 「B 收走 A 的掩码」会把 A 的掩码装进 B 的状态里（串台的另一半）。
+        int slot = -1;
+        unsigned long long readyMs = 0;   // 结果就绪时刻（防孤儿任务把队列堵死）
     };
     AsyncState async_;
     bool asyncOn_ = true;         // 由 g_cfg.asyncDetect 初始化
@@ -2557,6 +2867,126 @@ private:
     bool maskFresh_ = false;                 // 本帧刚收到一份新的有效结果
     bool alignOn_ = true;                    // BEAUTY_MASK_ALIGN=0 关闭（A/B 用）
 
+    // ---- BUG4（2026-11-06）：per-slot 状态 -----------------------------------
+    //
+    // 引擎是进程级单例，但下面这些量是**每实例**的：皮肤掩码、五官保护区、
+    // 人脸位置、包围盒、掩码新鲜度、对齐用的整帧缓存、帧号与 EMA 历史。
+    // 以前它们直接挂在 CoreEngine 上，两个实例同帧渲染时会互相覆盖。
+    // 最严重的一种表现就是「掩码↔帧对齐」把**对方的帧**当成自己的输入
+    //（heldFrame_ 被另一个实例换走），整层画面串台：A 输出 B 的画面。
+    // 实测（03_测试夹具/bug4_repro.py）两次 render 间隔 >=5ms 必然发生。
+    //
+    // 做法：收进 SlotState，按 slot 存一份；process() 进入时把本实例的状态
+    // swap 进成员、退出时 swap 回去。全程 O(1)，不拷贝像素 —— 所以 process()
+    // 里一百多处成员访问一行都不用改，行为也只在「多实例同帧」这一种情况下
+    // 变化；单实例时 swap 的是同一份，逐字节不变。
+    struct SlotState {
+        std::string faceErr_;
+        std::vector<unsigned char> mask_;
+        std::vector<unsigned char> protect_;
+        std::vector<beautycore::FaceBox> faces_;
+        beautycore::RoiRect bounds_;
+        bool maskValid_ = false;
+        bool everHadMask_ = false;
+        int maskAge_ = 999;
+        int maskHold_ = 0;
+        int lastFaces_ = 0;
+        float lastScore_ = 0.0f;
+        int maskPixels_ = 0;
+        std::vector<unsigned char> heldFrame_;
+        bool maskFresh_ = false;
+        // 时序 EMA：历史必须逐帧连续，跨实例混用等于把别人的画面掺进来。
+        std::vector<unsigned char> motionPrev_;
+        bool motionHave_ = false;
+        std::vector<unsigned char> detailLumT_;
+        bool detailEmaReset_ = true;
+        uint64_t frameNo_ = 0;
+        uint64_t detailEmaGen_ = 0;
+    };
+
+    std::mutex slotMx_;
+    std::map<int, std::unique_ptr<SlotState>> slots_;
+
+    SlotState& slotOf(int slot) {
+        std::lock_guard<std::mutex> lk(slotMx_);
+        auto it = slots_.find(slot);
+        if (it == slots_.end())
+            it = slots_.emplace(slot, std::unique_ptr<SlotState>(new SlotState())).first;
+        return *it->second;
+    }
+
+    // 整帧状态锁（P0 修复，2026-11-06）。
+    //
+    // swapSlotIn/Out 把本实例的状态搬进 CoreEngine 的**共享成员**，而 OFX 规范
+    // 并不保证 render 串行 —— 本仓库 gpu_beauty.cpp 里讲 thread_local 的那段注释
+    // 也明写「Resolve 可能多线程并发 render 多个实例」。没有这把锁时：
+    //   · A 换入的状态会被 B 换走，A 全程读到的是 B 的掩码 / 对齐帧 / EMA 历史；
+    //   · 换回时 B 的状态被写进 A 的 slot —— 串台被固化进状态表，比不修还难查；
+    //   · 并发 mask_.assign() 是直接的堆破坏（释放后再写）。
+    // 代价是两个实例的 process() 串行化（1080p 约 20ms 一帧）。正确性优先：
+    // 真要并行，得把状态改成按 slot 传参，那属于引擎层重写，不在本次范围。
+    //
+    // 顺带解决 slotMx_ 的悬垂：releaseSlot / release 也必须先拿这把锁，因此
+    // 不可能在某个 SlotScope 还活着时 erase / clear 掉它引用的 SlotState。
+    //
+    // 用函数内 static 而不是文件级对象：避免静态初始化顺序问题（插件可能在
+    // 别的翻译单元的静态初始化期间就被调用）。recursive 是因为 slotOf() 内部
+    // 还要再拿 slotMx_，而 releaseSlot 走的是同一层嵌套。
+    static std::recursive_mutex& slotStateMx() {
+        static std::recursive_mutex m;
+        return m;
+    }
+
+    // 下面两组 swap 必须严格成对：进一次、出一次，成员回到原样。
+    // 每个 swap 都是指针级的（vector/string 的 swap 只换三根指针）。
+    void swapSlotIn(SlotState* s) {
+        faceErr_.swap(s->faceErr_);
+        mask_.swap(s->mask_);
+        protect_.swap(s->protect_);
+        faces_.swap(s->faces_);
+        std::swap(bounds_, s->bounds_);
+        std::swap(maskValid_, s->maskValid_);
+        std::swap(everHadMask_, s->everHadMask_);
+        std::swap(maskAge_, s->maskAge_);
+        std::swap(maskHold_, s->maskHold_);
+        std::swap(lastFaces_, s->lastFaces_);
+        std::swap(lastScore_, s->lastScore_);
+        std::swap(maskPixels_, s->maskPixels_);
+        heldFrame_.swap(s->heldFrame_);
+        std::swap(maskFresh_, s->maskFresh_);
+        motionPrev_.swap(s->motionPrev_);
+        std::swap(motionHave_, s->motionHave_);
+        detailLumT_.swap(s->detailLumT_);
+        std::swap(detailEmaReset_, s->detailEmaReset_);
+        std::swap(frameNo_, s->frameNo_);
+        std::swap(detailEmaGen_, s->detailEmaGen_);
+    }
+    void swapSlotOut(SlotState* s) { swapSlotIn(s); }
+
+    // 作用域守卫：保证 process() 的每一条提前返回路径都会把状态换回去。
+    //
+    // lk_ 必须声明在 s_ 之前：成员按声明顺序初始化，锁要先于 slotOf() 拿到，
+    // 才能保证全工程统一的加锁顺序是「整帧状态锁 → slotMx_」。
+    // 析构时函数体先跑（swap 回去），之后才轮到成员析构（解锁）—— 正好。
+    struct SlotScope {
+        CoreEngine* e_;
+        std::unique_lock<std::recursive_mutex> lk_;
+        SlotState* s_;
+        SlotScope(CoreEngine* e, int slot)
+            : e_(e), lk_(slotStateMx()), s_(&e->slotOf(slot)) {
+            e_->swapSlotIn(s_);
+        }
+        ~SlotScope() {
+            // 出图后 OFX 层还要读这三样（日志用），换回去之前先留一份快照。
+            // 快照是 thread_local 的：只属于本渲染线程，不会被另一个实例的
+            // process 覆盖（以前是进程级成员，日志会把结果记到邻居头上）。
+            t_lastFacesOut = e_->lastFaces_;
+            t_lastScoreOut = e_->lastScore_;
+            t_lastErrOut   = e_->faceErr_;
+            e_->swapSlotOut(s_);
+        }
+    };
+
     void startAsyncIfNeeded() {
         if (!asyncOn_ || asyncStarted_) return;
         asyncStarted_ = true;
@@ -2579,15 +3009,26 @@ private:
 
     // 把本帧交给 worker。worker 忙就直接放弃这一轮（下一个周期再说）——
     // 排队没有意义，掩码只需要最新的那份。
-    void submitAsync(const unsigned char* src, int w, int h) {
+    //
+    // BUG4：多实例之后这里多了两条纪律：
+    //   ① 任务记下提交者 slot，只有提交者能取走结果（见 collectAsync）；
+    //   ② 结果还没被取走时**不准**提交新帧 —— 否则 async_.frame 被覆盖，
+    //      而「掩码描述的原始帧」还是旧的那份，配对就错了。
+    //      孤儿结果（提交者再没来过）超过 1.5 秒就丢弃，避免堵死队列。
+    void submitAsync(const unsigned char* src, int w, int h, int slot) {
         {
             std::lock_guard<std::mutex> lk(async_.m);
             if (async_.hasJob || async_.working) return;
+            if (async_.ready) {
+                if (GetTickCount64() - async_.readyMs < 1500) return;
+                async_.ready = false;   // 提交者已经消失，丢掉这份孤儿结果
+            }
             if (async_.frame.size() != (size_t)w * h * 4)
                 async_.frame.resize((size_t)w * h * 4);
             async_.w = w;
             async_.h = h;
             async_.flipY = imgBottomUp_;
+            async_.slot = slot;
         }
         // 拷贝放在锁外：1080p 下这是一次 8MB memcpy（约 0.7ms），
         // 持锁做会把 worker 的收尾也堵住。
@@ -2601,7 +3042,10 @@ private:
     }
 
     // 收走 worker 的结果。返回 true = 这一轮确实消费了一个结果。
-    bool collectAsync() {
+    //
+    // BUG4：只取「本实例提交的」那份。别人的结果原样留在槽里，等它自己来取；
+    // 这保证拿到的掩码和 heldFrame_ 一定同源、且都属于当前实例。
+    bool collectAsync(int slot) {
         beautycore::RoiRect b;
         int px = 0, faces = 0, inputSize = 0;
         float best = 0.0f;
@@ -2610,7 +3054,7 @@ private:
         double ms = 0.0;
         {
             std::lock_guard<std::mutex> lk(async_.m);
-            if (async_.ready) {
+            if (async_.ready && async_.slot == slot) {
                 // 只有「有脸」时才换缓冲：没脸时 worker 的 mask 内容无意义，
                 // 换进来会把当前正在用的掩码冲掉（丢帧保持就失效了）。
                 if (async_.valid) {
@@ -2700,6 +3144,7 @@ private:
                 async_.ms = ms;
                 async_.working = false;
                 async_.ready = true;
+                async_.readyMs = GetTickCount64();
             }
         }
     }
@@ -2993,6 +3438,18 @@ private:
         }
         if (faces_.empty() || mask_.size() != (size_t)w * h) return;
 
+        // v3.0.9：帧行序（开发指南 约束⑧）。
+        //
+        // 下面每个椭圆的 cy 与「眼下方 k 脸高」这类偏移，都是按**视觉 top-down**
+        // 标定的（参照实现的差分图就是 top-down）。faces_ 里的 y 是缓冲行号，
+        // bottom-up 时整块几何要沿 y 镜像，否则：
+        //   · 五官立体的「额头提亮」落到鼻底/嘴、「下颌压暗」落到发际线以上；
+        //   · 去黑眼圈落到**上眼睑**（该去的是眼袋）；
+        //   · 去法令纹落到**眉弓**（实测峰值 y 与正确位置差 40~60 px）。
+        // 大眼/亮眼是径向各向同性的椭圆，看不出来 —— 和 v3.0.5 的瘦脸是同一个坑。
+        // sgn = +1 表示「缓冲行号增大 = 视觉向下」，top-down 即如此。
+        const float sgn = imgBottomUp_ ? -1.0f : 1.0f;
+
         const unsigned char* mk = &mask_[0];
         std::vector<beautycore::Ellipse> els;
         els.reserve(48);
@@ -3055,28 +3512,28 @@ private:
                     // 模拟器评分 80.36（chg 2.491 / 参照 2.479，corr 0.798）。
                     // 绝对值 = THREED_SPEC 基准 + 拟合偏移（fit_threed.json）。
                     // 额头（宽、浅、在眉线上方）
-                    els.push_back({midX - 0.010000f, midY - 0.210000f, 0.350f,
+                    els.push_back({midX - 0.010000f, midY - 0.210000f * sgn, 0.350f,
                                    0.115f, 0.0f, g * 8.525f, sh, feB});
                     // 眉弓 / 眼窝（压暗）
-                    els.push_back({midX - 0.030000f, midY - 0.060000f, 0.352500f,
+                    els.push_back({midX - 0.030000f, midY - 0.060000f * sgn, 0.352500f,
                                    0.145f, 0.0f, g * -2.150f, sh, feD});
                     // 鼻梁（窄竖条）
-                    els.push_back({midX - 0.025000f, midY + 0.000000f, 0.050f,
+                    els.push_back({midX - 0.025000f, midY, 0.050f,
                                    0.180f, 0.0f, g * 6.900f, sh, feB});
                     // 左 / 右颧骨
-                    els.push_back({e0x - 0.045000f, e0y + 0.117500f, 0.152500f,
+                    els.push_back({e0x - 0.045000f, e0y + 0.117500f * sgn, 0.152500f,
                                    0.100f, 0.0f, g * 7.650f, sh, feB});
-                    els.push_back({e1x - 0.012500f, e1y + 0.125000f, 0.150f,
+                    els.push_back({e1x - 0.012500f, e1y + 0.125000f * sgn, 0.150f,
                                    0.112500f, 0.0f, g * 10.6375f, sh, feB});
                     // 鼻底 / 上唇阴影（横向压暗）
-                    els.push_back({midX - 0.005000f, midY + 0.195000f, 0.290f,
+                    els.push_back({midX - 0.005000f, midY + 0.195000f * sgn, 0.290f,
                                    0.092500f, 0.0f, g * -7.250f, sh, feD});
                     // 下巴
-                    els.push_back({mouthMidX - 0.020000f, mouthMidY + 0.155000f,
+                    els.push_back({mouthMidX - 0.020000f, mouthMidY + 0.155000f * sgn,
                                    0.110f, 0.070f, 0.0f, g * 9.650f,
                                    sh, feB});
                     // 下颌 / 脖子（大面积压暗）
-                    els.push_back({midX + 0.067500f, midY + 0.500000f, 0.507500f,
+                    els.push_back({midX + 0.067500f, midY + 0.500000f * sgn, 0.507500f,
                                    0.190f, 0.0f, g * -4.800f, sh, feD});
                 }
                 if (eye > 0.0f) {
@@ -3121,13 +3578,14 @@ private:
                         const Side& s = sides[i];
                         float w = 1.0f - g_cfg.regPouchYawK * yaw * (float)s.sgn;
                         if (w < 0.25f) w = 0.25f;
-                        const float r = s.rot * (float)s.sgn;
+                        // 斜率也要跟着镜像（y 翻转后旋转角取反）
+                        const float r = s.rot * (float)s.sgn * sgn;
                         // 核（窄而强）
-                        els.push_back({s.ex + s.dx, s.ey + s.dy,
+                        els.push_back({s.ex + s.dx, s.ey + s.dy * sgn,
                                        0.0750f * w, 0.0220f, r, g * 10.2500f,
                                        0.4000f, 0.3187f});
                         // 晕（宽而弱）
-                        els.push_back({s.ex + s.dx, s.ey + s.dy,
+                        els.push_back({s.ex + s.dx, s.ey + s.dy * sgn,
                                        0.2050f * w, 0.0600f, r, g * 3.0000f,
                                        0.2000f, 0.4600f});
                     }
@@ -3185,8 +3643,8 @@ private:
                     };
                     for (int i = 0; i < 2; i++) {
                         const Side& s = sides[i];
-                        nasoEls.push_back({s.ex + s.dx, s.ey + s.dy, 0.0800f,
-                                           0.1500f, s.rot, 0.0f, 0.0f, 0.4000f});
+                        nasoEls.push_back({s.ex + s.dx, s.ey + s.dy * sgn, 0.0800f,
+                                           0.1500f, s.rot * sgn, 0.0f, 0.0f, 0.4000f});
                     }
                     // 下瓣：常量增益椭圆（fit_naso6.json，8 帧统一拟合）
                     struct Tail { float ex, ey, dx, rot; int sgn; };
@@ -3202,9 +3660,9 @@ private:
                         const Tail& t = tails[i];
                         float w = 1.0f - 1.9508f * yaw * (float)t.sgn;
                         if (w < 0.25f) w = 0.25f;
-                        nasoTailEls.push_back({t.ex + t.dx, t.ey + 0.2843f,
+                        nasoTailEls.push_back({t.ex + t.dx, t.ey + 0.2843f * sgn,
                                                0.1000f * w, 0.1200f,
-                                               t.rot * (float)t.sgn,
+                                               t.rot * (float)t.sgn * sgn,
                                                g * 4.0000f, 0.15f, 0.5500f});
                     }
                     nasoSlope = slope;

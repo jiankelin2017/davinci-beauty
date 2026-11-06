@@ -31,6 +31,10 @@
 #include "ofxParam.h"
 #include "ofxPixels.h"
 #include "nama_engine.h"
+#include "beauty_hwprobe.h"   // 硬件探测与渲染路径定档（P1）
+#include "beauty_log.h"      // 引擎层日志的钩子（必须在本文件注册，否则 NALOG 进不了 ofx.log）
+#include "gpu_beauty.h"      // P1 GPU 管道：卸载时必须显式关闭（否则设备和纹理留到进程退出）
+#include "gpu_smooth.h"      // P2 GPU 磨皮：同上
 
 // ---------------------------------------------------------------------------
 // 宿主席位
@@ -286,6 +290,9 @@ struct InstanceData {
     // 上一次打进日志的「面板参数签名」。必须是每实例一份：以前是函数级 static，
     // 两个实例参数不同就会每帧各打一整行（render 路径里的磁盘 I/O + 数据竞争）。
     double lastSig = -1e30;
+    // 诊断（BUG4）：本实例被 render 了几次。全局 seq 回答不了「宿主到底调没调
+    // 第二个实例」—— 两个实例混在同一个计数器里，而且日志按 120 抽样。
+    long long calls = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -1175,6 +1182,54 @@ static OfxStatus isIdentity(OfxImageEffectHandle instance,
 }
 
 // ---------------------------------------------------------------------------
+// 诊断（BUG4 多实例塌陷）：调用号 / 指针 / 画面指纹
+//
+// 为什么需要：三种可能（宿主把同一张输出图给了两个实例 / 我们内部两个实例串了 /
+// 我们没写目标图）在**画面上**表现完全一样，只能靠「同一帧里两次 render 的
+// 数据」来分。全局 seq 做不到（两个实例混在一个计数器里，且日志按 120 抽样），
+// 所以这里给每个实例一个自己的调用号。
+//
+// 开关：
+//   · 默认开，但每实例只记前 kDiagMaxCalls 次、全进程只记 kDiagMaxLines 行 ——
+//     不需要设任何环境变量（Resolve 从桌面图标启动时环境变量继承不到，
+//     这个坑 beauty_hwprobe.cpp 里已经踩过一次），也不会把 4MB 日志刷爆。
+//   · NAMA_DIAG_FP=0 可整体关掉。
+//
+// 指纹：均匀采样 64 个点、每点取 4 字节做 FNV-1a。目的不是逐字节相等，
+// 而是回答「这两次 render 的输出是不是同一张画面」—— 32 位足够。
+// ---------------------------------------------------------------------------
+static const long long kDiagMaxCalls = 400;    // 每实例最多记这么多次调用
+static const long long kDiagMaxLines = 4000;   // 全进程上限
+
+static bool diagFpOn() {
+    static const bool on = [] {
+        const char* e = getenv("NAMA_DIAG_FP");
+        return !(e && e[0] == '0' && e[1] == 0);
+    }();
+    return on;
+}
+
+static unsigned int fpFrame(const void* p, int rowBytes, int w, int h, int bytesPerPx) {
+    if (!p || rowBytes <= 0 || w <= 0 || h <= 0 || bytesPerPx < 4) return 0;
+    const unsigned char* base = (const unsigned char*)p;
+    const long long total = (long long)w * (long long)h;
+    unsigned int hsh = 2166136261u;
+    for (int i = 0; i < 64; i++) {
+        // 等分取点再用质数步长打散：避免采样点全部落在同一列/同一行，
+        // 那样「换了整帧」和「只改了局部」会给出同一个指纹。
+        long long idx = (total * i) / 64;
+        idx = (idx * 2654435761LL) % total;
+        const unsigned char* px =
+            base + (size_t)(idx / w) * (size_t)rowBytes + (size_t)(idx % w) * (size_t)bytesPerPx;
+        for (int b = 0; b < 4; b++) {
+            hsh ^= px[b];
+            hsh *= 16777619u;
+        }
+    }
+    return hsh;
+}
+
+// ---------------------------------------------------------------------------
 // render
 // ---------------------------------------------------------------------------
 static OfxStatus renderMain(OfxImageEffectHandle instance,
@@ -1188,6 +1243,7 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
                          (logAll && logAll[0] == '1' && logAll[1] == 0);
 
     InstanceData* d = getData(instance);
+    if (d) d->calls++;          // 诊断：本实例的调用号（见 fpFrame 上面的说明）
     OfxStatus status = kOfxStatOK;
     bool didLog = false;          // 本帧是否打了详细日志（放图后补打整动作耗时）
     double tActBeforeRel = 0.0;
@@ -1310,6 +1366,11 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
     void* dstPtr = nullptr;
     char* dstDepth = nullptr;
     bool wroteDst = false;
+    // ---- 诊断（BUG4）：跨分支带出的数据 ----
+    void* srcPtrSeen = nullptr;     // 本帧读的那张源图（供收尾统一打日志）
+    unsigned int fpSrc = 0, fpDstPre = 0;
+    int dstBpp = 4;
+    bool diag = false;
 
     do {
         int srcRowBytes = 0;
@@ -1357,6 +1418,20 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
         if (sw != dw || sh != dh)
             ofxLog("render #%ld WARN bounds 不一致 src=%dx%d dst=%dx%d，按 %dx%d 处理并补边",
                    seq, sw, sh, dw, dh, w, h);
+
+        // ---- 诊断（BUG4）：指针 + 画面指纹 ----
+        // 只读，不改任何像素路径。一次播放就能把三种可能分开：
+        //   · 一帧里只有一行        → 宿主没渲染第二个实例
+        //   · 两行 dst 指针相同      → 宿主把同一张输出图给了两个实例
+        //   · dst 指针不同、指纹相同 → 我们内部把内容串了（B 输出了 A 的画面）
+        //   · dst 指纹 == src 指纹   → 没写目标图（或走了透传分支）
+        diag = diagFpOn() && (!d || d->calls <= kDiagMaxCalls);
+        if (diag) {
+            srcPtrSeen = srcPtr;
+            dstBpp = isFloatDepth(dstDepth) ? 16 : 4;
+            fpSrc = fpFrame(srcPtr, srcRowBytes, w, h, isFloatDepth(srcDepth) ? 16 : 4);
+            fpDstPre = fpFrame(dstPtr, dstRowBytes, dw, dh, dstBpp);
+        }
 
         NamaSettings s;
         readParams(d, s);
@@ -1531,6 +1606,26 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
     if (wroteDst && dstDepth && (dw > w || dh > h))
         edgeFillDst(dstDepth, dstPtr, dstRowBytes, dw, dh, w, h);
 
+    // ---- 诊断（BUG4）：本实例这一次 render 的完整画像 ----
+    // 正常一帧里应该出现**两行**（两个实例各一行）。判读：
+    //   ① 一帧只有一行          → 宿主没调第二个实例（问题在图/缓存，不在像素）
+    //   ② 两行 dst 指针相同      → 宿主把同一张输出图给了两个实例
+    //   ③ 两行 dst 指纹相同      → 我们内部串了：B 输出的是 A 的画面
+    //   ④ dst 指纹 == src 指纹   → 没写目标图（或命中了透传分支）
+    //   subst=1 表示引擎在本帧把输入整帧换成了缓存的 heldFrame_（见 beauty_core.cpp）。
+    if (diag) {
+        static LONG s_diagLines = 0;
+        const LONG n = InterlockedIncrement(&s_diagLines);
+        if (n <= kDiagMaxLines) {
+            const unsigned int fpDstOut = fpFrame(dstPtr, dstRowBytes, dw, dh, dstBpp);
+            ofxLog("DIAG call=%lld inst=%p ofx=%p t=%.3f win=%dx%d src=%p dst=%p "
+                   "fpSrc=%08X fpDstIn=%08X fpDstOut=%08X wrote=%d subst=%d st=%d",
+                   (long long)(d ? d->calls : 0), (void*)d, (void*)instance, time,
+                   w, h, srcPtrSeen, dstPtr, fpSrc, fpDstPre, fpDstOut,
+                   (int)wroteDst, (int)NamaEngine::inst().frameSubstituted(), (int)status);
+        }
+    }
+
     gEffectHost->clipReleaseImage(sourceImg);
     gEffectHost->clipReleaseImage(outputImg);
 
@@ -1547,11 +1642,30 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
 // ---------------------------------------------------------------------------
 // 加载：取宿主席位
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 引擎层日志桥接
+//
+// 引擎（beauty_core / gpu_beauty）刻意不 include 任何 OFX 头，它写日志走的是
+// beauty_log.h 里的函数指针。**这个指针必须由本文件挂上**，否则 NALOG 只会
+// fflush 到 stderr —— 而 Resolve 是 GUI 进程，stderr 无人接收，等于日志全丢。
+//
+// v3.2.0 之前这里一直是空的：硬件探测（走 ofxLog）能看到，"GPU 管道"（走 NALOG）
+// 却一条都进不来。offline 自测之所以"看着正常"，是因为那是控制台进程，stderr
+// 直接打在终端上。装进 Resolve 才发现的问题，属于典型的环境差异漏测。
+// ---------------------------------------------------------------------------
+static void beautyEngineLogSink(int level, const char* msg) {
+    static const char* kTag[] = { "?", "E", "W", "I", "D" };
+    const char* tag = (level >= 1 && level <= 4) ? kTag[level] : "?";
+    ofxLog("[engine/%s] %s", tag, msg);
+}
+
 static OfxStatus onLoad(void) {
     if (!gHost) {
         ofxLog("onLoad 失败：宿主未提供 OfxHost");
         return kOfxStatErrMissingHostFeature;
     }
+    // 越早挂越好：onLoad 之后的任何一次 process 都可能产生引擎日志。
+    beauty_set_log_fn(beautyEngineLogSink);
     gEffectHost = (OfxImageEffectSuiteV1*)gHost->fetchSuite(gHost->host, kOfxImageEffectSuite, 1);
     gPropHost = (OfxPropertySuiteV1*)gHost->fetchSuite(gHost->host, kOfxPropertySuite, 1);
     gParamHost = (OfxParameterSuiteV1*)gHost->fetchSuite(gHost->host, kOfxParameterSuite, 1);
@@ -1568,6 +1682,18 @@ static OfxStatus onLoad(void) {
         hostName = nullptr;
     ofxLog("onLoad 成功 宿主=%s paramSuite=%d msgSuite=%d build=" NAMA_BUILD_STR,
            hostName ? hostName : "(未提供)", gParamHost ? 1 : 0, gMsgHost ? 1 : 0);
+
+    // 硬件探测与渲染路径自动定档（P1）。
+    // 放在 onLoad 而不是首帧：定档结果要写进日志，用户报性能问题时第一眼看这里。
+    // 校准只跑 1080p 一档，约 80ms；失败（无独显/驱动受限）自动降级为纯 CPU。
+    {
+        beautyHwCalibrate();
+        char hw[1024];
+        beautyHwDescribe(hw, (int)sizeof(hw));
+        ofxLog("硬件探测:\n%s", hw);
+        ofxLog("渲染路径定档: %s（可用 BEAUTY_PATH=gpu|cpu 覆盖）",
+               beautyHwProbe().recommendedPath == BEAUTY_PATH_GPU ? "GPU" : "CPU");
+    }
     return kOfxStatOK;
 }
 
@@ -1575,6 +1701,13 @@ static OfxStatus onUnload(void) {
     // v3.0.0 起不再有旧版闭源 SDK（旧文案「卸载 SDK」会误导排错方向）。
     ofxLog("unload：释放引擎（CoreEngine + ONNX 会话）");
     NamaEngine::inst().release();
+    // 2026-11-06：GPU 后端此前没有任何关闭点（gpuBeautyShutdown / gpuSmoothShutdown
+    // 定义了却零调用），D3D11 设备、5 张 R32G32B32A32 平面纹理和 CS 会一直挂到
+    // 进程退出。4K 素材下这是数百 MB 显存；Resolve 重载插件时就是一次白占。
+    // 必须放在 release() 之后：先停 worker 与引擎状态，再拆设备。
+    gpuSmoothShutdown();
+    gpuBeautyShutdown();
+    ofxLog("unload：GPU 后端已关闭");
     return kOfxStatOK;
 }
 
