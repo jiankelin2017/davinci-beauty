@@ -53,3 +53,29 @@ _archive/
 # MANIFEST.txt 是 package.py 生成的交付清单（覆盖含二进制的交付子集），
 # 每次打包哈希都会变，且与仓库跟踪内容不一致，故不入库；全仓校验看 FILELIST.txt。
 MANIFEST.txt
+
+# ---- 离线台架（_p1bench / _p2bench）----
+# 源码、构建脚本、运行日志入库（文档大量引用其路径作为实测证据）；
+# 编译中间件与可执行文件每次重建，不入库。
+*.obj
+_p1bench/*.obj
+_p2bench/*.obj
+_p2bench/*.exe
+_p2bench/*.ilk
+_p2bench/*.pdb
+# 早期迭代的运行日志：PowerShell 重定向的 GBK 转录，中文已乱码，信息量低于
+# run_1.0.3.0.log / run_1.0.4.0.log（这两份是干净的验收证据，入库）。
+_p2bench/run.log
+_p2bench/run[0-9].log
+
+# bug4 并发复现的一次性运行输出：脚本入库，过程 dump 不入库；
+# 只保留 sweep.txt / sweep_fixed.txt 这一组「修复前 vs 修复后」对照证据。
+03_测试夹具/bug4_run*.txt
+03_测试夹具/bug4_align0.txt
+03_测试夹具/bug4_diag.log
+03_测试夹具/bug4_final.txt
+03_测试夹具/bug4_sweep_slot.txt
+03_测试夹具/bug4_caseC_*.drp
+03_测试夹具/bug4_caseC_state.json
+03_测试夹具/installed_check*.txt
+03_测试夹具/mock_run*.txt

@@ -1,4 +1,4 @@
-﻿DaVinci Beauty 整合包 v3.0.8
+DaVinci Beauty 整合包 v1.0.7.0
 ============================================================
 
 【三步装好】
@@ -9,12 +9,14 @@
   3. 重启 Resolve：Effects Library > OpenFX > DaVinci Beauty
 
 【一键安装包（含卸载器）】
-  根目录 DaVinciBeauty_Setup_v3.0.8.exe
+  05_安装包\build\DaVinciBeauty_Setup_v1.0.7.0.exe
   双击安装（会请求管理员权限）；卸载走「应用和功能」里
   「DaVinci Beauty 美颜」，或运行同目录的卸载器：
     "...\DaVinciBeauty.ofx.bundle\Uninstall_DaVinciBeauty.exe" /S
-  静默安装：DaVinciBeauty_Setup_v3.0.8.exe /S
-  静默卸载：DaVinciBeauty_Setup_v3.0.8.exe --uninstall /S
+  静默安装：DaVinciBeauty_Setup_v1.0.7.0.exe /S
+  静默卸载：DaVinciBeauty_Setup_v1.0.7.0.exe --uninstall /S
+  安装包内随带 LICENSE（GPL-2.0-only）与 THIRD-PARTY-NOTICES.md，
+  一并装到插件目录，随分发一起保留。
 
 【重新编译（可选）】
   01_ofx插件源码\build.bat —— 薄壳，实际编译在 build.ps1
@@ -22,7 +24,7 @@
 
 【验收】
   04_验收工具\verify.bat   一键验收（编译/装机/回归/接口/工程一致性）
-  期望：25 PASS / 0 FAIL，逐字节回归 18/18、mock host 23 项
+  期望：27 PASS / 0 FAIL，逐字节回归 18/18、mock host 23 项
   本包自带 03_测试夹具\probe_in.raw（1MB），装机前后都能自测
 
 【目录】
@@ -33,6 +35,9 @@
   02_引擎资产\      整合包自带（build/install 直接用它）
   MANIFEST.txt      包内每个文件的 sha256
   验收报告.txt      本次交付的验收结论（逐条 PASS/FAIL）
+  FILELIST.txt      全仓文件清单（SHA256 + 大小）
+  LICENSE           软件许可证全文（GPL-2.0-only）
+  THIRD-PARTY-NOTICES.md  第三方组件与许可声明（含 ONNX Runtime）
   开发指南.md       开发与维护入口（5 步工作流 / 目录地图 / 硬约束）
   开发文档.md       架构 / 关键技术事实 / 调试排错（算法数值结论）
   _archive/CODE_REVIEW.md    v1.3 时期的代码审查记录（已归档，历史参考）
@@ -40,4 +45,5 @@
 【注意】
   - 插件 ID com.nama.davinci.beauty 不要改：Resolve 按 ID 找效果，
     改了历史工程里已挂的效果会失效。
-  - 03/04/05 三个历史遗留目录未进本包（与当前插件主线无关）。
+  - 分发时 LICENSE 与 THIRD-PARTY-NOTICES.md 必须与本插件一起给出，
+    这是 GPL-2.0-only 的合规要求，不能单独分发二进制。

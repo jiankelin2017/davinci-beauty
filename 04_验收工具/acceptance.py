@@ -48,6 +48,11 @@ REQUIRED_ASSETS = [
     "onnxruntime.dll", "yunet.onnx",
 ]
 
+# 必须随副本分发的法律文件：GPL-2.0（本项目）与 MIT（onnxruntime / yunet）、
+# BSD-3（OFX 头）都要求「随副本附带声明与许可全文」。只放在 git 仓库里不算分发，
+# 用户拿到的安装包 / bundle 才是副本，所以三处链路都要有。
+REQUIRED_LEGAL = ["LICENSE", "THIRD-PARTY-NOTICES.md"]
+
 _results = []
 
 
@@ -104,6 +109,10 @@ def read_version_macros():
         if not m:
             return None
         got[k] = int(m.group(1))
+    # REV 是可选的第四段。2026-11-06 起版本号改成四段式（见 PROGRESS.md
+    # 「版本号规则 v2」）：纯文档 / 注释改动走 REV，其余三档不变。
+    m = re.search(r"#define\s+NAMA_BUILD_REV\s+(\d+)", txt)
+    got["REV"] = int(m.group(1)) if m else None
     m = re.search(r'#define\s+NAMA_BUILD_STR\s+"([^"]+)"', txt)
     if not m:
         return None
@@ -117,9 +126,14 @@ def check_version():
     if not v:
         rec("版本", "读到源码版本宏", False, "nama_engine.h 里没找到 NAMA_BUILD_*")
         return
-    expect = "%d.%d.%d" % (v["MAJOR"], v["MINOR"], v["PATCH"])
-    rec("版本", "NAMA_BUILD_STR 与三段一致", v["STR"] == expect,
-        "%s == %s" % (v["STR"], expect))
+    # 段数由「有没有 REV 宏」决定，不写死三段 —— 旧版这里按三段拼期望值，
+    # 四段式一上线它就恒报 FAIL，而源码其实是对的。（2026-11-06 修）
+    seg = [v["MAJOR"], v["MINOR"], v["PATCH"]]
+    if v["REV"] is not None:
+        seg.append(v["REV"])
+    expect = ".".join(str(n) for n in seg)
+    rec("版本", "NAMA_BUILD_STR 与宏一致", v["STR"] == expect,
+        "%s == %s（%d 段）" % (v["STR"], expect, len(seg)))
 
     # 二进制里必须能搜到完整版本串：这是「装的这个 DLL 是哪个版本」的
     # 唯一自证途径，因为 NamaVersion() 丢掉了 PATCH 位。
@@ -372,6 +386,20 @@ def check_project():
             "%d/%d 项" % (len(file_assets) - len(miss), len(file_assets))
             if not miss else "缺: " + ", ".join(miss))
 
+    # 1c) 许可文件同样散在多处：只要有一处漏了就产出「能装但合规不全」的包。
+    #     这是 review 里点名的缺口（2026-11-06 补），静态判住，别靠人记。
+    for label, path in (("install.bat", ibat),
+                        ("PAYLOAD_PLAN", bnp),
+                        ("NSI File 指令", nsi)):
+        txt = readtext(path)
+        if not txt:
+            rec("工程", "%s 可读（许可）" % label, False, path)
+            continue
+        miss = [a for a in REQUIRED_LEGAL if a not in txt]
+        rec("工程", "%s 收录许可文件" % label, not miss,
+            "%d/%d 项" % (len(REQUIRED_LEGAL) - len(miss), len(REQUIRED_LEGAL))
+            if not miss else "缺: " + ", ".join(miss))
+
     # 2) UI 文案：不许残留旧项目名，且三个 label 必须带上新名
     plugin_src = os.path.join(SRC, "ofx_plugin.cpp")
     # 注释里会提到历史名与带括号的旧叫法，取文案前必须先剥掉注释
@@ -452,8 +480,16 @@ def check_project():
         probs = []
         if raw.count(b"\n") - raw.count(b"\r\n") > 0:
             probs.append("LF换行")
-        if b"chcp " in raw:
-            probs.append("有chcp")
+        # chcp 只算「命令」，不算提到这个词的注释 —— 旧判据是裸 `b"chcp " in raw`，
+        # 于是一个写着「这里不要加 chcp」的说明行就会被判违规（2026-11-06 实测踩到）。
+        # 批处理的注释行就是 rem / :: 开头，跳到这些行再找命令位置上的 chcp。
+        for line in raw.split(b"\n"):
+            cmd = line.strip().lstrip(b"@").strip()
+            if not cmd or cmd.lower().startswith((b"rem", b"::")):
+                continue
+            if re.match(rb"(?i)chcp\b", cmd):
+                probs.append("有chcp")
+                break
         if any(c > 127 for c in raw):
             try:
                 raw.decode("gbk")

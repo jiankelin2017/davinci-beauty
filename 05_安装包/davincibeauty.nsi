@@ -137,6 +137,12 @@ Section "DaVinci Beauty Plugin" SecMain
   File "${STAGE}\DaVinciBeauty.ofx"
   File "${STAGE}\onnxruntime.dll"
   File "${STAGE}\yunet.onnx"
+  ; 许可与第三方声明必须随副本分发：GPL-2.0（本项目）、MIT（onnxruntime /
+  ; yunet）、BSD-3（OFX 头）三条都要求「随副本附带声明与许可全文」。
+  ; 落点与 install.bat 一致（Contents\Win64）；卸载器 RMDir /r 删整个 bundle，
+  ; 所以这里不需要额外的卸载条目。
+  File "${STAGE}\LICENSE"
+  File "${STAGE}\THIRD-PARTY-NOTICES.md"
   SetOutPath "$INSTDIR"
 
   ; --- 注册表：卸载信息，让它出现在「应用和功能」---
@@ -193,6 +199,18 @@ Section "DaVinci Beauty Plugin" SecMain
     ${EndIf}
     SetErrors
     Abort
+  ${EndIf}
+  ; 许可文件缺失不阻断安装（插件仍能跑），但那是合规缺陷，必须显式报出来，
+  ; 不能静默跳过 —— 否则打包漏了也没人会发现。
+  ${IfNot} ${FileExists} "$INSTDIR\LICENSE"
+    ${IfNot} ${Silent}
+      MessageBox MB_ICONEXCLAMATION|MB_OK "安装完成，但 bundle 里没有 LICENSE。$\r$\n这是打包缺陷（GPL-2.0 要求随副本附带许可全文），请反馈。"
+    ${EndIf}
+  ${EndIf}
+  ${IfNot} ${FileExists} "$INSTDIR\THIRD-PARTY-NOTICES.md"
+    ${IfNot} ${Silent}
+      MessageBox MB_ICONEXCLAMATION|MB_OK "安装完成，但 bundle 里没有 THIRD-PARTY-NOTICES.md。$\r$\n这是打包缺陷（MIT / BSD-3 要求随副本附带声明），请反馈。"
+    ${EndIf}
   ${EndIf}
 SectionEnd
 

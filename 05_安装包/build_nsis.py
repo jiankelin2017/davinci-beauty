@@ -122,9 +122,22 @@ PAYLOAD_PLAN = [
     ("yunet.onnx", None),
 ]
 
+# 随包分发的法律文件（仓库根）。
+#
+# 为什么必须进安装包：GPL-2.0（本项目自身）与 MIT（onnxruntime / yunet）、
+# BSD-3（OFX 头）都要求「随副本附带声明与许可全文」。只把文件放在 git 仓库里
+# 不算分发，安装包才是用户实际拿到的那一份副本。
+#
+# 落点与 install.bat 一致：Contents\Win64。卸载器用 RMDir /r 删整个 bundle，
+# 所以这里不需要额外的卸载条目。
+LEGAL_FILES = ["LICENSE", "THIRD-PARTY-NOTICES.md"]
+
+REPO = os.path.normpath(os.path.join(HERE, ".."))
+
 
 def collect_payload(stage, engine_dir, ofx_bin):
-    """把引擎与插件按 bundle/Win64 的布局收进 stage。返回 (文件数, 字节数, 缺失)。"""
+    """把引擎、插件与许可文件按 bundle/Win64 的布局收进 stage。
+    返回 (文件数, 字节数, 缺失)。"""
     nfiles = 0
     nbytes = 0
     missing = []
@@ -141,6 +154,15 @@ def collect_payload(stage, engine_dir, ofx_bin):
             continue
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copy2(src, dst)
+        nfiles += 1
+        nbytes += os.path.getsize(src)
+
+    for name in LEGAL_FILES:
+        src = os.path.join(REPO, name)
+        if not os.path.isfile(src):
+            missing.append(src)
+            continue
+        shutil.copy2(src, os.path.join(stage, name))
         nfiles += 1
         nbytes += os.path.getsize(src)
 
@@ -162,7 +184,14 @@ def read_source_version():
     major, minor = macro("NAMA_BUILD_MAJOR"), macro("NAMA_BUILD_MINOR")
     if major is None or minor is None:
         return None
-    return "%d.%d.%d" % (major, minor, macro("NAMA_BUILD_PATCH") or 0)
+    # 2026-11-06 起版本号是四段式（PROGRESS「版本号规则 v2」）。产物文件名也跟
+    # 四段走，否则验收按 NAMA_BUILD_STR 去找 DaVinciBeauty_Setup_v1.0.7.0.exe
+    # 会找不到 —— 文件名与版本串必须是同一个来源。
+    parts = [major, minor, macro("NAMA_BUILD_PATCH") or 0]
+    rev = macro("NAMA_BUILD_REV")
+    if rev is not None:
+        parts.append(rev)
+    return ".".join(str(n) for n in parts)
 
 
 def resolve_engine_dir(explicit=None):

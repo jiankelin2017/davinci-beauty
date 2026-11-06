@@ -1,4 +1,4 @@
-# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.0.6.0）
+# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.0.7.0）
 
 一个给 DaVinci Resolve Studio 21.1 用的 OpenFX 滤镜，效果引擎是自研引擎 3.1.39 的
 纯 CPU 美颜引擎（CoreEngine），人脸检测用 ONNX 模型，并在引擎内部**自动检测 GPU**
@@ -15,6 +15,37 @@
 `LICENSE`；随包分发的 ONNX Runtime、YuNet 模型、OpenFX 头文件的版权与许可全文见
 `THIRD-PARTY-NOTICES.md`。注意 GPL-2.0 与 Apache-2.0 不兼容，与 MIT / BSD-3 兼容 ——
 现有三个第三方组件都是后者。
+
+## v1.0.7.0 变更（2026-11-06，GPU 磨皮搬运瘦身；画面逐字节不变）
+
+**修订位 +1**。只提速 + 补许可证，操作与画面都不变（18/18 基线、P2 台架 7/7）。
+已装机，md5 `cb385b66d442ae5567833492d3b2ef42`。
+
+先给 `GpuSmoothTiming` 补了分步计时（`packMs/maskMs/copyUpMs/copyDnMs/mapMs/fillMs`），
+量出来才知道该改哪一行：4K 大脸时**搬运占总耗时 93~99%**，而且
+`copyUp/copyDn` 只是命令提交、不占时间，真正的大头是 `map`（等 GPU + 拷回）与 `fill`。
+
+两项改动：
+
+1. **掩码 / 保护：一张 RGBA8 → 两张 R8_UINT**。旧实现每像素写 4 个字节
+   （其中 2 个是常量）、一次一字节 store，同体积比整行 memcpy 慢 2.4 倍。改完体积降到 1/4。
+   用 `R8_UINT` 不用 `R8_UNORM`：UNORM 读出来是 `value/255` 的浮点，乘回 255 不保证回到原整数。
+2. **读回只拷输出矩形**：`CopyResource` 整块桶化纹理 → `CopySubresourceRegion` + `D3D11_BOX`，
+   4K 大脸 15.6MB → 9.1MB。坑在于子区域拷到 staging 的 (0,0) 后，读回列偏移必须从 0 起，
+   不能再减 `imgX0`（第一版照抄旧偏移，横向整体错位，台架报 maxdiff=255）。
+
+对 HEAD 交替 5 轮（reps=11，取中位数）：1080p 大脸 3.37→2.63ms（**-22%**）、
+1080p 小脸 2.43→1.88（**-23%**）、4K 小脸 6.52→5.73（**-12%**）、4K 大脸 11.62→11.29（-2.8%）、
+640×394 0.62→0.57（-8%）。同台架的 CPU 列作为对照，两组差异 ≤3%，说明不是机器抖动。
+
+**同一批数据还说明一件事**：1.0.6.0 把 CPU 路径按 ROI 裁剪之后，**GPU 路径已经比 CPU 慢
+2~3 倍**（4K 大脸 11.29 vs 4.18ms，1080p 大脸 2.63 vs 1.18ms）。本算法是带宽型的，
+GPU 额外付一次 PCIe 往返 + ROI 外整帧补齐，而 CPU 那侧数据本来就在内存里。
+`gpu_smooth=auto` 是否还要默认启用 GPU，见 `PROGRESS.md` 第 (4) 节，待决策。
+
+同批把 `LICENSE`（GPL-2.0-only）与 `THIRD-PARTY-NOTICES.md` 补进了 `install.bat`、
+NSIS 的 `PAYLOAD_PLAN` / `File` 指令、python 安装器四处，并重建了
+`DaVinciBeauty_Setup_v1.0.7.0.exe`（包内 5 个文件齐全，`7z l` 已核）。
 
 ## v1.0.6.0 变更（2026-11-06，CPU 磨皮按 ROI 裁剪；画面逐字节不变）
 

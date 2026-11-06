@@ -36,6 +36,11 @@ PAYLOAD_FILES = [
     "yunet.onnx",
 ]
 
+# 随包分发的法律文件（GPL-2.0 本项目 / MIT onnxruntime 与 yunet / BSD-3 OFX 头）。
+# 三条许可都要求「随副本附带声明与全文」，所以安装包里必须有这两个文件。
+# 它们不属于「插件跑不起来」的必需项：缺了只告警，不把安装判成失败。
+LEGAL_FILES = ["LICENSE", "THIRD-PARTY-NOTICES.md"]
+
 # 安装时必须逐项校验存在的最小集合（核心文件，缺一不可）
 CRITICAL_FILES = [
     "DaVinciBeauty.ofx",
@@ -253,8 +258,9 @@ def install_from(payload_root, target_win64, quiet=False, on_progress=None):
         fail("资源目录不存在: %s" % src_root)
         return False, ["<payload>"]
 
-    # 反过来装：数据在前，宿主机体（DLL/.ofx）在后
-    order = list(reversed(PAYLOAD_FILES))
+    # 反过来装：数据在前，宿主机体（DLL/.ofx）在后。
+    # 许可文件排在清单最前、装完翻转后落在最后 —— 它们最不可能被占用。
+    order = list(reversed(PAYLOAD_FILES + LEGAL_FILES))
     total = len(order)
     failed = []
 
@@ -264,6 +270,9 @@ def install_from(payload_root, target_win64, quiet=False, on_progress=None):
         if on_progress:
             on_progress(i, total, rel)
         if not os.path.isfile(src):
+            if rel in LEGAL_FILES:
+                warn("许可文件缺失（不阻断安装）: %s" % rel)
+                continue
             fail("资源缺失: %s" % rel)
             failed.append(rel)
             continue

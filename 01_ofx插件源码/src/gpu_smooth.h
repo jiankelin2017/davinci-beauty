@@ -59,6 +59,22 @@ struct GpuSmoothTiming {
     double computeMs  = 0.0;
     double downloadMs = 0.0;
     double totalMs    = 0.0;
+
+    // 细分（1.0.7.0 加）。upload/download 三个粗项只能说明「搬运占大头」，
+    // 但不能回答「该改哪一行」，所以把搬运拆到能被单独优化的粒度：
+    //   packMs   Map(WRITE_DISCARD) + 逐行 memcpy 源图（CPU→映射内存）
+    //   maskMs   打包 mask/protect（此前是逐像素 4 次字节写）
+    //   copyUpMs 每次 CopyResource（DYNAMIC→DEFAULT）；GPU 内部拷贝
+    //   copyDnMs CopyResource 到 staging（拷的是整块桶化尺寸，不是输出矩形）
+    //   mapMs    Map(READ) 阻塞等 GPU 完成 + 拷回 dst
+    // 生产日志只打前三项（保持原有格式），这三项供台架定位瓶颈。
+    double packMs     = 0.0;
+    double maskMs     = 0.0;
+    double copyUpMs   = 0.0;
+    double copyDnMs   = 0.0;
+    double mapMs      = 0.0;
+    double fillMs     = 0.0;   // ROI 外 dst=src 补齐（只有 dst!=src 时才有）
+
     int    imgX0 = 0, imgY0 = 0, imgW = 0, imgH = 0;   // 实际上传的图像矩形
     int    planeX0 = 0, planeY0 = 0, planeW = 0, planeH = 0;
     int    pw = 0, ph = 0;                             // 半分辨率平面尺寸

@@ -68,7 +68,12 @@ cbuffer P : register(b0)
 };
 
 Texture2D<uint4>    g_srcTex   : register(t0);
-Texture2D<uint4>    g_mpTex    : register(t1);
+// 1.0.7.0：掩码与五官保护拆成两张 R8_UINT。
+// 此前是一张 R8G8B8A8_UINT，只为塞两个字节，上传却要写 4 字节/像素、
+// 而且是逐字节 store —— 台架实测 4K 15.6MB 花 2.73ms，比同样体积的
+// 整行 memcpy 慢 2.4 倍。拆成单通道后上传退化成纯 memcpy，体积还只剩 1/4。
+Texture2D<uint>     g_maskTex  : register(t1);
+Texture2D<uint>     g_protTex  : register(t2);
 Texture2D<float4>   g_pA       : register(t3);
 Texture2D<float4>   g_pB       : register(t4);
 Texture2D<float4>   g_pS       : register(t5);
@@ -238,8 +243,7 @@ void CSCompose(uint3 id : SV_DispatchThreadID)
     if ((int)id.x >= g_imgRW || (int)id.y >= g_imgRH) return;
 
     uint4 s  = g_srcTex.Load(int3((int)id.x, (int)id.y, 0));
-    uint4 mp = g_mpTex.Load(int3((int)id.x, (int)id.y, 0));
-    int m = (int)mp.x;
+    int m = (int)g_maskTex.Load(int3((int)id.x, (int)id.y, 0));
     if (m == 0)
     {
         g_dstTex[id.xy] = s;
@@ -250,7 +254,8 @@ void CSCompose(uint3 id : SV_DispatchThreadID)
     int y = g_imgY0 + (int)id.y;
 
     precise float skin = (float)m * (1.0f / 255.0f);
-    precise float eye = (float)mp.y * (1.0f / 255.0f) * g_eyeK;
+    precise float eye = (float)g_protTex.Load(int3((int)id.x, (int)id.y, 0))
+                        * (1.0f / 255.0f) * g_eyeK;
     precise float keepEye = 1.0f - eye;
     precise float se = skin * g_e;
 
@@ -363,12 +368,19 @@ ID3D11DeviceContext* g_ctx = nullptr;
 ID3D11ComputeShader* g_cs[K_COUNT] = {nullptr};
 ID3D11Buffer*        g_cb = nullptr;
 
-ID3D11Texture2D*          g_packSrc = nullptr;
-ID3D11Texture2D*          g_packMp  = nullptr;
-ID3D11Texture2D*          g_texSrc  = nullptr;
-ID3D11Texture2D*          g_texMp   = nullptr;
-ID3D11ShaderResourceView* g_srvSrc  = nullptr;
-ID3D11ShaderResourceView* g_srvMp   = nullptr;
+// 源图（RGBA8）与掩码/保护（各一张 R8）。每类三件套都按「DYNAMIC 上传 +
+// DEFAULT 供 CS 读 + SRV」配：DYNAMIC 不能直接当 SRV（见上方的性能注释）。
+ID3D11Texture2D*          g_packSrc  = nullptr;
+ID3D11Texture2D*          g_texSrc   = nullptr;
+ID3D11ShaderResourceView* g_srvSrc   = nullptr;
+
+ID3D11Texture2D*          g_packMask = nullptr;
+ID3D11Texture2D*          g_texMask  = nullptr;
+ID3D11ShaderResourceView* g_srvMask  = nullptr;
+
+ID3D11Texture2D*          g_packProt = nullptr;
+ID3D11Texture2D*          g_texProt  = nullptr;
+ID3D11ShaderResourceView* g_srvProt  = nullptr;
 
 ID3D11Texture2D*           g_plane[PL_COUNT]    = {nullptr};
 ID3D11ShaderResourceView*  g_planeSrv[PL_COUNT] = {nullptr};
@@ -406,9 +418,9 @@ void setErr(const char* what, HRESULT hr) {
 void releaseTextures() {
     auto rel = [](auto*& p) { if (p) { p->Release(); p = nullptr; } };
     for (int i = 0; i < PL_COUNT; ++i) { rel(g_plane[i]); rel(g_planeSrv[i]); rel(g_planeUav[i]); }
-    rel(g_packSrc); rel(g_packMp);
-    rel(g_texSrc);  rel(g_texMp);
-    rel(g_srvSrc);  rel(g_srvMp);
+    rel(g_packSrc); rel(g_texSrc); rel(g_srvSrc);
+    rel(g_packMask); rel(g_texMask); rel(g_srvMask);
+    rel(g_packProt); rel(g_texProt); rel(g_srvProt);
     rel(g_texDst);  rel(g_uavDst); rel(g_stage);
     g_imgRW = g_imgRH = g_pw = g_ph = 0;
     g_allocImgW = g_allocImgH = g_allocPw = g_allocPh = 0;
@@ -568,15 +580,40 @@ bool ensureResources(int imgRW, int imgRH, int pw, int ph) {
     up.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     up.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     if (FAILED(hr = g_dev->CreateTexture2D(&up, nullptr, &g_packSrc))) { setErr("packSrc", hr); return false; }
-    if (FAILED(hr = g_dev->CreateTexture2D(&up, nullptr, &g_packMp)))  { setErr("packMp", hr);  return false; }
 
     D3D11_TEXTURE2D_DESC dv = td;
     dv.Usage = D3D11_USAGE_DEFAULT;
     dv.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     if (FAILED(hr = g_dev->CreateTexture2D(&dv, nullptr, &g_texSrc))) { setErr("texSrc", hr); return false; }
-    if (FAILED(hr = g_dev->CreateTexture2D(&dv, nullptr, &g_texMp)))  { setErr("texMp", hr);  return false; }
     if (FAILED(hr = g_dev->CreateShaderResourceView(g_texSrc, nullptr, &g_srvSrc))) { setErr("srvSrc", hr); return false; }
-    if (FAILED(hr = g_dev->CreateShaderResourceView(g_texMp,  nullptr, &g_srvMp)))  { setErr("srvMp", hr);  return false; }
+
+    // 掩码 / 保护：单通道 R8_UINT。用 UINT 而不是 UNORM 是为了逐字节精确 ——
+    // UNORM 读出来是 value/255 的浮点，再乘回 255 不保证回到原整数。
+    D3D11_TEXTURE2D_DESC u8 = td;
+    u8.Format = DXGI_FORMAT_R8_UINT;
+    D3D11_TEXTURE2D_DESC u8pack = u8, u8def = u8;
+    u8pack.Usage = D3D11_USAGE_DYNAMIC;
+    u8pack.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    u8pack.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    u8def.Usage = D3D11_USAGE_DEFAULT;
+    u8def.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    struct Mono { ID3D11Texture2D** pack; ID3D11Texture2D** tex;
+                  ID3D11ShaderResourceView** srv; const char* name; };
+    const Mono monos[2] = {
+        { &g_packMask, &g_texMask, &g_srvMask, "mask" },
+        { &g_packProt, &g_texProt, &g_srvProt, "prot" },
+    };
+    for (int i = 0; i < 2; ++i) {
+        if (FAILED(hr = g_dev->CreateTexture2D(&u8pack, nullptr, monos[i].pack))) {
+            setErr(monos[i].name, hr); return false;
+        }
+        if (FAILED(hr = g_dev->CreateTexture2D(&u8def, nullptr, monos[i].tex))) {
+            setErr(monos[i].name, hr); return false;
+        }
+        if (FAILED(hr = g_dev->CreateShaderResourceView(*monos[i].tex, nullptr, monos[i].srv))) {
+            setErr(monos[i].name, hr); return false;
+        }
+    }
 
     D3D11_TEXTURE2D_DESC pd{};
     pd.Width = (UINT)aPw; pd.Height = (UINT)aPh;
@@ -800,6 +837,8 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     if (!ensureResources(imgRW, imgRH, pw, ph)) return false;
 
     const double t0 = nowMsQpc();
+    // 跨块使用的分步时间戳（块内声明会超出作用域）
+    double ta = t0, tb = t0, td = t0;
 
     // ---- 1. 上传 ----
     {
@@ -813,28 +852,40 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
             std::memcpy((unsigned char*)m.pData + (size_t)y * m.RowPitch, s, (size_t)imgRW * 4);
         }
         g_ctx->Unmap(g_packSrc, 0);
+        ta = nowMsQpc();                // 源图搬运结束（掩码打包开始）
 
-        if (FAILED(g_ctx->Map(g_packMp, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
-            std::snprintf(g_err, sizeof(g_err), "Map(packMp) 失败");
-            return false;
-        }
-        for (int y = 0; y < imgRH; ++y) {
-            const size_t gRow = (size_t)(imgY0 + y) * (size_t)w + (size_t)imgX0;
-            unsigned char* d = (unsigned char*)m.pData + (size_t)y * m.RowPitch;
-            for (int x = 0; x < imgRW; ++x) {
-                d[(size_t)x * 4 + 0] = mask    ? mask[gRow + (size_t)x]    : 255;
-                d[(size_t)x * 4 + 1] = protect ? protect[gRow + (size_t)x] : 0;
-                d[(size_t)x * 4 + 2] = 0;
-                d[(size_t)x * 4 + 3] = 255;
+        // 掩码 / 保护：各 1 字节/像素，纯整行 memcpy。
+        // 旧实现是一张 RGBA8 里逐像素写 4 个字节（其中 2 个是常量），
+        // 台架实测同体积比整行 memcpy 慢 2.4 倍，且多传 2 倍数据。
+        for (int k = 0; k < 2; ++k) {
+            ID3D11Texture2D* tex = (k == 0) ? g_packMask : g_packProt;
+            const unsigned char* srcPlane = (k == 0) ? mask : protect;
+            const unsigned char fill = (k == 0) ? 255 : 0;   // 与旧写法同义
+            if (FAILED(g_ctx->Map(tex, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
+                std::snprintf(g_err, sizeof(g_err), "Map(%s) 失败", (k == 0) ? "mask" : "prot");
+                return false;
             }
+            for (int y = 0; y < imgRH; ++y) {
+                unsigned char* d = (unsigned char*)m.pData + (size_t)y * m.RowPitch;
+                if (srcPlane) {
+                    const unsigned char* s = srcPlane
+                        + (size_t)(imgY0 + y) * (size_t)w + (size_t)imgX0;
+                    std::memcpy(d, s, (size_t)imgRW);
+                } else {
+                    std::memset(d, fill, (size_t)imgRW);
+                }
+            }
+            g_ctx->Unmap(tex, 0);
         }
-        g_ctx->Unmap(g_packMp, 0);
+        tb = nowMsQpc();                // 掩码打包结束（GPU 内部拷贝开始）
 
         // DYNAMIC 不能直当 SRV：拷进 DEFAULT 再用（P1 实测直用会从 1ms 变 15ms）
-        g_ctx->CopyResource(g_texSrc, g_packSrc);
-        g_ctx->CopyResource(g_texMp,  g_packMp);
+        g_ctx->CopyResource(g_texSrc,  g_packSrc);
+        g_ctx->CopyResource(g_texMask, g_packMask);
+        g_ctx->CopyResource(g_texProt, g_packProt);
     }
     const double t1 = nowMsQpc();
+    const double tc = t1;               // DYNAMIC→DEFAULT 两次内部拷贝结束
 
     // ---- 2. 计算 ----
     {
@@ -883,7 +934,7 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         // 合成：t0 src / t1 mp / t3 B1 / t4 B2 / t5 amp
         setConst(cb);
         {
-            ID3D11ShaderResourceView* s[6] = { g_srvSrc, g_srvMp, nullptr,
+            ID3D11ShaderResourceView* s[6] = { g_srvSrc, g_srvMask, g_srvProt,
                                                g_planeSrv[PL_B1], g_planeSrv[PL_B2], g_planeSrv[PL_AMP] };
             dispatchOne(K_COMPOSE, s, 6, nullptr, g_uavDst,
                         (UINT)((imgRW + 7) / 8), (UINT)((imgRH + 7) / 8));
@@ -894,8 +945,23 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     const double t2 = nowMsQpc();
 
     // ---- 3. 读回 ----
+    // 声明在块外：Unmap 之后的时间戳要参与 t3 与 timing 的拆分。
+    double timingMapOut = t2;
     {
-        g_ctx->CopyResource(g_stage, g_texDst);
+        // 只把**输出矩形**拷进 staging，而不是整块桶化尺寸的纹理。
+        // 两者能差一倍以上：4K 典型人脸时输出 1353×1753（9.1MB），
+        // 上传矩形是 1918×2130（15.6MB）—— 多拷的 6.5MB 一个像素都用不上。
+        // staging 仍是上传矩形那么大（CopySubresourceRegion 允许目标更小区域），
+        // 所以 RowPitch 与纹理尺寸不变，读回时按 (y - oy0) 取行即可。
+        D3D11_BOX box;
+        box.left   = (UINT)(ox0 - imgX0);
+        box.top    = (UINT)(oy0 - imgY0);
+        box.front  = 0;
+        box.right  = (UINT)(ox1 - imgX0);
+        box.bottom = (UINT)(oy1 - imgY0);
+        box.back   = 1;
+        g_ctx->CopySubresourceRegion(g_stage, 0, 0, 0, 0, g_texDst, 0, &box);
+        td = nowMsQpc();                // GPU→staging 拷贝已提交
         D3D11_MAPPED_SUBRESOURCE m{};
         const HRESULT hrMap = g_ctx->Map(g_stage, 0, D3D11_MAP_READ, 0, &m);
         if (FAILED(hrMap)) {
@@ -916,14 +982,19 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
             return false;
         }
         for (int y = oy0; y < oy1; ++y) {
-            const unsigned char* s = (const unsigned char*)m.pData + (size_t)(y - imgY0) * m.RowPitch;
+            // staging 的 (0,0) 就是输出矩形的左上角（见上面的 box），
+            // 所以行取 (y - oy0)、列从 0 开始 —— 这两处都不能再减 imgX0/imgY0。
+            // 1.0.7.0 第一版就是这里照抄了整块拷贝的偏移，横向整体错位，
+            // 台架立刻报 maxdiff=255（差异集中在 ROI，正好是错位的量）。
+            const unsigned char* s = (const unsigned char*)m.pData
+                + (size_t)(y - oy0) * m.RowPitch;
             unsigned char* d = dst + (size_t)y * (size_t)w * 4;
-            std::memcpy(d + (size_t)ox0 * 4, s + (size_t)(ox0 - imgX0) * 4,
-                        (size_t)(ox1 - ox0) * 4);
+            std::memcpy(d + (size_t)ox0 * 4, s, (size_t)(ox1 - ox0) * 4);
         }
         g_ctx->Unmap(g_stage, 0);
+        timingMapOut = nowMsQpc();
     }
-    const double t3 = nowMsQpc();
+    const double t3 = timingMapOut;
 
     // ---- 4. ROI 外补齐 ----
     // CPU 版 surface3RgbBand 是「整帧逐像素写 dst」：mask=0 处写 dst=src，
@@ -966,6 +1037,12 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         timing->computeMs  = t2 - t1;
         timing->downloadMs = t3 - t2;
         timing->totalMs    = t4 - t0;
+        timing->packMs     = ta - t0;
+        timing->maskMs     = tb - ta;
+        timing->copyUpMs   = tc - tb;
+        timing->copyDnMs   = td - t2;
+        timing->mapMs      = timingMapOut - td;
+        timing->fillMs     = t4 - t3;
         timing->imgX0 = imgX0; timing->imgY0 = imgY0;
         timing->imgW = imgRW;  timing->imgH = imgRH;
         timing->planeX0 = plx0; timing->planeY0 = ply0;
