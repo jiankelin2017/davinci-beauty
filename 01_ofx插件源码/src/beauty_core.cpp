@@ -724,15 +724,22 @@ static GpuPipeMode gpuPipeMode() {
 
 // P2 磨皮的 GPU 开关（3.3.0 的 beauty.ini 体系内，配置项 gpu_smooth）。
 //
-// 与 gpu_pipe 的关键差别：**默认 off**。
-// gpu_pipe 唯一的作用是量搬运耗时、证明管道无损，不改画面，所以敢默认 auto；
-// gpu_smooth 要替换生产磨皮路径，虽然离线对拍 4/4 画幅逐字节一致，
-// 但那是在合成图上验的（渐变 + 噪声 + 椭圆掩码），真实素材的掩码形状、
-// 画幅、色彩都与台架不同。第一次上真机必须由人目视一遍再改 auto。
+// **1.0.9.0 起默认 auto**（1.0.8.0 及以前是 off）。改默认值的依据是 2026-11-07 的
+// 真实素材目视确认：1080×1920 竖屏、磨皮 94，累计 4928 帧零回落，无色块/断层、
+// 发丝与衣领无糊、亮度无偏；同轮实测均合计 4.55ms。
+//
+// 这条改动的作用范围要看清：它只对「ini 里没写 gpu_smooth」和「首次生成 ini」的用户生效。
+// ini 一旦落盘，那一行就写死了，存量用户不会被静默改配置（想换得手动改那一行，
+// 或设环境变量 BEAUTY_GPU_SMOOTH）。这是有意的——不去动用户已经跑通的配置。
+//
+// 选卡只排除 WARP 软件渲染器，**不按厂商过滤**，AMD / Intel 核显同样会走 GPU 路径。
+// 这两家没有实测数据（浮点末位、Map 读回性能都可能与 NVIDIA 不同），所以初始化
+// 日志会打出适配器型号与厂商（1.0.9.0 加）。万一报「画面不对」或「比 CPU 还慢」，
+// 先看那一行，才能分清是硬件差异还是插件缺陷。
 //
 // 取值：
-//   off  = 完全不碰 GPU（默认）
-//   auto = 用 GPU，任何一步失败（无卡 / 显存不足 / 画幅过小）当场回落 CPU
+//   off  = 完全不碰 GPU
+//   auto = 用 GPU，任何一步失败（无卡 / 特性等级 < 11.0 / 显存不足）当场回落 CPU（默认）
 //   on   = 同 auto，只是语义上表示「已确认，强制走」
 //
 // auto 与 on 目前行为一致 —— gpuSmoothRgbBand 内部本来就是「失败返回 false」，
@@ -753,8 +760,8 @@ static GpuSmoothMode gpuSmoothMode() {
             if (!_stricmp(s, "on") || !strcmp(s, "1"))  return GPU_SMOOTH_ON;
             if (!_stricmp(s, "auto"))                   return GPU_SMOOTH_AUTO;
         }
-        // 3) 默认：不启用
-        return GPU_SMOOTH_OFF;
+        // 3) 默认：启用（1.0.9.0 起；此前是 off）。失败由调用方回落 CPU，见上面注释
+        return GPU_SMOOTH_AUTO;
     }();
     return m;
 }

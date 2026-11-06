@@ -404,6 +404,13 @@ double g_sumTotal = 0.0, g_sumPlane = 0.0;
 long long g_rebuilds = 0;        // 纹理组重建次数（诊断 churn，台架断言用）
 long long g_deviceCreates = 0;   // 设备创建次数（应为 1；多于此值说明生命周期有 bug）
 
+// 适配器身份（1.0.9.0 加）。为什么值得单独存一份并打进日志：
+// 本模块选卡只排除 DXGI_ADAPTER_FLAG_SOFTWARE（WARP 软件渲染），**不按厂商过滤**，
+// 所以 AMD / Intel 核显同样会走 GPU 路径。而这两家的浮点末位与 Map 读回性能都没有实测过。
+// 一旦用户报「GPU 磨皮画面不对」或「比 CPU 还慢」，日志里有型号与厂商，
+// 才能一眼分清是硬件差异还是插件缺陷 —— 否则只能远程猜。
+char g_adapterInfo[256] = {0};
+
 double nowMsQpc() {
     static LARGE_INTEGER f = [] { LARGE_INTEGER v; QueryPerformanceFrequency(&v); return v; }();
     LARGE_INTEGER c; QueryPerformanceCounter(&c);
@@ -502,6 +509,20 @@ bool createDevice() {
     IDXGIAdapter1* ad = pickAdapter();
     if (!ad) { std::snprintf(g_err, sizeof(g_err), "找不到硬件适配器"); return false; }
 
+    // 在 Release 之前把身份记下来 —— 这里是全流程唯一还持有 ad 的地方。
+    DXGI_ADAPTER_DESC1 adDesc{};
+    if (SUCCEEDED(ad->GetDesc1(&adDesc))) {
+        char nameUtf8[192] = {0};
+        WideCharToMultiByte(CP_UTF8, 0, adDesc.Description, -1,
+                            nameUtf8, (int)sizeof(nameUtf8) - 1, nullptr, nullptr);
+        std::snprintf(g_adapterInfo, sizeof(g_adapterInfo),
+                      "%s [厂商 0x%04X，显存 %.1f GB]",
+                      nameUtf8[0] ? nameUtf8 : "型号未知", adDesc.VendorId,
+                      (double)adDesc.DedicatedVideoMemory / 1073741824.0);
+    } else {
+        std::snprintf(g_adapterInfo, sizeof(g_adapterInfo), "型号未知");
+    }
+
     // Flags 必须是 0。
     // 1.0.2.0 曾传 D3D11_CREATE_DEVICE_DISABLE_GPU_TIMEOUT：它**关掉 TDR**，
     // GPU 一旦卡住不会被超时重置，而 Resolve 与本插件共用同一块 GPU，
@@ -514,6 +535,20 @@ bool createDevice() {
                                    &g_dev, &fl, &g_ctx);
     ad->Release();
     if (FAILED(hr)) { setErr("D3D11CreateDevice", hr); return false; }
+
+    // 特性等级必须显式挡（1.0.9.0 加）。pFeatureLevels 传 nullptr 时，D3D11 的默认
+    // 列表里含 10.0 / 9.x，DX10 老卡会「创建设备成功、直到编译算着色器才失败」。
+    // 两条路最终都回落 CPU，但后者报的是 CreateComputeShader 失败，极易被误判成驱动坏了。
+    // 这里只释放刚建的两个对象：shader / 纹理都还没建，不必走 teardownDevice
+    // （它会把 g_tried 清回 false，导致每帧重试创建）。
+    if (fl < D3D_FEATURE_LEVEL_11_0) {
+        std::snprintf(g_err, sizeof(g_err),
+                      "显卡特性等级 %.1f 低于 11.0，不支持 Compute Shader 5.0：%s",
+                      (double)fl / 4096.0, g_adapterInfo);
+        if (g_ctx) { g_ctx->Release(); g_ctx = nullptr; }
+        if (g_dev) { g_dev->Release(); g_dev = nullptr; }
+        return false;
+    }
     ++g_deviceCreates;
 
     for (int i = 0; i < K_COUNT; ++i)
@@ -715,9 +750,10 @@ bool gpuSmoothInit() {
     g_tried = true;
     g_ready = createDevice();
     if (!g_ready)
-        NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮初始化失败：%s（回退 CPU）", g_err);
+        NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮初始化失败：%s（回退 CPU，适配器 %s）",
+              g_err, g_adapterInfo[0] ? g_adapterInfo : "未选定");
     else
-        NALOG(BEAUTY_LOG_INFO, "GPU 磨皮后端已就绪");
+        NALOG(BEAUTY_LOG_INFO, "GPU 磨皮后端已就绪：%s", g_adapterInfo);
     return g_ready;
 }
 
