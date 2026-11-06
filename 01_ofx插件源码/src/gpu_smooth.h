@@ -83,6 +83,16 @@ struct GpuSmoothTiming {
     double mapWaitMs  = 0.0;
     double mapCopyMs  = 0.0;
 
+    // uploadMs 再拆（1.0.10.1 加）。同一套逻辑反过来用在上传侧：
+    //   upMapMs  三次 Map(WRITE_DISCARD) 调用本身的耗时
+    //            —— 驱动要么重命名缓冲（便宜），要么等 GPU 用完上一帧这张 DYNAMIC
+    //            纹理（贵）。真机 1920x1080 上 uploadMs=2.90ms 而写入量只有
+    //            2.33MB（≈800MB/s），memcpy 不可能这么慢，所以怀疑大头在这里。
+    //   upMemMs  逐行 memcpy / memset 的纯内存耗时（= packMs + maskMs − upMapMs）
+    // 两者差一个数量级就说明该上双缓冲（轮流两张 pack 纹理），否则只能减字节数。
+    double upMapMs    = 0.0;
+    double upMemMs    = 0.0;
+
     int    imgX0 = 0, imgY0 = 0, imgW = 0, imgH = 0;   // 实际上传的图像矩形
     int    planeX0 = 0, planeY0 = 0, planeW = 0, planeH = 0;
     int    pw = 0, ph = 0;                             // 半分辨率平面尺寸

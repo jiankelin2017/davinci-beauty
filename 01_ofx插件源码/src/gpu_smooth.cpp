@@ -904,14 +904,19 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     const double t0 = nowMsQpc();
     // 跨块使用的分步时间戳（块内声明会超出作用域）
     double ta = t0, tb = t0, td = t0;
+    // 上传段三次 Map(WRITE_DISCARD) 的累计耗时。块内声明就传不出去，
+    // 而它正是「uploadMs 为什么 2.9ms 却只搬 2.3MB」这个问题的答案所在。
+    double upMapMs = 0.0;
 
     // ---- 1. 上传 ----
     {
         D3D11_MAPPED_SUBRESOURCE m{};
+        double tm = nowMsQpc();
         if (FAILED(g_ctx->Map(g_packSrc, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
             std::snprintf(g_err, sizeof(g_err), "Map(packSrc) 失败");
             return false;
         }
+        upMapMs += nowMsQpc() - tm;
         for (int y = 0; y < imgRH; ++y) {
             const unsigned char* s = src + ((size_t)(imgY0 + y) * (size_t)w + (size_t)imgX0) * 4;
             std::memcpy((unsigned char*)m.pData + (size_t)y * m.RowPitch, s, (size_t)imgRW * 4);
@@ -926,10 +931,12 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
             ID3D11Texture2D* tex = (k == 0) ? g_packMask : g_packProt;
             const unsigned char* srcPlane = (k == 0) ? mask : protect;
             const unsigned char fill = (k == 0) ? 255 : 0;   // 与旧写法同义
+            double tm2 = nowMsQpc();
             if (FAILED(g_ctx->Map(tex, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
                 std::snprintf(g_err, sizeof(g_err), "Map(%s) 失败", (k == 0) ? "mask" : "prot");
                 return false;
             }
+            upMapMs += nowMsQpc() - tm2;
             for (int y = 0; y < imgRH; ++y) {
                 unsigned char* d = (unsigned char*)m.pData + (size_t)y * m.RowPitch;
                 if (srcPlane) {
@@ -1134,6 +1141,11 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         timing->mapMs      = timingMapOut - td - timingFillOut;
         timing->mapWaitMs  = timingMapWaitOut;
         timing->mapCopyMs  = timingMapCopyOut;
+        // 上传侧的同一套拆分：upMapMs 是三次 Map 本身，剩下的是纯 memcpy/memset。
+        // upMemMs 用 tb-t0 减而不是另取时间戳，这样两者相加恒等于「源图+掩码」段，
+        // 不会因为多插几对 QPC 调用把测量本身算成开销。
+        timing->upMapMs    = upMapMs;
+        timing->upMemMs    = (tb - t0) - upMapMs;
         timing->fillMs     = timingFillOut;
         timing->imgX0 = imgX0; timing->imgY0 = imgY0;
         timing->imgW = imgRW;  timing->imgH = imgRH;

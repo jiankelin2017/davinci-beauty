@@ -1,4 +1,4 @@
-# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.0.10.0）
+# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.0.10.1）
 
 一个给 DaVinci Resolve Studio 21.1 用的 OpenFX 滤镜，效果引擎是自研引擎 3.1.39 的
 纯 CPU 美颜引擎（CoreEngine），人脸检测用 ONNX 模型，并在引擎内部**自动检测 GPU**
@@ -15,6 +15,32 @@
 `LICENSE`；随包分发的 ONNX Runtime、YuNet 模型、OpenFX 头文件的版权与许可全文见
 `THIRD-PARTY-NOTICES.md`。注意 GPL-2.0 与 Apache-2.0 不兼容，与 MIT / BSD-3 兼容 ——
 现有三个第三方组件都是后者。
+
+## v1.0.10.1 变更（2026-11-07，上传耗时再拆：Map 阻塞 vs 纯拷贝）
+
+**构建位 +1，只加两个日志字段。** 算法、默认值、纹理格式、画面零变化。
+
+**为什么要拆**：1.0.10.0 的真机日志（1920×1080 工程、roi 1626×952）稳态第二帧
+`上传=2.90ms`，但写入量只有 2.33 MB（源图 813×476×4 = 1.55 MB，加 mask/prot 两张 R8
+各 0.39 MB），折合 ≈800 MB/s —— 纯 memcpy 不可能这么慢。所以怀疑耗时不在拷贝，
+而在 `Map(D3D11_MAP_WRITE_DISCARD)` 本身：驱动要么重命名缓冲（便宜），要么等 GPU
+用完上一帧那张 DYNAMIC 纹理（贵）。
+
+**改了哪三处**：
+
+| 文件 | 改动 |
+|---|---|
+| `src/gpu_smooth.h` | `GpuSmoothTiming` 加 `upMapMs` / `upMemMs` |
+| `src/gpu_smooth.cpp` | 上传块三次 `Map` 各取一对 QPC 累加；`upMemMs = (tb - t0) - upMapMs` |
+| `src/beauty_core.cpp` | 日志字段扩成 `上传=%.2f(Map %.2f/拷 %.2f)` |
+
+**怎么判读**：`Map` 远大于 `拷` → Map 在等 GPU，上 2c 双缓冲（pack 纹理也轮流两张）；
+两者同量级 → 就是内存带宽不够，只能减字节数；两者都小但 `上传` 仍大 → 差值落在三次
+`CopyResource` 提交上，改看 `copyUpMs`。
+
+**验证**：产物 324,608 B、md5 `b130960e7064f92d6d457db83e546684`；产物内按 UTF-8 搜索
+`上传=%.2f(Map %.2f/拷 %.2f)` 1 次、`1.0.10.1` 3 次。已装机（Resolve 运行中，走改名旁路），
+**重启 Resolve 后看一行日志即可定案**。
 
 ## v1.0.10.0 变更（2026-11-07，修「适配器日志从未生效」）
 
