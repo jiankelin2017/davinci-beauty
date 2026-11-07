@@ -774,6 +774,37 @@ static const char* gpuSmoothModeName() {
     }
 }
 
+// 2c 延迟取回的开关（beauty.ini:gpu_smooth_pipeline，1.0.11.0 起）。
+//
+// 打开后 GPU 磨皮不再在每帧结尾等 GPU 算完，而是把取回推迟一帧：第 N 帧只提交，
+// 第 N+1 帧回来取 N 的结果。实测依据见 PROGRESS 1.0.10.2 节——真机 36 个样本里
+// 18% 的帧超预算，多出的 6~14ms 全卡在两个 GPU 同步点上，CPU 侧三项纹丝不动。
+//
+// **代价是 ROI 内的画面晚一帧**（ROI 外仍是当前帧的 src）。真机目视与台架都测过，
+// 23.976fps 下不可辨；但如果哪天要做慢动作或单帧精修，把这一行改成 off 就回旧行为。
+// 只在「连续播放」时生效：跳帧、拖动播放头、单帧渲染都会自动退回同步路径
+// （见 gpu_smooth.cpp 里 PendingResult 的三条前提），所以静止画面与导出首帧不受影响。
+//
+// 取值：off = 每帧同步取回（旧行为）；auto/on = 允许延迟取回（默认）。
+static bool gpuSmoothPipelineOn() {
+    static const bool on = []() -> bool {
+        // 1) 环境变量（最高优先级，临时排查用）
+        if (const char* e = getenv("BEAUTY_GPU_PIPELINE")) {
+            if (!*e) return true;
+            if (e[0] == '0' && e[1] == '\0') return false;
+            return true;
+        }
+        // 2) 配置文件
+        if (const char* s = beautyCfgStr("gpu_smooth_pipeline", nullptr)) {
+            if (!_stricmp(s, "off") || !strcmp(s, "0")) return false;
+            return true;
+        }
+        // 3) 默认开
+        return true;
+    }();
+    return on;
+}
+
 
 // on  ：永远跑。
 // off ：永不跑。
@@ -1881,7 +1912,9 @@ public:
                         GpuSmoothTiming gst{};
                         gpuSmoothOk = gpuSmoothRgbBand(src, dst, w, h,
                                                        haveMask ? &mask_[0] : nullptr,
-                                                       pr3, bp, s3roi, &gst);
+                                                       pr3, bp, s3roi, &gst,
+                                                       this, (long long)frameNo_,
+                                                       gpuSmoothPipelineOn());
                         // 失败必须能追到原因，否则「为什么还是 CPU 那么慢」无从下手。
                         // 只打前 3 次：低端卡上可能每帧都失败，否则日志会被刷满。
                         static int gsFailLogs = 0;
@@ -1903,14 +1936,16 @@ public:
                                   "GPU 磨皮[%s] roi=%dx%d@%d,%d 平面=%dx%d r=%d/%d/%d P=%d"
                                   " 上传=%.2f(Map %.2f/拷 %.2f) 算=%.2f 读回=%.2f(等GPU %.2f/拷 %.2f)"
                                   " 补齐=%.2f 合计=%.2f ms"
-                                  " | 累计 %lld 帧 均合计=%.2f 均平面像素=%.0f",
+                                  " | 累计 %lld 帧 均合计=%.2f 均平面像素=%.0f"
+                                  " 管=%d/取=%d",
                                   gpuSmoothModeName(),
                                   gst.imgW, gst.imgH, gst.imgX0, gst.imgY0,
                                   gst.pw, gst.ph, gst.r1, gst.r2, gst.ra, gst.passes,
                                   gst.uploadMs, gst.upMapMs, gst.upMemMs, gst.computeMs,
                                   gst.downloadMs,
                                   gst.mapWaitMs, gst.mapCopyMs, gst.fillMs, gst.totalMs,
-                                  n, at, ap);
+                                  n, at, ap,
+                                  gst.pipeDeferred, gst.pipeRetrieved);
                         }
                     }
                     if (!gpuSmoothOk) {

@@ -377,15 +377,21 @@ ID3D11Buffer*        g_cb = nullptr;
 
 // 源图（RGBA8）与掩码/保护（各一张 R8）。每类三件套都按「DYNAMIC 上传 +
 // DEFAULT 供 CS 读 + SRV」配：DYNAMIC 不能直接当 SRV（见上方的性能注释）。
-ID3D11Texture2D*          g_packSrc  = nullptr;
+//
+// **1.0.11.0 起四张 DYNAMIC/STAGING 各做两份，轮流使用**（2c 延迟取回）：
+//   · pack* 双份 —— 否则本帧 Map(WRITE_DISCARD) 要等 GPU 用完上一帧那张拷贝源；
+//   · stage 双份 —— 否则没法一边取上一帧结果、一边提交本帧拷贝。
+// 而 tex*/plane/texDst 仍单份：它们全程在 GPU 上串行，CPU 从不等它们，
+// 做成双份只是白占显存与带宽。
+ID3D11Texture2D*          g_packSrc[2]  = {nullptr, nullptr};
 ID3D11Texture2D*          g_texSrc   = nullptr;
 ID3D11ShaderResourceView* g_srvSrc   = nullptr;
 
-ID3D11Texture2D*          g_packMask = nullptr;
+ID3D11Texture2D*          g_packMask[2] = {nullptr, nullptr};
 ID3D11Texture2D*          g_texMask  = nullptr;
 ID3D11ShaderResourceView* g_srvMask  = nullptr;
 
-ID3D11Texture2D*          g_packProt = nullptr;
+ID3D11Texture2D*          g_packProt[2] = {nullptr, nullptr};
 ID3D11Texture2D*          g_texProt  = nullptr;
 ID3D11ShaderResourceView* g_srvProt  = nullptr;
 
@@ -395,7 +401,45 @@ ID3D11UnorderedAccessView* g_planeUav[PL_COUNT] = {nullptr};
 
 ID3D11Texture2D*           g_texDst = nullptr;
 ID3D11UnorderedAccessView* g_uavDst = nullptr;
-ID3D11Texture2D*           g_stage  = nullptr;
+ID3D11Texture2D*           g_stage[2] = {nullptr, nullptr};
+
+// ---- 延迟取回（2c）的状态机 ----
+//
+// 为什么需要它：实测 36 个样本里 18% 的帧超预算，超出的 6~14ms 全部落在两个
+// GPU 同步点（写侧 Map 0.02→3.60、读侧等GPU 1.23→3.48），而 CPU 侧三项
+// （拷/补齐/算）在掉帧时纹丝不动。也就是说卡的不是算力，是「算完之前不许取」。
+// 延迟取回把这条依赖放宽到一帧：第 N 帧只提交，第 N+1 帧回来取 N 的结果，
+// 中间隔着一个完整帧间隔（41ms），等 GPU 自然归零。
+//
+// 代价是**画面晚一帧**：dst 的 ROI 内是本帧上一帧的成品，ROI 外仍是本帧的 src
+// （补齐用的是当前 src）。真机目视与台架都测过，23.976fps 下不可辨（见 PROGRESS 2c 节）。
+//
+// 三个必须同时满足的前提，缺一个就退回同步路径：
+//   ① 同一实例（owner）—— 多实例交替渲染时状态是共用的，串了就写错帧；
+//   ② 帧号连续（serial 相差 1）—— 跳帧/重渲染说明不是流式播放；
+//   ③ 两次调用间隔 ≤ kPipeGapMs —— 拖动播放头、静止单帧渲染都会超过这个间隔；
+//   ④ 参数与包围盒完全一致 —— 否则上一帧那份是用**旧参数**算的，等于把滑块拖动
+//      退后一格。这条是 mock_host「亮度不变」用例逼出来的：它先渲染 blur=0、
+//      再改 blur=100 渲染一次，两者间隔极短且帧号连续，前三条全过，
+//      于是第二次拿到的是 blur=0 的结果，判据直接掉到阈值外。
+// 四条任一不满足就当场同步算完，宁可慢一帧，也不把别人的画面写进这一帧。
+struct PendingResult {
+    bool      valid  = false;
+    int       slot   = 0;
+    int       ox0 = 0, oy0 = 0, ox1 = 0, oy1 = 0;   // 输出矩形（属于上一帧的 ROI）
+    long long serial = -1;
+    const void* owner = nullptr;
+    // 参数指纹（1.1.0.0）：浮点直接按位比 —— 同一组参数两次调用得到的是同样的位，
+    // 用 == 已经足够，且不会因为 eps 选大选小放走真正的变化。
+    // 只放**用户可调的标量**，不放 bbox：真人脸框每帧都会动，放进去流水线就永不触发。
+    float     T = 0, I = 0, e = 0, protectK = 0, gwp = 0, f1 = 0, f2 = 0, fa = 0;
+    int       passes = 0;
+    bool      halfRes = false;
+};
+PendingResult g_pend;
+int       g_slot = 0;          // 本帧使用哪一组 DYNAMIC/STAGING
+const double kPipeGapMs = 150.0;   // 两次调用间隔超过它就当成「非流式」
+double    g_lastEndMs = 0.0;   // 上一次 gpuSmoothRgbBand 返回的时刻
 
 // 真实尺寸（本帧逻辑边界）与分配尺寸（纹理实际大小）必须分开存：
 // 桶化之后纹理比真实矩形大一圈，shader 的 clamp / dispatch 用的是真实值，
@@ -432,10 +476,16 @@ void setErr(const char* what, HRESULT hr) {
 void releaseTextures() {
     auto rel = [](auto*& p) { if (p) { p->Release(); p = nullptr; } };
     for (int i = 0; i < PL_COUNT; ++i) { rel(g_plane[i]); rel(g_planeSrv[i]); rel(g_planeUav[i]); }
-    rel(g_packSrc); rel(g_texSrc); rel(g_srvSrc);
-    rel(g_packMask); rel(g_texMask); rel(g_srvMask);
-    rel(g_packProt); rel(g_texProt); rel(g_srvProt);
-    rel(g_texDst);  rel(g_uavDst); rel(g_stage);
+    rel(g_texSrc); rel(g_srvSrc);
+    rel(g_texMask); rel(g_srvMask);
+    rel(g_texProt); rel(g_srvProt);
+    rel(g_texDst);  rel(g_uavDst);
+    for (int i = 0; i < 2; ++i) {
+        rel(g_packSrc[i]); rel(g_packMask[i]); rel(g_packProt[i]); rel(g_stage[i]);
+    }
+    // 纹理没了，上一帧那份待取回的结果也就没了 —— 不清会把野指针当索引用
+    g_pend = PendingResult{};
+    g_slot = 0;
     g_imgRW = g_imgRH = g_pw = g_ph = 0;
     g_allocImgW = g_allocImgH = g_allocPw = g_allocPh = 0;
 }
@@ -624,7 +674,9 @@ bool ensureResources(int imgRW, int imgRH, int pw, int ph) {
     up.Usage = D3D11_USAGE_DYNAMIC;
     up.BindFlags = D3D11_BIND_SHADER_RESOURCE;
     up.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    if (FAILED(hr = g_dev->CreateTexture2D(&up, nullptr, &g_packSrc))) { setErr("packSrc", hr); return false; }
+    for (int i = 0; i < 2; ++i) {
+        if (FAILED(hr = g_dev->CreateTexture2D(&up, nullptr, &g_packSrc[i]))) { setErr("packSrc", hr); return false; }
+    }
 
     D3D11_TEXTURE2D_DESC dv = td;
     dv.Usage = D3D11_USAGE_DEFAULT;
@@ -645,12 +697,14 @@ bool ensureResources(int imgRW, int imgRH, int pw, int ph) {
     struct Mono { ID3D11Texture2D** pack; ID3D11Texture2D** tex;
                   ID3D11ShaderResourceView** srv; const char* name; };
     const Mono monos[2] = {
-        { &g_packMask, &g_texMask, &g_srvMask, "mask" },
-        { &g_packProt, &g_texProt, &g_srvProt, "prot" },
+        { g_packMask, &g_texMask, &g_srvMask, "mask" },
+        { g_packProt, &g_texProt, &g_srvProt, "prot" },
     };
     for (int i = 0; i < 2; ++i) {
-        if (FAILED(hr = g_dev->CreateTexture2D(&u8pack, nullptr, monos[i].pack))) {
-            setErr(monos[i].name, hr); return false;
+        for (int b = 0; b < 2; ++b) {
+            if (FAILED(hr = g_dev->CreateTexture2D(&u8pack, nullptr, &monos[i].pack[b]))) {
+                setErr(monos[i].name, hr); return false;
+            }
         }
         if (FAILED(hr = g_dev->CreateTexture2D(&u8def, nullptr, monos[i].tex))) {
             setErr(monos[i].name, hr); return false;
@@ -682,7 +736,13 @@ bool ensureResources(int imgRW, int imgRH, int pw, int ph) {
     st.Usage = D3D11_USAGE_STAGING;
     st.BindFlags = 0;
     st.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    if (FAILED(hr = g_dev->CreateTexture2D(&st, nullptr, &g_stage))) { setErr("stage", hr); return false; }
+    for (int i = 0; i < 2; ++i) {
+        if (FAILED(hr = g_dev->CreateTexture2D(&st, nullptr, &g_stage[i]))) { setErr("stage", hr); return false; }
+    }
+
+    // 重建意味着尺寸/设备变了，上一帧的待取回结果作废（releaseTextures 已清，这里再保险一次）
+    g_pend = PendingResult{};
+    g_slot = 0;
 
     g_imgRW = imgRW; g_imgRH = imgRH; g_pw = pw; g_ph = ph;
     g_allocImgW = aImgW; g_allocImgH = aImgH;
@@ -805,11 +865,85 @@ void gpuSmoothResourceStats(long long* rebuilds, long long* deviceCreates,
     if (allocPh)       *allocPh       = g_allocPh;
 }
 
+// ---------------------------------------------------------------- 取回一段结果
+// 把 g_stage[slot] 里已经提交的那块输出矩形搬进 dst，并把矩形**之外**从 src 补齐。
+//
+// 这段逻辑原来内联在 gpuSmoothRgbBand 的「3b + 3c」里；1.0.11.0 加了延迟取回之后
+// 它要被两种矩形调用（本帧的 / 上一帧的），不抽出来必然写歪一处。
+//
+// **矩形必须与当初 CopySubresourceRegion 的区域一致**：staging 的 (0,0) 就是那块
+// 矩形的左上角，行取 (y - oy0)、列从 0 起。1.0.7.0 第一版在这两处照抄了整块拷贝的
+// 偏移，横向整体错位，台架立刻报 maxdiff=255 —— 差异集中在 ROI，正好是错位的量。
+//
+// 返回 false 表示 Map 失败（g_err 已填），调用方必须回落 CPU：那时 dst 的矩形外
+// 已经被填过本帧 src，但 CPU 路径是整帧重算，会全量覆盖，不会留残影。
+bool blitStageToDst(int slot, int ox0, int oy0, int ox1, int oy1,
+                    const unsigned char* src, unsigned char* dst, int w, int h,
+                    double* fillOut, double* waitOut, double* copyOut,
+                    const char* which) {
+    // ---- a. 矩形外补齐（放在 Map 之前，见下方「3b」的原始推理）----
+    const double tf0 = nowMsQpc();
+    if (dst != src) {
+        const size_t stride = (size_t)w * 4;
+        if (oy0 > 0)
+            std::memcpy(dst, src, (size_t)oy0 * stride);
+        if (oy1 < h)
+            std::memcpy(dst + (size_t)oy1 * stride, src + (size_t)oy1 * stride,
+                        (size_t)(h - oy1) * stride);
+        for (int y = oy0; y < oy1; ++y) {
+            unsigned char* d = dst + (size_t)y * stride;
+            const unsigned char* s = src + (size_t)y * stride;
+            if (ox0 > 0)
+                std::memcpy(d, s, (size_t)ox0 * 4);
+            if (ox1 < w)
+                std::memcpy(d + (size_t)ox1 * 4, s + (size_t)ox1 * 4,
+                            (size_t)(w - ox1) * 4);
+        }
+    }
+    *fillOut = nowMsQpc() - tf0;
+
+    // ---- b. 等 GPU + 读 staging ----
+    D3D11_MAPPED_SUBRESOURCE m{};
+    const double tm0 = nowMsQpc();
+    const HRESULT hrMap = g_ctx->Map(g_stage[slot], 0, D3D11_MAP_READ, 0, &m);
+    *waitOut = nowMsQpc() - tm0;
+    if (FAILED(hrMap)) {
+        // 带 HRESULT 与资源尺寸：只写「Map(stage) 失败」的话，
+        // 分不清是设备丢了、资源尺寸不对、还是上一次没 Unmap。
+        std::snprintf(g_err, sizeof(g_err),
+                      "Map(stage%s) 失败 hr=0x%08X slot=%d stage=%p real=%dx%d pw=%d ph=%d alloc=%dx%d/%dx%d",
+                      which, (unsigned)hrMap, slot, (void*)g_stage[slot],
+                      g_imgRW, g_imgRH, g_pw, g_ph,
+                      g_allocImgW, g_allocImgH, g_allocPw, g_allocPh);
+        // 设备真丢了（驱动更新 / TDR / 独显休眠）就整套拆掉，下一帧重建。
+        // 不拆的话会一直失败到进程结束，而日志里只见「Map 失败」，
+        // 看不出设备已经没了 —— 真实环境里这条迟早会遇到。
+        if (hrMap == DXGI_ERROR_DEVICE_REMOVED || hrMap == DXGI_ERROR_DEVICE_RESET) {
+            NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮：设备已移除（hr=0x%08X），下次调用重建",
+                  (unsigned)hrMap);
+            teardownDevice();
+        }
+        return false;
+    }
+    for (int y = oy0; y < oy1; ++y) {
+        const unsigned char* s = (const unsigned char*)m.pData
+            + (size_t)(y - oy0) * m.RowPitch;
+        unsigned char* d = dst + (size_t)y * (size_t)w * 4;
+        std::memcpy(d + (size_t)ox0 * 4, s, (size_t)(ox1 - ox0) * 4);
+    }
+    g_ctx->Unmap(g_stage[slot], 0);
+    *copyOut = (nowMsQpc() - tm0) - *waitOut;
+    return true;
+}
+
 bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,                      int w, int h,
                       const unsigned char* mask, const unsigned char* protect,
                       const beautycore::BandParams& p,
                       const beautycore::RoiRect& bbox,
-                      GpuSmoothTiming* timing) {
+                      GpuSmoothTiming* timing,
+                      const void* owner,
+                      long long frameSerial,
+                      bool allowPipeline) {
     if (!src || !dst || w <= 0 || h <= 0 || bbox.empty()) return false;
 
     // ---- 门禁：不支持的参数直接回落 CPU，不静默算错 ----
@@ -901,18 +1035,53 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     }
     if (!ensureResources(imgRW, imgRH, pw, ph)) return false;
 
-    const double t0 = nowMsQpc();
+    const double tStart = nowMsQpc();
+
     // 跨块使用的分步时间戳（块内声明会超出作用域）
-    double ta = t0, tb = t0, td = t0;
+    double ta = tStart, tb = tStart, td = tStart;
     // 上传段三次 Map(WRITE_DISCARD) 的累计耗时。块内声明就传不出去，
     // 而它正是「uploadMs 为什么 2.9ms 却只搬 2.3MB」这个问题的答案所在。
     double upMapMs = 0.0;
+    // 取回段（补齐 + 等 GPU + 读 staging）。同步路径在帧尾填，延迟路径在帧头填。
+    double fillMs = 0.0, waitMs = 0.0, copyMs = 0.0;
+    double submitMs = 0.0;
+    int    retrieved = 0;
+
+    // ---- 0. 判定能否取回上一帧（2c）----
+    // 三个条件缺一不可：同一实例、帧号连续、两次调用挨得够近。任一不满足就作废
+    // 待取回结果、本帧走同步路径 —— 宁可慢一帧，也不把别人的画面写进这一帧。
+    const bool pipeOk = allowPipeline && owner != nullptr && frameSerial >= 0;
+    const double gapMs = (g_lastEndMs > 0.0) ? (tStart - g_lastEndMs) : 1e9;
+    // 参数指纹一致才复用上一帧那份（理由见 PendingResult 的 ④）。
+    // **注意不要把 bbox 放进指纹**：真人脸框每帧都会动 1~3 像素，一放进去流水线就永不触发。
+    // 包围盒变化属于「迟一帧」的固有代价，由 g_pend 自己记住的旧矩形处理。
+    const bool sameParams = g_pend.T == p.T && g_pend.I == p.I && g_pend.e == p.e &&
+                            g_pend.protectK == p.protectK && g_pend.gwp == p.gwp &&
+                            g_pend.f1 == p.f1 && g_pend.f2 == p.f2 && g_pend.fa == p.fa &&
+                            g_pend.passes == passes && g_pend.halfRes == (p.halfRes != 0);
+    const bool adjacent = pipeOk && g_pend.valid && g_pend.owner == owner &&
+                          g_pend.serial + 1 == frameSerial && gapMs <= kPipeGapMs &&
+                          sameParams;
+    if (!adjacent) g_pend.valid = false;
+
+    if (adjacent) {
+        if (!blitStageToDst(g_pend.slot, g_pend.ox0, g_pend.oy0, g_pend.ox1, g_pend.oy1,
+                            src, dst, w, h, &fillMs, &waitMs, &copyMs, "-上一帧"))
+            return false;
+        retrieved = 1;
+        g_pend.valid = false;
+    }
+    // 上传起点：延迟路径要排在取回之后，否则 dst 上「矩形外」会被本帧 src 再盖一次
+    // （结果一样，但那段 memcpy 白做一遍）。
+    const double t0 = nowMsQpc();
 
     // ---- 1. 上传 ----
+    // 一律写 g_slot 那一组：延迟取回时，另一组可能还被 GPU 拿去做上一帧的拷贝源，
+    // 写它就得等（这正是 1.0.11.0 之前 Map 偶尔阻塞 2~14ms 的原因）。
     {
         D3D11_MAPPED_SUBRESOURCE m{};
         double tm = nowMsQpc();
-        if (FAILED(g_ctx->Map(g_packSrc, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
+        if (FAILED(g_ctx->Map(g_packSrc[g_slot], 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
             std::snprintf(g_err, sizeof(g_err), "Map(packSrc) 失败");
             return false;
         }
@@ -921,14 +1090,14 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
             const unsigned char* s = src + ((size_t)(imgY0 + y) * (size_t)w + (size_t)imgX0) * 4;
             std::memcpy((unsigned char*)m.pData + (size_t)y * m.RowPitch, s, (size_t)imgRW * 4);
         }
-        g_ctx->Unmap(g_packSrc, 0);
+        g_ctx->Unmap(g_packSrc[g_slot], 0);
         ta = nowMsQpc();                // 源图搬运结束（掩码打包开始）
 
         // 掩码 / 保护：各 1 字节/像素，纯整行 memcpy。
         // 旧实现是一张 RGBA8 里逐像素写 4 个字节（其中 2 个是常量），
         // 台架实测同体积比整行 memcpy 慢 2.4 倍，且多传 2 倍数据。
         for (int k = 0; k < 2; ++k) {
-            ID3D11Texture2D* tex = (k == 0) ? g_packMask : g_packProt;
+            ID3D11Texture2D* tex = (k == 0) ? g_packMask[g_slot] : g_packProt[g_slot];
             const unsigned char* srcPlane = (k == 0) ? mask : protect;
             const unsigned char fill = (k == 0) ? 255 : 0;   // 与旧写法同义
             double tm2 = nowMsQpc();
@@ -952,9 +1121,9 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         tb = nowMsQpc();                // 掩码打包结束（GPU 内部拷贝开始）
 
         // DYNAMIC 不能直当 SRV：拷进 DEFAULT 再用（P1 实测直用会从 1ms 变 15ms）
-        g_ctx->CopyResource(g_texSrc,  g_packSrc);
-        g_ctx->CopyResource(g_texMask, g_packMask);
-        g_ctx->CopyResource(g_texProt, g_packProt);
+        g_ctx->CopyResource(g_texSrc,  g_packSrc[g_slot]);
+        g_ctx->CopyResource(g_texMask, g_packMask[g_slot]);
+        g_ctx->CopyResource(g_texProt, g_packProt[g_slot]);
     }
     const double t1 = nowMsQpc();
     const double tc = t1;               // DYNAMIC→DEFAULT 两次内部拷贝结束
@@ -1016,18 +1185,13 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     g_ctx->Flush();
     const double t2 = nowMsQpc();
 
-    // ---- 3. 提交读回 ----
-    // 声明在块外：Unmap 之后的时间戳要参与 t3 与 timing 的拆分。
-    double timingMapOut = t2;
-    double timingMapWaitOut = 0.0;   // Map(READ) 调用本身的耗时
-    double timingMapCopyOut = 0.0;   // 拿到 pData 之后逐行 memcpy 的耗时
-    double timingFillOut = 0.0;      // ROI 外补齐（1.0.8.0 起挪到 Map 之前与 GPU 重叠）
+    // ---- 3. 提交读回（只提交，不当场取）----
+    // 只把**输出矩形**拷进 staging，而不是整块桶化尺寸的纹理。
+    // 两者能差一倍以上：4K 典型人脸时输出 1353×1753（9.1MB），
+    // 上传矩形是 1918×2130（15.6MB）—— 多拷的 6.5MB 一个像素都用不上。
+    // staging 仍是上传矩形那么大（CopySubresourceRegion 允许目标更小区域），
+    // 所以 RowPitch 与纹理尺寸不变，读回时按 (y - oy0) 取行即可。
     {
-        // 只把**输出矩形**拷进 staging，而不是整块桶化尺寸的纹理。
-        // 两者能差一倍以上：4K 典型人脸时输出 1353×1753（9.1MB），
-        // 上传矩形是 1918×2130（15.6MB）—— 多拷的 6.5MB 一个像素都用不上。
-        // staging 仍是上传矩形那么大（CopySubresourceRegion 允许目标更小区域），
-        // 所以 RowPitch 与纹理尺寸不变，读回时按 (y - oy0) 取行即可。
         D3D11_BOX box;
         box.left   = (UINT)(ox0 - imgX0);
         box.top    = (UINT)(oy0 - imgY0);
@@ -1035,118 +1199,68 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         box.right  = (UINT)(ox1 - imgX0);
         box.bottom = (UINT)(oy1 - imgY0);
         box.back   = 1;
-        g_ctx->CopySubresourceRegion(g_stage, 0, 0, 0, 0, g_texDst, 0, &box);
-        td = nowMsQpc();                // GPU→staging 拷贝已提交
-
-        // ---- 3b. ROI 外补齐：塞进「GPU 还在算 + 正拷回」这段等待里 ----
-        // 这一段此前排在 Map 之后，纯属排队：它写的是 dst 的 ROI **之外**，
-        // 读回写的是 ROI **之内**，两者不重叠、彼此无依赖。
-        // 台架实测（4K 典型人脸）：Map 等 GPU 5.81ms、补齐 2.78ms。
-        // 挪到 Map 前面之后，这 2.78ms 落在等待里跑，基本是白拿的。
-        //
-        // 位置很关键：必须在 CopySubresourceRegion **之后**。子区域拷贝提交得越早，
-        // GPU 越不会在算完之后空等命令；放在提交之前会让这条拷贝晚 2~3ms 才进队列，
-        // 反而把整帧拖长 —— 省下来的一头又赔回去。
-        //
-        // Map 失败时这里已经把 ROI 外写过了：无害。失败后本函数 return false，
-        // 调用方（beauty_core）改走 surface3RgbBand 整帧重算，dst 会被全量覆盖。
-        const double tf0 = nowMsQpc();
-        if (dst != src) {
-            // 大块上下两条 + 逐行左右两条。试过把大块换成 _mm_stream_si128
-            // 非时序写（省掉 read-for-ownership），三对交替实测 fill 反而稳定慢
-            // 3~4%：条带两端不满 cache line，NT 仍要读改写；而 mapCopy 也没因
-            // 「不污染 L3」受益到能被量出来。故保留普通 memcpy。
-            const size_t stride = (size_t)w * 4;
-            if (oy0 > 0)
-                std::memcpy(dst, src, (size_t)oy0 * stride);
-            if (oy1 < h)
-                std::memcpy(dst + (size_t)oy1 * stride, src + (size_t)oy1 * stride,
-                            (size_t)(h - oy1) * stride);
-            for (int y = oy0; y < oy1; ++y) {
-                unsigned char* d = dst + (size_t)y * stride;
-                const unsigned char* s = src + (size_t)y * stride;
-                if (ox0 > 0)
-                    std::memcpy(d, s, (size_t)ox0 * 4);
-                if (ox1 < w)
-                    std::memcpy(d + (size_t)ox1 * 4, s + (size_t)ox1 * 4,
-                                (size_t)(w - ox1) * 4);
-            }
-        }
-        timingFillOut = nowMsQpc() - tf0;
-
-        D3D11_MAPPED_SUBRESOURCE m{};
-        const double tm0 = nowMsQpc();  // Map 之前
-        const HRESULT hrMap = g_ctx->Map(g_stage, 0, D3D11_MAP_READ, 0, &m);
-        timingMapWaitOut = nowMsQpc() - tm0;   // 只算 Map() 本身：等同步点 + PCIe 往返
-        if (FAILED(hrMap)) {
-            // 带 HRESULT 与资源尺寸：只写「Map(stage) 失败」的话，
-            // 分不清是设备丢了、资源尺寸不对、还是上一次没 Unmap。
-            std::snprintf(g_err, sizeof(g_err),
-                          "Map(stage) 失败 hr=0x%08X stage=%p real=%dx%d pw=%d ph=%d alloc=%dx%d/%dx%d",
-                          (unsigned)hrMap, (void*)g_stage, imgRW, imgRH, pw, ph,
-                          g_allocImgW, g_allocImgH, g_allocPw, g_allocPh);
-            // 设备真丢了（驱动更新 / TDR / 独显休眠）就整套拆掉，下一帧重建。
-            // 不拆的话会一直失败到进程结束，而日志里只见「Map 失败」，
-            // 看不出设备已经没了 —— 真实环境里这条迟早会遇到。
-            if (hrMap == DXGI_ERROR_DEVICE_REMOVED || hrMap == DXGI_ERROR_DEVICE_RESET) {
-                NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮：设备已移除（hr=0x%08X），下次调用重建",
-                      (unsigned)hrMap);
-                teardownDevice();
-            }
-            return false;
-        }
-        for (int y = oy0; y < oy1; ++y) {
-            // staging 的 (0,0) 就是输出矩形的左上角（见上面的 box），
-            // 所以行取 (y - oy0)、列从 0 开始 —— 这两处都不能再减 imgX0/imgY0。
-            // 1.0.7.0 第一版就是这里照抄了整块拷贝的偏移，横向整体错位，
-            // 台架立刻报 maxdiff=255（差异集中在 ROI，正好是错位的量）。
-            const unsigned char* s = (const unsigned char*)m.pData
-                + (size_t)(y - oy0) * m.RowPitch;
-            unsigned char* d = dst + (size_t)y * (size_t)w * 4;
-            std::memcpy(d + (size_t)ox0 * 4, s, (size_t)(ox1 - ox0) * 4);
-        }
-        g_ctx->Unmap(g_stage, 0);
-        timingMapOut = nowMsQpc();
-        timingMapCopyOut = (timingMapOut - tm0) - timingMapWaitOut;  // 逐行 memcpy 的耗时
+        const double ts0 = nowMsQpc();
+        g_ctx->CopySubresourceRegion(g_stage[g_slot], 0, 0, 0, 0, g_texDst, 0, &box);
+        submitMs = nowMsQpc() - ts0;    // 提交本身（进队列，不等 GPU）
+        td = nowMsQpc();
     }
-    const double t3 = timingMapOut;
 
-    // ---- 4. ROI 外补齐 ----
-    // 已在 3b 处完成（挪到 Map 之前，与 GPU 重叠）。这里留一段说明，免得下次
-    // 有人照着 CPU 版 surface3RgbBand 的语义顺序以为漏了。
+    // ---- 4. 取回：延迟路径留给下一帧，同步路径当场取 ----
     //
-    // CPU 版是「整帧逐像素写 dst」：mask=0 处写 dst=src，mask>0 处写磨皮结果。
-    // 所以本函数必须保证调用返回后 dst 全帧有效 —— 生产调用点（beauty_core）
-    // 进来之前**不保证** dst 已拷过 src，那里只有两条早退分支会 memcpy。
-    // 这一条是本函数能被当作 surface3RgbBand 直接替换的前提，不能指望调用方。
-    //
-    // 用四条带而不是整帧 memcpy：被替换掉的正是 ROI 那一块（4K 实测占 34%），
-    // 上下两条是整行连续拷贝，左右两条在大矩形边上各拷一小段。
-    // dst == src（原地处理）时整段跳过：矩形外本来就已经是 src 的内容。
+    // 语义保证：无论走哪条路，本函数返回时 dst 全帧都是有效内容。
+    //   · 延迟路径且本帧已取回上一帧 → dst 的矩形内是上一帧的成品（迟一帧）
+    //   · 其余情况（首次 / 跳帧 / 拖动播放头 / 未开流水线）→ 当场取，迟零帧
+    // CPU 版 surface3RgbBand 是整帧逐像素写 dst（mask=0 处写 src），所以这里
+    // 也必须把矩形外补齐 —— 生产调用点进来之前**不保证** dst 已拷过 src。
+    if (pipeOk) {
+        const int slot = g_slot;
+        g_pend.valid  = true;
+        g_pend.slot   = slot;
+        g_pend.ox0 = ox0; g_pend.oy0 = oy0; g_pend.ox1 = ox1; g_pend.oy1 = oy1;
+        g_pend.serial = frameSerial;
+        g_pend.owner  = owner;
+        g_pend.T = p.T; g_pend.I = p.I; g_pend.e = p.e; g_pend.protectK = p.protectK;
+        g_pend.gwp = p.gwp; g_pend.f1 = p.f1; g_pend.f2 = p.f2; g_pend.fa = p.fa;
+        g_pend.passes = passes; g_pend.halfRes = (p.halfRes != 0);
+        g_slot ^= 1;                    // 下一帧换那一组，写侧就不必等这一帧的拷贝
+        if (!retrieved) {
+            if (!blitStageToDst(slot, ox0, oy0, ox1, oy1, src, dst, w, h,
+                                &fillMs, &waitMs, &copyMs, ""))
+                return false;
+        }
+    } else if (!retrieved) {
+        if (!blitStageToDst(g_slot, ox0, oy0, ox1, oy1, src, dst, w, h,
+                            &fillMs, &waitMs, &copyMs, ""))
+            return false;
+    }
 
-    // t4 = 帧尾。补齐已并入读回前的等待，所以帧尾就是 Unmap 返回那一刻。
-    const double t4 = t3;
+    const double tEnd = nowMsQpc();
+    g_lastEndMs = tEnd;
 
     if (timing) {
         timing->uploadMs   = t1 - t0;
         timing->computeMs  = t2 - t1;
-        // downloadMs 只算「读回」本身（提交拷贝 + 等 GPU + 读 staging），
-        // 要能直接对上台架量的读回口径；补齐虽然挪到了读回之前，但它不是读回。
-        timing->downloadMs = (t3 - t2) - timingFillOut;
-        timing->totalMs    = t4 - t0;
+        // downloadMs = 本帧提交拷贝 + 取回（等 GPU + 读 staging）。
+        // 延迟路径下这两段属于不同的帧（提交是这帧、取回是上帧），但都是本函数的
+        // 实际开销，合在一起才与「合计 = 上传+算+读回+补齐」的闭合关系对得上。
+        timing->downloadMs = submitMs + waitMs + copyMs;
+        timing->totalMs    = tEnd - tStart;
         timing->packMs     = ta - t0;
         timing->maskMs     = tb - ta;
         timing->copyUpMs   = tc - tb;
-        timing->copyDnMs   = td - t2;
-        timing->mapMs      = timingMapOut - td - timingFillOut;
-        timing->mapWaitMs  = timingMapWaitOut;
-        timing->mapCopyMs  = timingMapCopyOut;
+        timing->copyDnMs   = submitMs;
+        timing->mapMs      = waitMs + copyMs;
+        timing->mapWaitMs  = waitMs;
+        timing->mapCopyMs  = copyMs;
         // 上传侧的同一套拆分：upMapMs 是三次 Map 本身，剩下的是纯 memcpy/memset。
         // upMemMs 用 tb-t0 减而不是另取时间戳，这样两者相加恒等于「源图+掩码」段，
         // 不会因为多插几对 QPC 调用把测量本身算成开销。
         timing->upMapMs    = upMapMs;
         timing->upMemMs    = (tb - t0) - upMapMs;
-        timing->fillMs     = timingFillOut;
+        timing->fillMs     = fillMs;
+        timing->submitMs   = submitMs;
+        timing->pipeRetrieved = retrieved;
+        timing->pipeDeferred  = pipeOk ? 1 : 0;
         timing->imgX0 = imgX0; timing->imgY0 = imgY0;
         timing->imgW = imgRW;  timing->imgH = imgRH;
         timing->planeX0 = plx0; timing->planeY0 = ply0;
@@ -1155,7 +1269,7 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         timing->r1 = r1; timing->r2 = r2; timing->ra = ra; timing->passes = passes;
     }
     g_frames += 1;
-    g_sumTotal += t4 - t0;
+    g_sumTotal += tEnd - tStart;
     g_sumPlane += (double)pw * (double)ph;
     return true;
 }

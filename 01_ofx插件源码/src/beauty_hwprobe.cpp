@@ -88,6 +88,14 @@ static const char kIniTemplate[] =
     "; 一行都没有，说明压根没进 GPU 分支（多数是 gpu_smooth 被改了值，或环境变量覆盖）。\r\n"
     "gpu_smooth = auto\r\n"
     "\r\n"
+    "; gpu_smooth_pipeline: 磨皮的取回是否推迟一帧（1.0.11.0 起）\r\n"
+    ";   auto = 连续播放时把取回推迟一帧（默认）。实测能消掉约 18% 帧的 6~14ms 卡顿，\r\n"
+    ";          代价是 ROI 内的画面晚一帧（ROI 外仍是当前帧）。跳帧、拖动播放头、单帧渲染\r\n"
+    ";          会自动退回同步路径，所以静止画面不受影响。\r\n"
+    ";   off  = 每帧算完立刻取回，画面晚零帧，但遇到 GPU 排队时会等（1.0.10.x 的行为）。\r\n"
+    "; 要做慢动作或单帧精修时若对「迟一帧」敏感，把这里改成 off。\r\n"
+    "gpu_smooth_pipeline = auto\r\n"
+    "\r\n"
     "; gpu_minpix: 低于此像素数的画面走 CPU（0 = 按实测带宽自动推导）\r\n"
     "gpu_minpix = 0\r\n";
 

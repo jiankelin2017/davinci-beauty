@@ -97,6 +97,15 @@ struct GpuSmoothTiming {
     int    planeX0 = 0, planeY0 = 0, planeW = 0, planeH = 0;
     int    pw = 0, ph = 0;                             // 半分辨率平面尺寸
     int    r1 = 0, r2 = 0, ra = 0, passes = 0;
+
+    // 延迟取回（1.0.11.0，2c）状态：
+    //   pipeRetrieved 本帧开头取回了上一帧的结果（说明流水线在工作）
+    //   pipeDeferred  本帧只提交、把结果留给下一帧取
+    //   submitMs      本帧 CopySubresourceRegion 的提交耗时（已计入 downloadMs）
+    // 三者都为 0 表示走的是同步路径（首次调用 / 跳帧 / 拖动播放头）。
+    int    pipeRetrieved = 0;
+    int    pipeDeferred  = 0;
+    double submitMs      = 0.0;
 };
 
 // 懒初始化。返回 false 表示无可用 GPU，调用方应回落 CPU。
@@ -112,12 +121,21 @@ const char* gpuSmoothLastError();
 // 「同语义」包括 dst 的完整性：CPU 版是整帧逐像素写 dst（mask=0 处写 src），
 // 本函数同样保证调用返回后 **dst 全帧都是有效内容** —— 输出矩形外由本函数
 // 从 src 补四条带。所以调用方不需要预先 memcpy(dst, src) 就能直接替换 CPU 调用。
+//
+// ## 延迟取回（1.0.11.0 起，仅在 allowPipeline 且条件满足时）
+//
+// 打开后少一个「同语义」：dst 的 ROI 内可能装的是**上一帧**的成品（迟一帧），
+// ROI 外仍是本帧 src。触发条件与代价见 gpu_smooth.cpp 里 PendingResult 的注释。
+// 默认参数保证台架与旧调用方走同步路径，行为与 1.0.10.x 完全一致。
 bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,
                       int w, int h,
                       const unsigned char* mask, const unsigned char* protect,
                       const beautycore::BandParams& p,
                       const beautycore::RoiRect& bbox,
-                      GpuSmoothTiming* timing);
+                      GpuSmoothTiming* timing,
+                      const void* owner = nullptr,      // 实例身份，多实例隔离用
+                      long long frameSerial = -1,       // 帧序号；<0 表示不参与流水线
+                      bool allowPipeline = false);      // 允许延迟取回（2c）
 
 // 累计统计（供日志节流用）
 void gpuSmoothStats(long long* frames, double* avgTotal, double* avgPlane);

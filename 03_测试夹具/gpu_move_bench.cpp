@@ -363,6 +363,146 @@ int motionCase(int w, int h, double areaPct, int frames, int shiftPx,
     return bad;
 }
 
+struct PipeRow {
+    int frame, dx;
+    long long vsExpect; int maxd;   // 与「上一帧矩形 + 上一帧 CPU」拼出的期望之差
+    int retrieved;                  // timing.pipeRetrieved，必须为 1
+    int deferred;                   // timing.pipeDeferred，必须为 1
+};
+
+// ---- 2c 延迟取回的判据（1.1.0.0 加）----
+//
+// 延迟取回**故意**不等于 CPU 结果，所以判据不能是「与 CPU 一致」。但它的输出是可以
+// 精确写出来的：dst = 本帧 src，只把「上一帧的输出矩形」那一块换成本帧上一帧的 CPU 结果。
+// 于是判据变成「与这个拼出来的期望逐字节一致」——只要矩形取错、帧错一位、漏填一条带，
+// 都会立刻爆 diff。
+//
+// 三个必查项：
+//   ① f=0（没有上一帧）必须退回同步路径，与 CPU 逐字节一致；
+//   ② f>=1 必须与期望逐字节一致（取对了帧、矩形与补齐范围都对）；
+//   ③ f>=1 的 pipeRetrieved 必须为 1 —— 否则这条用例是空转（压根没进延迟路径）。
+// 末尾再用 allowPipeline=false 调一次，验证「关掉流水线」能立刻回到与 CPU 一致。
+int pipelineCase(int w, int h, double areaPct, int frames, int shiftPx,
+                 std::vector<PipeRow>* rows, long long* maxdOut) {
+    std::vector<unsigned char> baseSrc, baseMask, baseProt;
+    fillImage(baseSrc, w, h);
+    beautycore::RoiRect bb0{};
+    buildMask(baseMask, baseProt, w, h, areaPct, &bb0);
+
+    beautycore::BandParams p;
+    std::vector<float> scratch;
+
+    // 实例身份：真机传的是引擎 this，台架随便给个稳定地址即可
+    static int kOwner = 0;
+
+    std::vector<unsigned char> srcF, maskF, protF, outCpu, outGpu, expect, prevCpu;
+    bool hasPrev = false;
+    beautycore::RoiRect prevBox{};
+    int bad = 0;
+    long long worst = 0;
+
+    // 热身：首次分配与纹理组建立不算判据
+    {
+        std::vector<unsigned char> warmG(baseSrc);
+        GpuSmoothTiming tw{};
+        gpuSmoothRgbBand(&baseSrc[0], &warmG[0], w, h,
+                         &baseMask[0], &baseProt[0], p, bb0, &tw);
+    }
+
+    // 与 gpuSmoothRgbBand 内部同口径的输出矩形（outGrow = 8，再夹到画幅内）
+    auto outRectOf = [&](const beautycore::RoiRect& bb, int* ox0, int* oy0, int* ox1, int* oy1) {
+        const int g = 8;
+        *ox0 = std::max(0, std::min(w, bb.x0 - g));
+        *oy0 = std::max(0, std::min(h, bb.y0 - g));
+        *ox1 = std::max(0, std::min(w, bb.x1 + g));
+        *oy1 = std::max(0, std::min(h, bb.y1 + g));
+    };
+
+    for (int f = 0; f < frames; ++f) {
+        const int dx = f * shiftPx;
+        srcF  = baseSrc;   shiftRgbaWrap(srcF, w, h, dx);
+        maskF = baseMask;  shiftR8Wrap(maskF, w, h, dx);
+        protF = baseProt;  shiftR8Wrap(protF, w, h, dx);
+        const beautycore::RoiRect bbox = maskBBox(maskF, w, h);
+
+        outCpu.assign((size_t)w * h * 4, 0);
+        outGpu.assign((size_t)w * h * 4, 0);
+
+        beautycore::surface3RgbBand(&srcF[0], &outCpu[0], w, h,
+                                    &maskF[0], &protF[0], p, bbox, 8, scratch);
+
+        GpuSmoothTiming g{};
+        if (!gpuSmoothRgbBand(&srcF[0], &outGpu[0], w, h,
+                              &maskF[0], &protF[0], p, bbox, &g,
+                              &kOwner, (long long)f, /*allowPipeline=*/true)) {
+            std::printf("  [FAIL] pipeline frame %d: %s\n", f, gpuSmoothLastError());
+            ++bad;
+            hasPrev = false;
+            continue;
+        }
+
+        PipeRow r{};
+        r.frame = f; r.dx = dx;
+        r.retrieved = g.pipeRetrieved;
+        r.deferred  = g.pipeDeferred;
+
+        if (!hasPrev) {
+            // 第 0 帧：没有上一帧可用，必须与 CPU 完全一致
+            r.vsExpect = countDiff(&outCpu[0], &outGpu[0], (size_t)w * h * 4, &r.maxd);
+        } else {
+            // 期望 = 本帧 src，但上一帧矩形那一块换成上一帧的 CPU 结果
+            expect = srcF;
+            int ox0, oy0, ox1, oy1;
+            outRectOf(prevBox, &ox0, &oy0, &ox1, &oy1);
+            for (int y = oy0; y < oy1; ++y)
+                std::memcpy(&expect[(size_t)y * w * 4 + (size_t)ox0 * 4],
+                            &prevCpu[(size_t)y * w * 4 + (size_t)ox0 * 4],
+                            (size_t)(ox1 - ox0) * 4);
+            r.vsExpect = countDiff(&expect[0], &outGpu[0], (size_t)w * h * 4, &r.maxd);
+        }
+        if (r.vsExpect != 0) ++bad;
+        if (r.vsExpect > worst) worst = r.vsExpect;
+        // 期望走延迟路径的帧却没走 → 用例空转，同样判失败
+        if (f >= 1 && r.retrieved != 1) ++bad;
+        if (r.deferred != 1) ++bad;
+
+        rows->push_back(r);
+        prevCpu.swap(outCpu);
+        prevBox = bbox;
+        hasPrev = true;
+    }
+
+    // 关掉流水线：必须立刻回到与 CPU 逐字节一致
+    {
+        const int dx = frames * shiftPx;
+        srcF  = baseSrc;   shiftRgbaWrap(srcF, w, h, dx);
+        maskF = baseMask;  shiftR8Wrap(maskF, w, h, dx);
+        protF = baseProt;  shiftR8Wrap(protF, w, h, dx);
+        const beautycore::RoiRect bbox = maskBBox(maskF, w, h);
+        outCpu.assign((size_t)w * h * 4, 0);
+        outGpu.assign((size_t)w * h * 4, 0);
+        beautycore::surface3RgbBand(&srcF[0], &outCpu[0], w, h,
+                                    &maskF[0], &protF[0], p, bbox, 8, scratch);
+        GpuSmoothTiming g{};
+        if (!gpuSmoothRgbBand(&srcF[0], &outGpu[0], w, h,
+                              &maskF[0], &protF[0], p, bbox, &g,
+                              &kOwner, (long long)frames, /*allowPipeline=*/false)) {
+            std::printf("  [FAIL] pipeline drain: %s\n", gpuSmoothLastError());
+            ++bad;
+        } else {
+            int md = 0;
+            const long long d = countDiff(&outCpu[0], &outGpu[0], (size_t)w * h * 4, &md);
+            PipeRow r{};
+            r.frame = frames; r.dx = dx; r.vsExpect = d; r.maxd = md;
+            r.retrieved = g.pipeRetrieved; r.deferred = g.pipeDeferred;
+            if (d != 0) ++bad;
+            rows->push_back(r);
+        }
+    }
+
+    *maxdOut = worst;
+    return bad;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -468,14 +608,38 @@ int main(int argc, char** argv) {
         }
     }
 
+    // ---- 2c 延迟取回：验证「取的是不是上一帧」（1.1.0.0 加）----
+    // 与上面的运动判据互补：上面量的是「用错帧会造成多大错」（灵敏度），
+    // 这里量的是「实现取的那一帧，是不是恰好上一帧」（正确性）。
+    int  pBad = 0;
+    long long pWorst = 0;
+    std::vector<PipeRow> prows;
+    if (!skipMotion) {
+        pBad = pipelineCase(1920, 1080, 22.0, 6, 3, &prows, &pWorst);
+
+        std::printf("\n[PIPELINE] 延迟取回判据 1080p 22%% 6 帧 每帧左移 3px\n");
+        std::printf("  说明：vsExpect = 与「本帧 src + 上一帧矩形内取上一帧 CPU 结果」之差，应为 0。\n"
+                    "        末尾 drain 行是关掉流水线（allowPipeline=false）的结果，应为 0 且 取=0。\n");
+        std::printf("  %-7s %-5s %-19s %-4s %-4s %s\n", "frame", "dx", "vsExpect(diff/max)", "取", "管", "");
+        for (size_t i = 0; i < prows.size(); ++i) {
+            const PipeRow& r = prows[i];
+            char s[32];
+            std::snprintf(s, sizeof(s), "%lld/%d", r.vsExpect, r.maxd);
+            std::printf("  %-7d %-5d %-19s %-4d %-4d %s\n",
+                        r.frame, r.dx, s, r.retrieved, r.deferred,
+                        r.vsExpect == 0 ? "OK" : "MISMATCH");
+        }
+        std::printf("  最大差异 %lld 字节；判据失败帧数 %d\n", pWorst, pBad);
+    }
+
     gpuSmoothShutdown();
-    const long long totalBad = badDiff + (long long)mBad + (mDegen ? 1LL : 0LL);
+    const long long totalBad = badDiff + (long long)mBad + (mDegen ? 1LL : 0LL) + (long long)pBad;
     if (totalBad) {
-        std::printf("\nRESULT: FAIL (%lld static + %d motion case(s); %s)\n",
-                    badDiff, mBad, mDegen ? "灵敏度为 0" : "见上");
+        std::printf("\nRESULT: FAIL (%lld static + %d motion case(s) + %d pipeline; %s)\n",
+                    badDiff, mBad, pBad, mDegen ? "灵敏度为 0" : "见上");
         return 1;
     }
-    std::printf("\nRESULT: PASS (静态 %d 例 + 运动 %d 帧 全部逐字节一致，运动判据灵敏度有效)\n",
-                (int)rows.size(), (int)mrows.size());
+    std::printf("\nRESULT: PASS (静态 %d 例 + 运动 %d 帧 + 延迟取回 %d 帧 全部逐字节一致，运动判据灵敏度有效)\n",
+                (int)rows.size(), (int)mrows.size(), (int)prows.size());
     return 0;
 }
