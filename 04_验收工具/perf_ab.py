@@ -72,12 +72,12 @@ def main():
     stage = tempfile.mkdtemp(prefix="nama_perf_")
     try:
         a = np.asarray(Image.open(SRC).convert("RGB").resize((W, H), Image.LANCZOS))
-        bgra = np.dstack([a[:, :, 2], a[:, :, 1], a[:, :, 0],
+        rgba = np.dstack([a[:, :, 0], a[:, :, 1], a[:, :, 2],
                           np.full(a.shape[:2], 255, np.uint8)])
         ip = os.path.join(stage, "in.raw")
         op = os.path.join(stage, "out.raw")
         with open(ip, "wb") as f:
-            f.write(bgra.tobytes())
+            f.write(rgba.tobytes())
 
         # 全开档：磨皮62 / 美白30 / 锐化50 / 美型三项
         os.environ["NAMA_ST_SHARPEN"] = "50"

@@ -579,6 +579,16 @@ struct Lv5 {
 
 }  // namespace
 
+// 色调权重低通半径（1.2.0 引入；1.2.1 曾提到 12，1.2.2 退回 8 —— 见下方注释）。
+// 只作用在 toneColor 的权重上：r=8 → 17×17，r=12 → 25×25 盒式均值。
+// 为什么需要：掩码在内容边界（头发丝、阴影、项链）上 1~3 像素内从 255 掉到 0，
+// 磨皮在平坦皮肤上看不出来，美白「整片加常数」就会把它照成一道暗线。
+const int kToneWeightRadius = 24;
+
+// 色调边缘门控阈值（1.2.4），与 beauty_core.cpp 的 kEdgeLo/kEdgeHi 同一口径。
+static const int kToneEdgeLo = 102;
+static const int kToneEdgeHi = 306;
+
 void toneColor(unsigned char* dst, int w, int h,
                const unsigned char* mask, const RoiRect& roi,
                float clarity, float whiten, float rosy, int threads) {
@@ -596,14 +606,127 @@ void toneColor(unsigned char* dst, int w, int h,
     const bool doRosy = (rosy > 0.0f);
     const Lv5 lc(clarity), lw(whiten);
 
+    // 抖动（1.1.9.0，修「开美白就出一道横线」）。
+    //
+    // 起因：真机复验「线还在，把美白关掉就没有了，只开磨皮没有」。
+    // 对照实测（同一帧，磨皮 98 固定，美白 0 / 64 各跑一次，两张输出相减就是
+    // 美白本身的增量）：增量值域 0..11，而在脖子上能测到 **47~67 列连续的
+    // 同向 ≥0.5 级台阶** —— 那就是一条横线的量级。
+    //
+    // 根因不是掩码，是**量化**：美白曲线在中间调斜率约 1.19（17 锚点表
+    // panel 1.0 的 R 行 32→51→70→89→108，每 16 级涨 19），斜率 >1 就必然
+    // 每隔十来级出现一次「涨 2 级」的跳变；而脖子是一大片被磨平的暗部渐变，
+    // 这种 2 级跳变沿着等亮度线（在脖子上基本是横的）连成一条线，肉眼就是
+    // 一道细细的台阶。磨皮不改变亮度曲线，所以只开磨皮看不到。
+    //
+    // 解法：在**量化之前**加 4×4 Bayer 有序抖动，幅度 ±0.5 级。跳变没有变，
+    // 但它不再落在同一行上 —— 沿等亮度线摊成两行各一半，眼睛积分回原来的
+    // 亮度，线就散了。幅度正好半个 LSB，在平坦区看不出来，也不会改变均值。
+    static const int kBayer4[16] = {0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
+    const bool doDither = doWhiten || doClar;   // 红润只有 ±1 级，单独不需要
+
+    // 色调权重先做空间低通（1.2.0，1.2.1 把半径 8 → 12）。
+    //
+    // 1.1.9 的抖动在真机上没消掉那条线，说明它不是「量化台阶」而是**权重里有结构**：
+    // 磨皮看到同一份掩码却不出线，是因为在有纹理的地方磨皮会把掩码的细节一起抹掉，
+    // 而磨皮对**平坦皮肤**几乎是恒等映射（没什么可磨），于是掩码里 1~3 行/列的
+    // 小结构只有美白这种"整片加常数"的算子才暴露出来 —— 一行漏加 8 级就是一道暗线。
+    //
+    // 美白/清晰本来就是大范围色调操作，权重没有必要保留 1~3 像素级的细节。这里把
+    // 权重过一次盒式低通（先横后竖，O(1)/像素）：R=8 是 17×17，2 像素宽的结构在
+    // 均值里剩 2/17 ≈ 12%（8 级的落差降到 1 级以内，真机复验「肉眼基本看不出」）；
+    // R=12 是 25×25，同样 2 像素的结构只剩 2/25 = 8%，3 像素的从 18% 降到 12% ——
+    // 代价是色调边界再往外扩约 4 px，最坏会轻微吃到衣领上沿。真正的边界（掩码
+    // 自己的 64 px 羽化）两种半径下都几乎不受影响。
+    //
+    // 半径只影响**色调**权重，磨皮用的仍是原掩码，所以不会把磨皮范围一起放大。
+    //
+    // 1.2.3：改成「长斜坡 + 内部门控」两道。
+    // 真机复验 R=8 / R=12 都还剩「右边锁骨处极少量白色条纹」。看截图，那条白边的形状是
+    // **一段竖着的直边**：皮肤和外套/头发的交界处，掩码 1~2 像素内从 255 掉到 0，
+    // 低通只能把它从 1 px 摊到 17 px（R=8）—— 8 级的提亮摊在 17 px 上仍然是一条边，
+    // 而继续加大半径会把提亮**外溢到外套上**（R=12 实测溢出 +46%，真机上就是那条白边更明显）。
+    //
+    // 所以拆成两件事：
+    //   wlong  = 半径 24 的盒式均值 —— 边界处的斜坡拉到 ~48 px，单像素落差降到 1/3；
+    //   wsmall = 半径 3 的小均值 —— 只用来做「内外门控」：wsmall 掉到 0 说明已经出了皮肤，
+    //            把 wlong 按 wsmall/64 压回 0，于是**长斜坡只向皮肤内侧长，不往外溢**。
+    // 两个半径都作用在色调权重上，磨皮完全不受影响。
+    static thread_local std::vector<unsigned char> wbuf, wtmp, wsmall;
+    const int bw = roi.width(), bh = roi.height();
+    const unsigned char* wsrc = mask;
+    if (bw > 0 && bh > 0 && doDither) {
+        const size_t n = (size_t)bw * bh;
+        if (wbuf.size() < n) { wbuf.resize(n); wtmp.resize(n); wsmall.resize(n); }
+        auto box2 = [&](int R, unsigned char* out) {
+            // 横向：mask -> wtmp
+            for (int yy = 0; yy < bh; yy++) {
+                const unsigned char* src = mask + (size_t)(roi.y0 + yy) * w + roi.x0;
+                unsigned char* o = &wtmp[(size_t)yy * bw];
+                int sum = 0, cnt = 0;
+                for (int x = 0; x <= R && x < bw; x++) { sum += src[x]; cnt++; }
+                for (int x = 0; x < bw; x++) {
+                    o[x] = (unsigned char)(sum / cnt);
+                    const int add = x + R + 1, sub = x - R;
+                    if (add < bw) { sum += src[add]; cnt++; }
+                    if (sub >= 0) { sum -= src[sub]; cnt--; }
+                }
+            }
+            // 竖向：wtmp -> out
+            for (int xx = 0; xx < bw; xx++) {
+                int sum = 0, cnt = 0;
+                for (int y = 0; y <= R && y < bh; y++) { sum += wtmp[(size_t)y * bw + xx]; cnt++; }
+                for (int y = 0; y < bh; y++) {
+                    out[(size_t)y * bw + xx] = (unsigned char)(sum / cnt);
+                    const int add = y + R + 1, sub = y - R;
+                    if (add < bh) { sum += wtmp[(size_t)add * bw + xx]; cnt++; }
+                    if (sub >= 0) { sum -= wtmp[(size_t)sub * bw + xx]; cnt--; }
+                }
+            }
+        };
+        box2(kToneWeightRadius, &wbuf[0]);        // 长斜坡
+        box2(3, &wsmall[0]);                      // 内外门控
+        for (size_t i = 0; i < n; i++) {
+            int gate = (int)wsmall[i] * 4;        // 64 以上算「在皮肤里面」
+            if (gate > 255) gate = 255;
+            wbuf[i] = (unsigned char)(((int)wbuf[i] * gate) / 255);
+        }
+        wsrc = &wbuf[0];
+    }
+    const bool wRoi = (wsrc != mask);
+
     runRows(roi.y0, roi.y1, threads, [&](int yBegin, int yEnd) {
         for (int y = yBegin; y < yEnd; y++) {
             const size_t rowOff = (size_t)y * w;
+            const unsigned char* wrow = wRoi ? (wsrc + (size_t)(y - roi.y0) * bw) : nullptr;
             for (int x = roi.x0; x < roi.x1; x++) {
-                const unsigned char mv = mask[rowOff + x];
+                const unsigned char mv = wRoi ? wrow[x - roi.x0] : mask[rowOff + x];
                 if (mv == 0) continue;          // 非皮肤：一个字节都不动
                 const size_t o = (rowOff + x) * 4;
-                const float sk = (float)mv * (1.0f / 255.0f);
+                // 边缘门控（1.2.4）：和磨皮的 g_cfg.edgeK 同一个理由 ——
+                // 细而强的结构（压在锁骨上的碎发、链子、衣纹）不该被"整片加常数"的
+                // 美白抬亮。磨皮本来就有这道门（blendWithMask 里的 sobelEdge），
+                // 所以只开磨皮看不见；美白没有门，碎发被抬成浅色细条。
+                int edge = 0;
+                if (doWhiten || doClar) {
+                    const int xm = (x > 0) ? (x - 1) : x;
+                    const int xp = (x + 1 < w) ? (x + 1) : x;
+                    const int ym = (y > 0) ? (y - 1) : y;
+                    const int yp = (y + 1 < h) ? (y + 1) : y;
+                    const unsigned char* r0 = dst + (size_t)ym * w * 4;
+                    const unsigned char* r1 = dst + (size_t)y * w * 4;
+                    const unsigned char* r2 = dst + (size_t)yp * w * 4;
+                    const int l00 = r0[xm * 4 + 1], l01 = r0[x * 4 + 1], l02 = r0[xp * 4 + 1];
+                    const int l10 = r1[xm * 4 + 1], l12 = r1[xp * 4 + 1];
+                    const int l20 = r2[xm * 4 + 1], l21 = r2[x * 4 + 1], l22 = r2[xp * 4 + 1];
+                    const int gx = (l02 + 2 * l12 + l22) - (l00 + 2 * l10 + l20);
+                    const int gy = (l20 + 2 * l21 + l22) - (l00 + 2 * l01 + l02);
+                    int mag = ((gx < 0 ? -gx : gx) + (gy < 0 ? -gy : gy)) / 2;
+                    if (mag >= kToneEdgeHi) edge = 192;
+                    else if (mag > kToneEdgeLo)
+                        edge = (int)((long long)(mag - kToneEdgeLo) * 192 / (kToneEdgeHi - kToneEdgeLo));
+                }
+                const float sk = (float)mv * (1.0f / 255.0f) * (float)(256 - edge) * (1.0f / 256.0f);
 
                 float r = (float)dst[o + 0];
                 float g = (float)dst[o + 1];
@@ -626,9 +749,15 @@ void toneColor(unsigned char* dst, int w, int h,
                     b += dlt17(kRosyB17, b) * rosy * sk;
                 }
 
-                dst[o + 0] = (unsigned char)(r < 0 ? 0 : (r > 255.0f ? 255.0f : r + 0.5f));
-                dst[o + 1] = (unsigned char)(g < 0 ? 0 : (g > 255.0f ? 255.0f : g + 0.5f));
-                dst[o + 2] = (unsigned char)(b < 0 ? 0 : (b > 255.0f ? 255.0f : b + 0.5f));
+                // 有序抖动：把「涨 2 级」的等亮度台阶摊到相邻行/列上（见上面
+                // kBayer4 的注释）。没开清晰/美白时保持逐位不变。
+                float dth = 0.0f;
+                if (doDither) {
+                    dth = ((float)kBayer4[((y & 3) << 2) | (x & 3)] + 0.5f) * (1.0f / 16.0f) - 0.5f;
+                }
+                dst[o + 0] = (unsigned char)(r < 0 ? 0 : (r > 255.0f ? 255.0f : r + 0.5f + dth));
+                dst[o + 1] = (unsigned char)(g < 0 ? 0 : (g > 255.0f ? 255.0f : g + 0.5f + dth));
+                dst[o + 2] = (unsigned char)(b < 0 ? 0 : (b > 255.0f ? 255.0f : b + 0.5f + dth));
             }
         }
     });

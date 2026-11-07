@@ -958,12 +958,13 @@ const float kMaskFeatherRatio = 0.08f;
 //
 // 旧值 2*halfW*f.w+0.08 等价于 0.072 脸宽 —— 脸宽 255 px 时只有 18 px，
 // 拿 18 px 的斜坡去接 156 px 的带子末端，等于没有过渡，那条边就是这么来的。
-// 改成 0.35 带长（156 px 带子 → 55 px 羽化，约 3 倍），smoothstep 在 55 px
-// 里从 0 爬到 1，物理上不再存在一条边；左右两条竖边同时被软化。
-// 取 0.35 而不是更大：带子的前 65% 仍是满强度，不会让脖子整体「效果变弱」
+// 1.1.3.0 先改成 0.35 带长（156 px 带子 → 55 px 羽化），真机复验仍有「淡淡的边」；
+// 1.1.4.0 再提到 0.50：156 × 0.50 = 78 px，但被 kFeatherMax=64 截到 64 px，
+// 所以实际只从 55 px 加宽到 64 px（+9 px，约 +16%）。
+// 带子的前 50% 仍是满强度，不会让脖子整体「效果变弱」
 // （那是 3.1.9 踩过的坑，见上面 kMaskFeatherRatio 的注释）。
-// 上限受 kFeatherMax=64 约束，0.90 档的 75 px 会被截到 64 px。
-const float kNeckFeatherRatio = 0.35f;
+// 上限受 kFeatherMax=64 约束：0.90 档的 75 px 同样会被截到 64 px。
+const float kNeckFeatherRatio = 0.50f;
 
 // -1 = 按脸宽自适应；0 = 关闭（与 3.1.8 逐字节相同，A/B 用）；>0 = 固定像素
 int g_maskFeatherPx = -1;
@@ -1044,6 +1045,26 @@ inline int featherRamp(int dist, int fe) {
 struct NeckCfg {
     float halfW = kNeckHalfW;
     float len = kNeckLen;
+    // 下缘收口深度（1.1.6.0）：末端不再是 y=常数 的水平截断，改成按列收的圆弧。
+    // 取值是**带长的比例**：0 = 保持水平截断（1.1.5.0 及以前的行为），
+    // 0.30 = 正中央仍到 0.65 脸高、两侧 |dx|=0.45 脸宽处收到 0.65×(1−0.30)=0.455 脸高。
+    // 为什么必须改几何：像素取证量到最长一段下缘 120 列共用同一条 y、全画面 70.3%
+    // 的掩码列落在常数 y 上；同段沿列平均的亮度剖面里，距下缘 64 行 +4.87 级、
+    // 8 行 +0.26 级，逐行变化最大 0.60 级 —— 亮度过渡早就摊平到看不见台阶，
+    // 剩下的「淡淡的边」是**共线**造成的几何感，加宽羽化治不了（1.1.3.0/1.1.4.0 已证）。
+    float taper = 0.30f;
+    // 下缘跟随肤色（1.1.7.0）：1 = 每列的下缘钉在**这一列最后一个肤色像素**上，
+    // 但不超过 taper 给出的几何上限；0 = 保持 1.1.6.0 的几何弧。
+    //
+    // 为什么光靠几何弧不够：1.1.6.0 的真图取证显示弧确实生效了（下缘 577→670→602，
+    // 矢高 93 px），但中央 x1004..1190 共 186 列只变 35 px，肉眼仍然是一条直线；
+    // 更关键的是这条弧**横切在皮肤中间**（绿线落在锁下一指宽的皮肤上，吊带边在其下
+    // 约 20 px），边界两侧都是同一块皮肤，所以无论弧多弯，磨与不磨的分界都看得见。
+    // 肤色末端的落点才是真实的皮肤/衣物轮廓，那里本来就有明暗变化，边界藏得进去。
+    //
+    // 只缩不扩：depthEff = min(几何深, 肤色末端深)，永不越过 taper 的弧，
+    // 因此不会重现 1.1.5.0 之前「掩码盖到衣领上」的白块。
+    int skinEnd = 1;
 };
 NeckCfg g_neck;
 
@@ -1349,6 +1370,25 @@ public:
             if (nhw && *nhw) g_neck.halfW = (float)atof(nhw);
             const char* nln = getenv("BEAUTY_NECK_LEN");
             if (nln && *nln) g_neck.len = (float)atof(nln);
+            // 下缘收口（1.1.6.0）：优先级「BEAUTY_NECK_TAPER > beauty.ini 的
+            // neck_taper > 默认 0.30」。taper=0 走旧的水平截断，用于逐字节回归；
+            // 0.30 是本次默认。上限 0.80，再大两侧会缩到 0.13 脸高、等于砍掉脖子。
+            if (const char* s = beautyCfgStr("neck_taper", "")) {
+                if (s && *s) g_neck.taper = (float)atof(s);
+            }
+            const char* ntp = getenv("BEAUTY_NECK_TAPER");
+            if (ntp && *ntp) g_neck.taper = (float)atof(ntp);
+            if (g_neck.taper < 0.0f) g_neck.taper = 0.0f;
+            if (g_neck.taper > 0.80f) g_neck.taper = 0.80f;
+            // 下缘跟随肤色（1.1.7.0）：优先级「BEAUTY_NECK_SKINEND > beauty.ini 的
+            // neck_skinend > 默认 1」。置 0 时逐像素回落到 1.1.6.0 的几何弧，
+            // 用来做逐字节回归 —— 两条路径必须给出完全相同的掩码。
+            if (const char* s = beautyCfgStr("neck_skinend", "")) {
+                if (s && *s) g_neck.skinEnd = atoi(s);
+            }
+            const char* nse = getenv("BEAUTY_NECK_SKINEND");
+            if (nse && *nse) g_neck.skinEnd = atoi(nse);
+            g_neck.skinEnd = (g_neck.skinEnd != 0) ? 1 : 0;
             // 边缘门控灵敏度（0 = 关闭）。生产默认 10，这里只为离线复验留口子。
             const char* ek = getenv("BEAUTY_EDGE_K");
             if (ek && *ek) g_cfg.edgeK = atoi(ek);
@@ -2459,15 +2499,38 @@ public:
         if (maskValid_ && lastFaces_ > 0 && !mask_.empty() &&
             (size_t)w * (size_t)h <= mask_.size()) {
             static const int kDumpFrames = 6;
-            static const char* dumpDir = nullptr;
-            static int dumpLeft = -1;      // -1 = 还没读过环境变量
+            static char dumpDir[MAX_PATH] = {0};   // 1.1.5.0：改值拷贝，不再长期持有 getenv 指针
+            static int dumpLeft = -1;      // -1 = 还没读过配置
             static int prevFrameNo = -1;   // 上一帧的帧号，用于识别「重渲染同一帧」
+            static long long prevMs = 0;   // 上一帧的墙钟时刻，用于识别「停下来又渲染了一次」
             static int reLeft = 20;        // 覆盖式导出的剩余次数，防爆盘
+            static int warnLeft = 1;       // 「开关没开」的提示只打一次，避免刷屏
             if (dumpLeft < 0) {
+                // 1.1.5.0：三级优先级，与 beauty.ini 的既有体系（env > ini > 默认）一致。
+                //
+                // 为什么必须让开关落到磁盘上：2026-11-06 已经踩过一次同一个坑 ——
+                // Resolve 从桌面图标启动时，launch.bat 里 set 的变量压根继承不到，
+                // 于是「日志里一行调试输出都没有」被当成功能故障，白跑一个来回
+                // （见 beauty_hwprobe.cpp 第 59–62 行记下的那次复盘）。
+                // 1.1.3.0 的 dump 通道只认 BEAUTY_DUMP_OUT，等于把同一个坑又挖了一遍：
+                // 1.1.4.0 那次验证就是空手而归 —— 环境变量没进来，dumpLeft 判成 0、
+                // dumpDir 是空指针，而重渲染分支没有先判空，路径被拼成
+                // "(null)\dump_re_src.ppm"，写失败且不报错（ofx.log 里有那行记录）。
                 const char* e = getenv("BEAUTY_DUMP_OUT");
-                dumpDir = (e && *e) ? e : nullptr;
-                dumpLeft = dumpDir ? kDumpFrames : 0;
-                if (dumpDir) CreateDirectoryA(dumpDir, nullptr);   // 已存在则返回 FALSE，忽略
+                if (e && *e) {
+                    snprintf(dumpDir, sizeof(dumpDir), "%s", e);
+                } else if (beautyCfgInt("dump_enable", 0) != 0) {
+                    const char* d = beautyCfgStr("dump_dir", "");
+                    if (d && *d) {
+                        snprintf(dumpDir, sizeof(dumpDir), "%s", d);
+                    } else {
+                        const char* pd = getenv("ProgramData");
+                        snprintf(dumpDir, sizeof(dumpDir), "%s\\DaVinciBeauty\\dump",
+                                 (pd && *pd) ? pd : "C:\\ProgramData");
+                    }
+                }
+                dumpLeft = dumpDir[0] ? kDumpFrames : 0;
+                if (dumpDir[0]) CreateDirectoryA(dumpDir, nullptr);   // 已存在则返回 FALSE，忽略
             }
             // 1.1.3.0：新增「同一帧重渲染」通道。
             //
@@ -2477,10 +2540,21 @@ public:
             // 暂停后按 ← → 时，宿主会重新请求**同一帧**，frameNo 与上一帧相同 ——
             // 就用这个信号覆盖写 dump_re_*.{ppm,pgm}，不占名额、不新增文件。
             const int curNo = (int)frameNo_;
-            const bool reRender = (prevFrameNo >= 0 && prevFrameNo == curNo);
+            const long long curMs = (long long)t0;
+            // 判据一：宿主重新请求**同一帧**（暂停后按 ← →、拖动播放头回原位等）。
+            const bool sameFrame = (prevFrameNo >= 0 && prevFrameNo == curNo);
+            // 判据二（1.1.5.0）：与上一帧的墙钟间隔超过 400ms。
+            //
+            // 为什么补这一条：1.1.4.0 那次真机验证日志里一条「诊断导出」都没有，
+            // 说明判据一没成立 —— 宿主在暂停后重新渲染时，未必沿用原帧号（也可能是
+            // 走了另一条求值路径）。连续播放时两帧间隔约 40ms，400ms 只有「停下来
+            // 之后又渲染了一次」才会跨过，所以这条判据不会在播放期误触发。
+            const bool afterPause = (prevMs > 0 && curMs - prevMs > 400);
+            const bool reRender = sameFrame || afterPause;
             prevFrameNo = curNo;
+            prevMs = curMs;
 
-            if (dumpLeft > 0 || (reRender && reLeft > 0)) {
+            if (dumpDir[0] && (dumpLeft > 0 || (reRender && reLeft > 0))) {
                 const bool isRe = (dumpLeft <= 0);
                 char tag[16];
                 if (isRe) {
@@ -2498,8 +2572,20 @@ public:
                 dumpBgraPpm(path, dst, w, h, flip);
                 snprintf(path, sizeof(path), "%s\\dump_%s_mask.pgm", dumpDir, tag);
                 dumpGrayPgm(path, &mask_[0], w, h, flip);
-                NALOG(BEAUTY_LOG_INFO, "诊断导出 dump_%s %dx%d -> %s (flip=%d 脸=%d 帧号=%d)",
-                      tag, w, h, dumpDir, (int)flip, lastFaces_, curNo);
+                NALOG(BEAUTY_LOG_INFO,
+                      "诊断导出 dump_%s %dx%d -> %s (flip=%d 脸=%d 帧号=%d 暂停帧=%d)",
+                      tag, w, h, dumpDir, (int)flip, lastFaces_, curNo, (int)afterPause);
+            } else if (reRender && !dumpDir[0] && warnLeft > 0) {
+                // 1.1.5.0：开关没开时也要留一行痕迹。
+                //
+                // 上一轮排查之所以要多跑一个来回，就是因为「分支没进」和「进了但写
+                // 失败」在日志里长得一样（都是什么都没有）。这一行把两者分开：
+                // 有这行 = 触发信号到了，只是开关没开；没这行 = 连触发信号都没到。
+                warnLeft--;
+                NALOG(BEAUTY_LOG_INFO,
+                      "诊断导出未启用：未设 BEAUTY_DUMP_OUT，且 %s 里 dump_enable 不是 1，"
+                      "本次跳过（把 dump_enable 改成 1 后重启 Resolve 即可）",
+                      beautyCfgPath());
             }
         }
         return true;
@@ -2861,14 +2947,15 @@ private:
                          : (int)(f.w * kMaskFeatherRatio + 0.5f);
             if (fe > kFeatherMax) fe = kFeatherMax;
             if (fe < 0) fe = 0;
-            // 脖子通道的羽化宽度（1.1.3.0）：按**带长**取比例，不再按脸宽。
+            // 脖子通道的羽化宽度（1.1.3.0 起按带长，1.1.4.0 提到 0.50）。
             //
             // 旧写法 2*halfW*f.w*kMaskFeatherRatio = 0.072 脸宽，脸宽 255 px 时
             // 只有 18 px。而带长是 0.65 脸高 ≈ 156 px —— 18 px 的斜坡接不住
             // 156 px 的末端，下缘那条横线就是这么来的（详细取证见
             // kNeckFeatherRatio 的定义处）。
             //
-            // 现在 0.35 × 带长：156 px 带子给 55 px 羽化，前 65% 仍是满强度。
+            // 现在 0.50 × 带长：156 px 带子算 78 px，被 kFeatherMax=64 截到
+            // 64 px，前 50% 仍是满强度。
             const float neckLenPxForFe = f.h * g_neck.len;
             int feNeck = (g_maskFeatherPx >= 0)
                              ? g_maskFeatherPx
@@ -2916,8 +3003,22 @@ private:
                     int feather = fTop;
                     const int fx = featherRamp(dl < dr ? dl : dr, fe);
                     if (fx < feather) feather = fx;
-                    // 下巴正下方交给脖子通道续上，底边不羽化（否则出现水平线）
-                    if ((x < nx0 || x >= nx1) && fBot < feather) feather = fBot;
+                    // 下巴一侧的底边**永远**羽化（1.1.8.0）。
+                    //
+                    // 旧写法在 [nx0, nx1) 内整段跳过 fBot，本意是「下巴正下方交给
+                    // 脖子通道续上，底边不羽化就不会出现接缝」。但它假设了脖子通道
+                    // 一定覆盖这段宽度 —— 实测不成立：脖子带的左右边界是逐行按肤色
+                    // 探出来的，遇到项链、下颌阴影、头发、深色衣领就会比 [nx0, nx1)
+                    // 窄，没被盖住的那些列于是在脸框底边**一整行内从满值掉到 0**。
+                    // 真机取证（1920x1080，`02_街头_正面微笑` 第 10 帧）：脸框底边
+                    // y=667 上一行 215..255、下一行直接 0，横跨 306 列 —— 就是用户
+                    // 看到的那条横线；它跟着脸走，因为那就是脸框的底边。
+                    //
+                    // 现在改成无条件参与 min：脖子带已经**向上多铺了 fe 行**（见下面
+                    // ny0），在交界那几行它本来就是满值，取 max 之后仍然是满值，所以
+                    // 不会重新出现「下巴接缝」；而脖子带没盖到的地方会老老实实按 fe
+                    // 平滑淡出，不再有一级台阶。
+                    if (fBot < feather) feather = fBot;
                     if (paintSkin(mrow, row, x, feather)) any = true;
                 }
                 // 只在**这一行真的落了像素**时扩 y：否则脸框下沿那几行没肤色，
@@ -2935,14 +3036,23 @@ private:
             // v3.0.9：起点从写死的 y1 改成 yChin。bottom-up（Resolve）下 y1 是
             // 发际线一侧，旧写法把「脖子」铺到了头顶以上；top-down 下 yChin==y1，
             // 与旧版逐字节相同（离线基线因此不变）。
-            const int ny0 = yChin;
+            // 1.1.8.0：起点从下巴**往脸那一侧多铺 fe 行**，与脸框底边的羽化带重叠。
+            //
+            // 为什么必须重叠：底边羽化（fBot）现在无条件生效，如果脖子带仍然从
+            // yChin 才开始，脸框最后一行会被 fBot 削到 ~0、下一行立刻满值 ——
+            // 那就是把「横线」从底边挪到了下一行。多铺 fe 行之后，重叠区里
+            // 脖子带是满值、取 max 后也是满值，交界处两边都连续。
+            const int ny0 = (flipY ? yChin + fe : yChin - fe);
+            int ny0c = ny0;
+            if (ny0c < 0) ny0c = 0;
+            if (ny0c > h) ny0c = h;
             const float neckLen = f.h * g_neck.len;
             int ny1 = (int)((flipY ? (float)yChin - neckLen : (float)yChin + neckLen) + 0.5f);
             if (ny1 < 0) ny1 = 0;
             if (ny1 > h) ny1 = h;
             // 统一按 [nyLo, nyHi) 走，羽化只削「远离脸」的那一端（ny1）。
-            const int nyLo = (ny0 < ny1) ? ny0 : ny1;
-            const int nyHi = (ny0 < ny1) ? ny1 : ny0;
+            const int nyLo = (ny0c < ny1) ? ny0c : ny1;
+            const int nyHi = (ny0c < ny1) ? ny1 : ny0c;
             const int nyFar = ny1;
 
             // 诊断（1.1.1.3）：这一张脸**单独成块**时要搬的像素数。
@@ -2980,6 +3090,85 @@ private:
                 if (rowL < 0) rowL = 0;
                 if (rowR > w) rowR = w;
                 const int gap = 3;      // 连续 3 个非肤色像素算「到头」
+                // 下缘收口（1.1.6.0）：参数见 NeckCfg::taper 的注释。
+                // taperK == 0 时下面这段整段旁路，逐像素回落到 1.1.5.0 的
+                // 「统一 nyFar」写法 —— 那条路径必须逐字节不变，用来做回归判据。
+                const float taperK = g_neck.taper;
+                const float neckHalfN = f.w * g_neck.halfW;
+                const float invNeckHalf2 =
+                    (taperK > 0.0f && neckHalfN > 1.0f) ? 1.0f / (neckHalfN * neckHalfN) : 0.0f;
+                const float dirN = flipY ? -1.0f : 1.0f;   // 朝「远离脸」的方向
+                const float yChinF = (float)yChin;
+
+                // 下缘跟随肤色（1.1.7.0）：先扫出**每列的下缘深度** colEnd[x]，
+                // 再拿它参与落笔与羽化。必须两趟 —— 单趟只能在下缘已越过之后
+                // 才知道下缘在哪，那时像素本来就不落笔，缩不缩输出完全一样
+                // （2026-11-07 实测：单趟实现跑基线 18/18 全不变，即改动无效）。
+                //
+                // 趟 1 逐行推：colEnd 取「这一列最后一个肤色行的深度」，判据是
+                // 连续 gap(=3) 行非肤色；上限是该列的几何深度 colDmax（taper 的弧）。
+                // 起始行没肤色不算「结束」（下巴阴影、项链扣），要先见过肤色才开始计数。
+                // −1 = 整列没探到肤色 → 落笔阶段退回几何上限，行为与 1.1.6.0 相同。
+                //
+                // 边界落在哪：脖子下缘是「皮肤 → 锁骨下的皮肤 → 衣物」这条真实轮廓，
+                // 那里本来就有明暗与纹理变化，64 px 的羽化过渡藏得进去；而 1.1.6.0 的
+                // 几何弧不论怎么弯都横切在同一块皮肤中间，两侧亮度相同 —— 这才是
+                // 用户看到「淡淡的边」的真正来源（真图取证见 NeckCfg::skinEnd）。
+                static thread_local std::vector<short> colEnd;
+                static thread_local std::vector<short> colLast;
+                static thread_local std::vector<int> colDmax;
+                static thread_local std::vector<unsigned char> colSeen, colMiss;
+                const bool skinEndOn = (g_neck.skinEnd != 0);
+                if (skinEndOn) {
+                    if (colEnd.size() < (size_t)w) {
+                        colEnd.assign((size_t)w, -1);
+                        colLast.assign((size_t)w, -1);
+                        colDmax.assign((size_t)w, 0);
+                        colSeen.assign((size_t)w, 0);
+                        colMiss.assign((size_t)w, 0);
+                    }
+                    for (int x = rowL; x < rowR; x++) {
+                        colEnd[x] = -2;          // −2 = 尚未定案
+                        colLast[x] = -1;
+                        colSeen[x] = 0;
+                        colMiss[x] = 0;
+                        float dg = neckLen;
+                        if (taperK > 0.0f) {
+                            const float dxn = (float)x - cx;
+                            float q2 = dxn * dxn * invNeckHalf2;
+                            if (q2 > 1.0f) q2 = 1.0f;
+                            dg = neckLen * (1.0f - taperK * q2);
+                        }
+                        colDmax[x] = (int)(dg + 0.5f);
+                    }
+                    for (int y = nyLo; y < nyHi; y++) {
+                        const int dRow1 = (int)(dirN * ((float)y - yChinF) + 0.5f);
+                        if (dRow1 < 0) continue;
+                        const unsigned char* row1 = src + ((size_t)y * w) * 4;
+                        for (int x = rowL; x < rowR; x++) {
+                            if (colEnd[x] != -2) continue;
+                            if (dRow1 > colDmax[x]) {
+                                colEnd[x] = (short)(colSeen[x] ? colLast[x] : -1);
+                                continue;
+                            }
+                            const int wv = (int)skinWeight(
+                                row1[x * 4 + 0], row1[x * 4 + 1], row1[x * 4 + 2]);
+                            if (wv) {
+                                colSeen[x] = 1;
+                                colLast[x] = (short)dRow1;
+                                colMiss[x] = 0;
+                            } else if (colSeen[x] && (unsigned char)(++colMiss[x]) >= (unsigned char)gap) {
+                                colEnd[x] = colLast[x];
+                            }
+                        }
+                    }
+                    for (int x = rowL; x < rowR; x++) {
+                        if (colEnd[x] != -2) continue;
+                        // 像素级噪声（一颗痘、一根汗毛）不该把整列砍到 4 px 以内，
+                        // 那不像真实衣领。小于 4 px 的一律当噪声，退回几何上限。
+                        colEnd[x] = (short)((colSeen[x] && colLast[x] >= 4) ? colLast[x] : -1);
+                    }
+                }
                 for (int y = nyLo; y < nyHi; y++) {
                     const unsigned char* row = src + ((size_t)y * w) * 4;
                     unsigned char* mrow = &mask[(size_t)y * w];
@@ -3014,10 +3203,37 @@ private:
                     if (lo < rowL) lo = rowL;
                     if (hi > rowR - 1) hi = rowR - 1;
                     if (lo < 0) lo = 0;
-                    const int fBot = featherRamp(nyFar > y ? nyFar - y : y - nyFar, feNeck);
                     bool any = false;
                     for (int x = lo; x <= hi; x++) {
-                        int feather = fBot;
+                        int dBot;
+                        if (taperK > 0.0f) {
+                            // 末端按列收成圆弧：dx 按 0.45 脸宽归一化后平方，靠外收得多。
+                            // 越过弧线的像素必须跳过 —— 否则 |farX−y| 会在弧外重新变大，
+                            // featherRamp 又会把已经收掉的部分涂回来，收口等于没做。
+                            const float dxn = (float)x - cx;
+                            float q2 = dxn * dxn * invNeckHalf2;
+                            if (q2 > 1.0f) q2 = 1.0f;
+                            float depthX = neckLen * (1.0f - taperK * q2);
+                            // 1.1.7.0：这一列肤色在弧之前就结束了（衣领/吊带边），
+                            // 下缘改钉在最后一个肤色行上。取 min 保证只缩不扩。
+                            // 羽化按**新下缘**算，靠近衣领的皮肤才会逐渐减弱 ——
+                            // 这正是把分界藏进衣物明暗变化里的关键。
+                            if (skinEndOn && colEnd[x] >= 0) {
+                                const float dSkin = (float)colEnd[x];
+                                if (dSkin < depthX) depthX = dSkin;
+                            }
+                            if (dirN * ((float)y - yChinF) > depthX) continue;
+                            dBot = (int)fabsf(yChinF + dirN * depthX - (float)y);
+                        } else if (skinEndOn && colEnd[x] >= 0) {
+                            // 水平截断分支同样跟随肤色末端（taper=0 的逐字节回归
+                            // 只在 skinEnd=0 时才走，两者不会同时生效，互不干扰）。
+                            const float dSkin = (float)colEnd[x];
+                            if (dirN * ((float)y - yChinF) > dSkin) continue;
+                            dBot = (int)fabsf(yChinF + dirN * dSkin - (float)y);
+                        } else {
+                            dBot = nyFar > y ? nyFar - y : y - nyFar;
+                        }
+                        int feather = featherRamp(dBot, feNeck);
                         const int dl = x - lo + 1, dr = hi - x + 1;
                         const int fx2 = featherRamp(dl < dr ? dl : dr, feNeck);
                         if (fx2 < feather) feather = fx2;

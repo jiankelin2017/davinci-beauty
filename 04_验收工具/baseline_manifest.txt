@@ -1,27 +1,27 @@
 # DaVinci Beauty 逐字节回归基线
 #
 # 每行: <用例名> <输出帧md5>
-# 输入帧由 04_验收工具/input_face.png 缩放到 1074x604 后转 BGRA 生成，其 md5 记录如下；输入变了这里会失配，属预期。
+# 输入帧由 04_验收工具/input_face.png 缩放到 1074x604 后转 RGBA 生成，其 md5 记录如下；输入变了这里会失配，属预期。
 #
-# input_md5: f031e3eab93c542ac262c0b21a67b228
-# plugin_version: 1.1.3
+# input_md5: 948bbeea98a307f6cc3b467f7d52c0fc
+# plugin_version: 1.2.5
 # generated_by: DaVinciBeauty.ofx
 #
-blur00         5b15d4b487c100e80cf00b8151839d25
-blur30         18cae2021465f97eae8c7be0c22d0cb2
-blur62         47e33a0d443e3afb1fcf1e3eaafabf18
-blur100        c567316e01678620a09f61eda607d25b
-blur62_wh30    3466a76b3c0ef9d102d63e181ff520c7
-blur62_wh100   d80ab89a562888e705b84ddcebd3a39e
-sh50           911508415f6f74b5703a564a434f3cec
-sh100          9c0eb157f335b57d68d430310cbcad6e
-cl50           013c976f6f9e003e627e939c17357ed7
-sh50_cl100     d3d200c60006969cb063fd01e2d22d65
-gs50           bd3437675dc7c961d7006aeddea3b4ea
-shape100       e9295d39a608ef095ac340d3a222b71c
-mode1          49706639ab876ce60705dbb083fb0a98
-mode2          612c0956357107256e9382d3f4dbb34d
-mode3          b170448836204a8a06cbeb64e1cbea8c
-alg0           3466a76b3c0ef9d102d63e181ff520c7
-alg1           9e138d2b63b0527f5e6aa5561e387b1a
-alg2           9bf8339b5805ffcba1d4a604c0c6f562
+blur00         1968ff34d68e6510435b5ae6f8a5d380
+blur30         f1094e40c82e0c99850a47862ce13384
+blur62         de6d6ca77283f70f9847a537ebccb108
+blur100        598f6b5ff5b570a5433ef117fc5f132e
+blur62_wh30    3b8d027588ae692b42da90ffa117b7a5
+blur62_wh100   0051141ec22c1aab85f17376bfb7ad64
+sh50           df983b7903fb89ed598db629c13a920f
+sh100          799314e8e0bad9246b4008a92751a8c2
+cl50           f118d5a5136d1368edd7226f65b6489f
+sh50_cl100     c7e0afb4e71473cf93fb391fecf9b52b
+gs50           275c8582d12b569177a437f6a9763884
+shape100       1357be06983e8f4f380d6d8e09064321
+mode1          dc633eda543c766b935b39837f045fbd
+mode2          680ce9236f1c424ea4e24f4c5e1b5133
+mode3          2e1382ddcf7ee37df074f864a1490a64
+alg0           3b8d027588ae692b42da90ffa117b7a5
+alg1           460b2bf2ab222c73a9cf8e5890c720c1
+alg2           4da896af5e07efd3ef053f76f69bda30

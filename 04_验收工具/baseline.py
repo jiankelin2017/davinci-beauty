@@ -116,15 +116,21 @@ def source_version():
 
 
 def make_input(stage):
-    """PNG -> BGRA raw。落在 ASCII 中转目录里，返回 (路径, md5)。"""
+    """PNG -> RGBA raw。落在 ASCII 中转目录里，返回 (路径, md5)。
+
+    通道序必须是 **R,G,B,A**：引擎把 buf[x*4+0] 当 R 读（beauty_core.cpp 的
+    skinWeight(row[x*4+0..2]) 按 R,G,B 传参可证），Resolve 的 dump 也是这个序。
+    1.2.5 之前这里写的是 BGRA，等于所有离线用例都在测一张反色图 —— 肤色判据
+    靠自适应肤色中心才没崩，但测出来的行为和真机不是一回事。
+    """
     from PIL import Image
     import numpy as np
     a = np.asarray(Image.open(SRC_PNG).convert("RGB").resize((W, H), Image.LANCZOS))
-    bgra = np.dstack([a[:, :, 2], a[:, :, 1], a[:, :, 0],
+    rgba = np.dstack([a[:, :, 0], a[:, :, 1], a[:, :, 2],
                       np.full(a.shape[:2], 255, np.uint8)])
     p = os.path.join(stage, "input_%dx%d.raw" % (W, H))
     with open(p, "wb") as f:
-        f.write(bgra.tobytes())
+        f.write(rgba.tobytes())
     return p, md5file(p)
 
 
@@ -224,7 +230,7 @@ def write_manifest(meta, results):
         "# DaVinci Beauty 逐字节回归基线",
         "#",
         "# 每行: <用例名> <输出帧md5>",
-        "# 输入帧由 04_验收工具/input_face.png 缩放到 %dx%d 后转 BGRA 生成，"
+        "# 输入帧由 04_验收工具/input_face.png 缩放到 %dx%d 后转 RGBA 生成，"
         "其 md5 记录如下；输入变了这里会失配，属预期。" % (W, H),
         "#",
     ]
