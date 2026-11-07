@@ -1,4 +1,4 @@
-# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.1.1.3）
+# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.1.1.4）
 
 一个给 DaVinci Resolve Studio 21.1 用的 OpenFX 滤镜，效果引擎是自研引擎 3.1.39 的
 纯 CPU 美颜引擎（CoreEngine），人脸检测用 ONNX 模型，并在引擎内部**自动检测 GPU**
@@ -15,6 +15,51 @@
 `LICENSE`；随包分发的 ONNX Runtime、YuNet 模型、OpenFX 头文件的版权与许可全文见
 `THIRD-PARTY-NOTICES.md`。注意 GPL-2.0 与 Apache-2.0 不兼容，与 MIT / BSD-3 兼容 ——
 现有三个第三方组件都是后者。
+
+## v1.1.1.4 变更（2026-11-07，整帧分段计时：量清磨皮之外的 11 ms）
+
+**构建位 +1。** 只加计时与一行日志，不改任何像素运算。
+
+### 起因：只统计磨皮，把 9% 算成了整帧占比
+
+`GPU 磨皮 合计=3.77ms / 41.7ms = 9%` 这个说法只覆盖磨皮一段。真机 1080p 会话的
+`render #` 行其实一直在报完整构成：
+
+```
+render #120 1920x1080 in=float out=float 取图=0.0ms 转in=3.0ms sdk=13.0ms 转out=2.7ms 合计=18.7ms
+render #240 1920x1080 in=float out=float 取图=0.0ms 转in=3.1ms sdk=7.4ms  转out=2.9ms 合计=13.5ms
+```
+
+| 段 | 稳态 | 说明 |
+|---|---|---|
+| `转in`（float→byte） | 2.6~3.5 ms | `blitFrame` → `f32_to_u8_row`，AVX2 但单线程 |
+| `sdk`（引擎） | 7.4~13.0 ms | 磨皮只占其中 3.5~4 ms |
+| `转out`（byte→float） | 2.7~4.3 ms | `u8_to_f32_row`，同样单线程 |
+| 合计 | 13.5~18.7 ms | 帧预算 41.7 ms 的 **32%~45%** |
+
+### 本版改动
+
+`CoreEngine::process` 插五对 QPC，每 30 帧（外加首两帧）打一条：
+
+```
+帧分解 1920x1080 掩码=0.71 磨皮=3.92 色调=1.24 回填=0.00 美形=0.00 合计=5.87 ms | 工人掩码=18.40 脸=3 掩码=1
+```
+
+五段之和恒等于 `合计`，可用 `render #` 行的 `sdk=` 对账。
+
+> 坑：`frameNo_` 是**按槽位**保存的（`SlotScope` 换入换出），每帧新建实例的宿主会把它一直
+> 喂回 0 —— 只写 `% 30` 在台架上一行都打不出来。补 `frameNo_ <= 2` 后与 `GPU 磨皮` 那行
+> 同一条约定；真机 Resolve 槽位复用，`% 30` 正常生效。`掩码` 段在异步模式下
+主要是 `submitAsync` 的整帧 memcpy（默认每帧提交），真正的检测在 worker 上，
+所以同一行并列 `工人掩码=`（`asyncMs_`，此前只赋值从未进过日志）。
+
+### 顺带更正
+
+`算=0.17ms` 量的是 CPU 下发（`Dispatch`→`Flush`，而 `Flush` 立即返回），
+不是 GPU 执行。GPU 执行在 `等GPU` 里，实测约 **1.4 ms**。真实构成是
+**CPU 搬运 ≈2.3 + GPU 执行 ≈1.4**（62:38），不是 92:5。方向不变，比例修正。
+
+逐字节基线 18/18、mock_host 23/23，与 v1.1.1.3 完全相同。
 
 ## v1.1.1.3 变更（2026-11-07，真机取样推翻「ROI 膨胀」前提，新增「分块」指标）
 
