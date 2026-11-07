@@ -159,3 +159,17 @@ void gpuSmoothResourceStats(long long* rebuilds, long long* deviceCreates,
 // 只给离线对拍台架用，生产路径不调用。回读矩形是真实 pw×ph，
 // 桶外的填充像素自动裁掉。
 bool gpuSmoothDebugPlane(int which, float* out, int capacity, int* pw, int* ph);
+
+// 消融开关：强制覆盖 ROI 外扩量 growP（平面像素），-1 = 用生产公式。
+//
+// 只做一件事：让台架能问「边距到底能不能砍」。生产公式里 growP 由
+// passes*32（flush 块污染的衰减带）+ passes*(r2+ra) + 2 组成，其中 32*passes
+// 是否真的必需只是**一次实验的结论**，不是几何必然 —— 所以要能复现那次实验。
+//
+// 用 #ifdef 隔离而不是像 gpuSmoothDebugPlane 那样常开：这个量直接决定搬运
+// 矩形的大小，一旦被误设成小值，输出会在 ROI 边缘悄悄少算。生产二进制里
+// 连这个符号都不存在，才谈得上「台架改动不影响产线」。
+#ifdef BEAUTY_TEST_HOOKS
+void gpuSmoothSetGrowPForTest(int planePx);
+int  gpuSmoothGetGrowPForTest();
+#endif

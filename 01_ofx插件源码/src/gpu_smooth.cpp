@@ -493,6 +493,12 @@ double g_sumTotal = 0.0, g_sumPlane = 0.0;
 long long g_rebuilds = 0;        // 纹理组重建次数（诊断 churn，台架断言用）
 long long g_deviceCreates = 0;   // 设备创建次数（应为 1；多于此值说明生命周期有 bug）
 
+#ifdef BEAUTY_TEST_HOOKS
+// growP 消融用。生产构建里这个符号不存在（见 gpu_smooth.h 的说明）：
+// 它直接决定搬运矩形，设小了输出会在 ROI 边缘少算，属于不能常开的口子。
+int g_growPForTest = -1;
+#endif
+
 // 适配器身份（1.0.9.0 加）。为什么值得单独存一份并打进日志：
 // 本模块选卡只排除 DXGI_ADAPTER_FLAG_SOFTWARE（WARP 软件渲染），**不按厂商过滤**，
 // 所以 AMD / Intel 核显同样会走 GPU 路径。而这两家的浮点末位与 Map 读回性能都没有实测过。
@@ -1106,7 +1112,11 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     //   左邻 r 个像素，于是污染向内容方向传染一块，一共传递 passes 次。
     //   实测：ROI 与整帧的 B1 差异在内缩 64 处还剩 1613 字节、96 处归零，
     //   与 32×passes = 96 完全吻合。少这一项会稳定差出 1~2 灰阶。
-    const int growP = passes * 32 + passes * (r2 + ra) + 2;
+    int growP = passes * 32 + passes * (r2 + ra) + 2;
+#ifdef BEAUTY_TEST_HOOKS
+    // 消融实验专用（台架 growp 子命令）。生产构建里没有这一段。
+    if (g_growPForTest >= 0) growP = g_growPForTest;
+#endif
 
     const int plx0 = alignDown32(clampi(pxLo - growP, 0, ww - 1));
     const int ply0 = alignDown32(clampi(pyLo - growP, 0, wh - 1));
@@ -1465,3 +1475,17 @@ bool gpuSmoothDebugPlane(int which, float* out, int capacity, int* pw, int* ph) 
     if (ok) { if (pw) *pw = g_pw; if (ph) *ph = g_ph; }
     return ok;
 }
+
+#ifdef BEAUTY_TEST_HOOKS
+// 只给台架用：改之前请先读 gpu_smooth.h 里为什么这个口子要放进 #ifdef。
+// 设成 -1 恢复生产公式；任何 >= 0 的值都会直接顶替 growP（平面像素）。
+void gpuSmoothSetGrowPForTest(int planePx) {
+    std::lock_guard<std::mutex> lk(g_mtx);
+    g_growPForTest = (planePx < 0) ? -1 : planePx;
+}
+
+int gpuSmoothGetGrowPForTest() {
+    std::lock_guard<std::mutex> lk(g_mtx);
+    return g_growPForTest;
+}
+#endif

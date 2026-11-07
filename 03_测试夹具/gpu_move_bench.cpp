@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <string>
 #include <vector>
 
 namespace {
@@ -524,10 +525,110 @@ int pipelineCase(int w, int h, double areaPct, int frames, PipeMode mode,
     *maxdOut = worst;
     return bad;
 }
+// ==================== growP 消融（1.1.1.3 取样后新增，2026-11-07）====================
+//
+// 为什么要有这一组：真机取样把一个数量级更大的浪费挖出来了 —— GPU 实际搬运的
+// 矩形不是掩码包围盒，而是包围盒外每边再扩 growP 平面像素：
+//
+//     growP = passes*32 + passes*(r2+ra) + 2  =  116 平面像素 = 232 图像像素/边
+//
+// 1080p 上 bbox=971x672 被扩到 1488x1016，边距占了整个矩形的 57%。而 GPU 计算
+// 只要 0.14ms、搬运占时 92% —— 也就是说优化对象是这个常量，不是脸框。
+//
+// `passes*32` 那一项的依据是**一次实验**（「内缩 64 处还剩 1613 字节、96 处归零」），
+// 不是几何必然。本组把 growP 逐档往下压，用与其它用例同一条判据（与 CPU 整帧结果
+// 逐字节一致）找出「还能保持 0 差异的最小 growP」。
+//
+// 判据怎么读：
+//   diff == 0  → 这一档边距够用，可以照此缩小
+//   diff  > 0  → 边缘污染已经吃到有效输出区，这一档不行
+// 注意 diff 恒为 0 也可能只是「污染还没到有效区」，所以**最小可用档再减一档必须
+// 翻红**才有说服力 —— 否则说明这组用例的分辨力不够（掩码太居中、对齐余量太大）。
+struct GrowRow {
+    int gp;                 // 平面像素边距
+    int imgW, imgH;         // 实际搬运矩形
+    int r1, r2, ra, passes; // 本档实际的盒式半径与趟数（r 随画幅缩放，必须记）
+    int effM;               // 有效边距（平面像素，取 x/y 较小者）
+    double mb;              // 单程搬运量（RGBA8）
+    double move, total;     // 搬图耗时 / 合计耗时
+    long long diff; int maxd;
+};
+
+// 返回「这一档不达标」的用例数（diff != 0）。
+int growpOneCase(int w, int h, double areaPct, int reps,
+                 const int* gps, int nGps, std::vector<GrowRow>* out) {
+    std::vector<unsigned char> src;
+    fillImage(src, w, h);
+    std::vector<unsigned char> mask, prot;
+    beautycore::RoiRect bbox{};
+    buildMask(mask, prot, w, h, areaPct, &bbox);
+
+    beautycore::BandParams p;
+    std::vector<float> scratch;
+
+    // CPU 整帧结果是唯一参考，只算一次（本组不比 CPU 耗时，比的是画面对不对）。
+    std::vector<unsigned char> outCpu(src);
+    beautycore::surface3RgbBand(&src[0], &outCpu[0], w, h,
+                                &mask[0], &prot[0], p, bbox, 8, scratch);
+
+    int bad = 0;
+    for (int gi = 0; gi < nGps; ++gi) {
+        const int gp = gps[gi];
+        gpuSmoothSetGrowPForTest(gp);
+
+        // 每换一档纹理组都要重建（尺寸变了），所以每档各自热身 2 次：
+        // 不热身的话 CreateTexture2D 的一次性开销会混进这一档的耗时里。
+        std::vector<unsigned char> outGpu(src);
+        GpuSmoothTiming t{};
+        for (int i = 0; i < 2; ++i) {
+            std::memcpy(&outGpu[0], &src[0], (size_t)w * h * 4);
+            gpuSmoothRgbBand(&src[0], &outGpu[0], w, h, &mask[0], &prot[0], p, bbox, &t);
+        }
+
+        double smove = 0.0, stot = 0.0;
+        for (int i = 0; i < reps; ++i) {
+            std::memcpy(&outGpu[0], &src[0], (size_t)w * h * 4);
+            GpuSmoothTiming g{};
+            if (!gpuSmoothRgbBand(&src[0], &outGpu[0], w, h,
+                                  &mask[0], &prot[0], p, bbox, &g)) {
+                std::printf("  [FAIL] growp %d: %s\n", gp, gpuSmoothLastError());
+                ++bad;
+                break;
+            }
+            smove += g.packMs + g.maskMs + g.copyUpMs + g.copyDnMs + g.mapMs + g.fillMs;
+            stot  += g.totalMs;
+            if (i == 0) t = g;
+        }
+
+        GrowRow r{};
+        r.gp = gp;
+        r.imgW = t.imgW; r.imgH = t.imgH;
+        r.r1 = t.r1; r.r2 = t.r2; r.ra = t.ra; r.passes = t.passes;
+
+        // 有效边距：growP 只是**名义值**，plx0 = alignDown32(pxLo - growP)
+        // 会把它推得更远（最多 +31 平面像素），而且 x/y 各自独立。
+        // 判阈值只能看这个数，否则「32 通过、40 也通过」会被读成「32 就够」。
+        const int outX0 = (bbox.x0 - 8 < 0) ? 0 : (bbox.x0 - 8);
+        const int outY0 = (bbox.y0 - 8 < 0) ? 0 : (bbox.y0 - 8);
+        const int effX = outX0 - t.imgX0;         // 图像像素
+        const int effY = outY0 - t.imgY0;
+        r.effM = (effX < effY ? effX : effY) / 2; // 取小的那个，换成平面像素
+        r.mb = (double)t.imgW * t.imgH * 4.0 / 1048576.0;
+        r.move = smove / reps;
+        r.total = stot / reps;
+        r.diff = countDiff(&outCpu[0], &outGpu[0], (size_t)w * h * 4, &r.maxd);
+        if (r.diff != 0) ++bad;
+        out->push_back(r);
+    }
+
+    gpuSmoothSetGrowPForTest(-1);   // 恢复生产公式，别把状态漏给后面的用例
+    return bad;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
-    const int reps = (argc > 1) ? atoi(argv[1]) : 5;
+    const bool ablate = (argc > 1 && std::strcmp(argv[1], "growp") == 0);
+    const int reps = (ablate || argc <= 1) ? 5 : atoi(argv[1]);
 
     if (!gpuSmoothInit()) {
         std::printf("[FAIL] gpuSmoothInit: %s\n", gpuSmoothLastError());
@@ -542,6 +643,65 @@ int main(int argc, char** argv) {
         { 3840, 2160, 22.0, "4K typical face" },
         { 640,  394,  22.0, "small frame" },
     };
+
+    // ---- growp 子命令：只跑边距消融，不跑其它用例 ----
+    if (ablate) {
+        // 档位密一点：有效边距 = alignDown32(pxLo - growP) 的结果，
+        // 每档实际落点会被 32 对齐推走 0~31 像素，稀疏采点会读错阈值。
+        static const int gps[] = { 0, 8, 16, 24, 32, 40, 48, 64, 96, 116 };
+        const int nGps = (int)(sizeof(gps) / sizeof(gps[0]));
+
+        // 消融专用画幅：比主台架更极端 —— 脸越小，边距占搬运量的比例越大，
+        // 阈值也越容易被逼近。3% 的脸在 4K 上只有巴掌大，是边距开销的最坏情形。
+        const Spec ablSpecs[] = {
+            { 1920, 1080, 22.0, "1080p typical face" },
+            { 1920, 1080,  6.0, "1080p small face" },
+            { 1920, 1080,  3.0, "1080p tiny face" },
+            { 3840, 2160,  6.0, "4K small face" },
+            { 3840, 2160, 22.0, "4K typical face" },
+            { 3840, 2160,  3.0, "4K tiny face" },
+            { 1280,  720, 22.0, "720p typical face" },
+            { 640,  394,  22.0, "small frame" },
+        };
+
+        std::printf("=== growP 消融：边距逐档下压，判据=与 CPU 整帧逐字节一致 ===\n");
+        std::printf("生产公式 growP = passes*32 + passes*(r2+ra) + 2 = 116 平面像素（232 图像像素/边）\n");
+        std::printf("「多搬」= 实际搬运矩形面积 / 有效输出区面积 - 1\n\n");
+
+        int totalBad = 0;
+        for (size_t i = 0; i < sizeof(ablSpecs) / sizeof(ablSpecs[0]); ++i) {
+            std::vector<GrowRow> rows;
+            const int bad = growpOneCase(ablSpecs[i].w, ablSpecs[i].h, ablSpecs[i].pct,
+                                         reps, gps, nGps, &rows);
+            totalBad += bad;
+
+            // 有效输出区 = bbox + 8*2（gpu_smooth 里的 outGrow）
+            std::printf("[GROWP] %-20s %dx%d 脸面积=%.1f%%", ablSpecs[i].note,
+                        ablSpecs[i].w, ablSpecs[i].h, ablSpecs[i].pct);
+            if (!rows.empty())
+                std::printf("  r=%d/%d/%d P=%d  生产 growP=%d",
+                            rows[0].r1, rows[0].r2, rows[0].ra, rows[0].passes,
+                            rows[0].passes * 32 + rows[0].passes * (rows[0].r2 + rows[0].ra) + 2);
+            std::printf("\n");
+            std::printf("  %-8s %-8s %-13s %-9s %-9s %-9s %-6s %s\n",
+                        "growP", "有效", "搬运矩形", "搬运MB", "搬图ms", "合计ms", "diff", "判定");
+            for (size_t k = 0; k < rows.size(); ++k) {
+                const GrowRow& r = rows[k];
+                std::printf("  %-8s %-8d %-13s %-9.2f %-9.2f %-9.2f %-6lld %s\n",
+                            (r.gp == 116 || r.gp == 140) ? (std::to_string(r.gp) + "*").c_str()
+                                                         : std::to_string(r.gp).c_str(),
+                            r.effM,
+                            (std::to_string(r.imgW) + "x" + std::to_string(r.imgH)).c_str(),
+                            r.mb, r.move, r.total, r.diff,
+                            r.diff == 0 ? "OK" : (std::string("MISMATCH max=") +
+                                                  std::to_string(r.maxd)).c_str());
+            }
+            std::printf("\n");
+        }
+        gpuSmoothShutdown();
+        std::printf("RESULT: %s\n", totalBad ? "见 MISMATCH 行" : "全部档位逐字节一致");
+        return 0;
+    }
 
     std::vector<Row> rows;
     for (size_t i = 0; i < sizeof(specs) / sizeof(specs[0]); ++i) {

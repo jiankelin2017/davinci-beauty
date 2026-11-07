@@ -6,6 +6,9 @@
 # vcvars64.bat is blocked in the sandbox (it shells out to reg.exe), so the
 # INCLUDE / LIB / PATH are assembled by hand -- same as build.ps1 and
 # build_roi.ps1. Compiler flags mirror the production build.
+#
+# /DBEAUTY_TEST_HOOKS 只在本台架加：它放开 gpuSmoothSetGrowPForTest()，
+# 用来做 growP 边距消融。生产 build.ps1 不带这个宏，产线二进制里没有该符号。
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
@@ -58,6 +61,7 @@ $env:PATH = (Join-Path $vctools 'bin\Hostx64\x64') + ';' + $env:PATH
 Push-Location $here
 try {
     & $cl /nologo /O2 /EHsc /MD /W3 /utf-8 /std:c++17 /arch:AVX2 /DNOMINMAX `
+        /DBEAUTY_TEST_HOOKS `
         /I"$src" `
         'gpu_move_bench.cpp' `
         (Join-Path $src 'gpu_smooth.cpp') `
