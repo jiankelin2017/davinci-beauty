@@ -106,6 +106,14 @@ struct GpuSmoothTiming {
     int    pipeRetrieved = 0;
     int    pipeDeferred  = 0;
     double submitMs      = 0.0;
+
+    // 为什么没走流水线（1.1.1.0 加）。1.1.0.0 只在日志里打「管/取」两个数字，
+    // 真机出问题时无法区分「是跳帧了」还是「画面在动所以主动退回」——
+    // 前者正常，后者说明这条优化在当前素材上根本不适用。分开才看得懂。
+    //   0 走了 / 1 无上一帧 / 2 跳帧或超时 / 3 参数变 / 4 矩形变 / 5 画面在动
+    int    pipeBlock  = 0;
+    float  pipeSigAvg = 0.0f;   // 矩形内采样点平均差（8bit 灰度当量）
+    float  pipeSigBad = 0.0f;   // 差异超过 8 的采样点占比
 };
 
 // 懒初始化。返回 false 表示无可用 GPU，调用方应回落 CPU。

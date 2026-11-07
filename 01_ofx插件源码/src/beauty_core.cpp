@@ -783,7 +783,7 @@ static const char* gpuSmoothModeName() {
 // **代价是 ROI 内的画面晚一帧**（ROI 外仍是当前帧的 src）。真机目视与台架都测过，
 // 23.976fps 下不可辨；但如果哪天要做慢动作或单帧精修，把这一行改成 off 就回旧行为。
 // 只在「连续播放」时生效：跳帧、拖动播放头、单帧渲染都会自动退回同步路径
-// （见 gpu_smooth.cpp 里 PendingResult 的三条前提），所以静止画面与导出首帧不受影响。
+// （见 gpu_smooth.cpp 里 PendingResult 的五条前提），所以静止画面与导出首帧不受影响。
 //
 // 取值：off = 每帧同步取回（旧行为）；auto/on = 允许延迟取回（默认）。
 static bool gpuSmoothPipelineOn() {
@@ -803,6 +803,22 @@ static bool gpuSmoothPipelineOn() {
         return true;
     }();
     return on;
+}
+
+// 流水线阻断原因的短标签（1.1.1.0）。日志里打数字看不出所以然，打这几个词就一眼明白：
+//   ok=走成了 / noprev=没有上一帧 / jump=跳帧或超时 / param=参数变了 /
+//   rect=人脸框变了 / motion=框内画面在动（当前素材不适合这条优化）
+// 真机排障时 motion 与 jump 的含义完全不同：jump 是正常的（拖播放头），
+// motion 说明这条优化在当前素材上根本用不上，该考虑不再尝试。
+static const char* pipeBlockTag(int c) {
+    switch (c) {
+        case 1:  return "noprev";
+        case 2:  return "jump";
+        case 3:  return "param";
+        case 4:  return "rect";
+        case 5:  return "motion";
+        default: return "ok";
+    }
 }
 
 
@@ -1937,7 +1953,7 @@ public:
                                   " 上传=%.2f(Map %.2f/拷 %.2f) 算=%.2f 读回=%.2f(等GPU %.2f/拷 %.2f)"
                                   " 补齐=%.2f 合计=%.2f ms"
                                   " | 累计 %lld 帧 均合计=%.2f 均平面像素=%.0f"
-                                  " 管=%d/取=%d",
+                                  " 管=%d/取=%d 阻=%s 差=%.2f/%.4f",
                                   gpuSmoothModeName(),
                                   gst.imgW, gst.imgH, gst.imgX0, gst.imgY0,
                                   gst.pw, gst.ph, gst.r1, gst.r2, gst.ra, gst.passes,
@@ -1945,7 +1961,9 @@ public:
                                   gst.downloadMs,
                                   gst.mapWaitMs, gst.mapCopyMs, gst.fillMs, gst.totalMs,
                                   n, at, ap,
-                                  gst.pipeDeferred, gst.pipeRetrieved);
+                                  gst.pipeDeferred, gst.pipeRetrieved,
+                                  pipeBlockTag(gst.pipeBlock),
+                                  gst.pipeSigAvg, gst.pipeSigBad);
                         }
                     }
                     if (!gpuSmoothOk) {

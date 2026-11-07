@@ -25,7 +25,7 @@
 ```
 :: 直接出正式包（日常就用这条）
 python build_nsis.py
-→ build\DaVinciBeauty_Setup_v<版本>.exe（版本取自 src\nama_engine.h，当前 1.1.0.0；四段式，与 NAMA_BUILD_STR 同源）；若要随包分发，再手动复制一份到仓库根目录同名文件
+→ build\DaVinciBeauty_Setup_v<版本>.exe（版本取自 src\nama_engine.h，当前 1.1.1.0；四段式，与 NAMA_BUILD_STR 同源）；若要随包分发，再手动复制一份到仓库根目录同名文件
 
 :: 改过安装脚本、想先试一遍又不想弄脏正式安装时，才需要沙箱
 python build_nsis.py --sandbox

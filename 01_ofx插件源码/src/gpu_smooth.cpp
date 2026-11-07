@@ -411,18 +411,31 @@ ID3D11Texture2D*           g_stage[2] = {nullptr, nullptr};
 // 延迟取回把这条依赖放宽到一帧：第 N 帧只提交，第 N+1 帧回来取 N 的结果，
 // 中间隔着一个完整帧间隔（41ms），等 GPU 自然归零。
 //
-// 代价是**画面晚一帧**：dst 的 ROI 内是本帧上一帧的成品，ROI 外仍是本帧的 src
-// （补齐用的是当前 src）。真机目视与台架都测过，23.976fps 下不可辨（见 PROGRESS 2c 节）。
+// 代价是**画面晚一帧**：dst 的 ROI 内是上一帧的成品，ROI 外仍是本帧的 src。
 //
-// 三个必须同时满足的前提，缺一个就退回同步路径：
+// ★★ 1.1.0.0 的翻车（必读，别再犯）★★
+// 1.1.0.0 只要求「参数一致」就放行，**没要求 ROI 内的画面本身没变**。真机上于是出现：
+// 矩形内贴的是上一帧那一大块内容，人物一动就跟当前帧对不上，表现为「以脸为中心的长方形
+// 透明遮罩、闪烁、像放大」。ROI 实测 1418×952（1920×1080 画面的 74%×88%），错位一眼可见。
+// 更糟的是台架当时没拦住：pipelineCase 的期望值是「本帧 src + 上一帧矩形填上一帧 CPU 结果」，
+// 等于把错误行为定义成了正确输出 —— 7 行全 0 差异、逐字节 18/18 全是真数字，验的却是错的设计。
+// 教训：判据必须以「本帧的正确输出」为准，不能以「实现怎么拼」为准。
+//
+// 正确的充分条件（磨皮是确定性的）：**矩形内的 src 与 mask 与上一帧完全相同**，
+// 且参数相同 → 上一帧那份结果就恒等于本帧应有的结果，贴回去零误差。
+// 所以判据落在「输入是否相同」，而不是「输出看起来像不像」。
+//
+// 五个必须同时满足的前提，缺一个就退回同步路径：
 //   ① 同一实例（owner）—— 多实例交替渲染时状态是共用的，串了就写错帧；
 //   ② 帧号连续（serial 相差 1）—— 跳帧/重渲染说明不是流式播放；
 //   ③ 两次调用间隔 ≤ kPipeGapMs —— 拖动播放头、静止单帧渲染都会超过这个间隔；
-//   ④ 参数与包围盒完全一致 —— 否则上一帧那份是用**旧参数**算的，等于把滑块拖动
-//      退后一格。这条是 mock_host「亮度不变」用例逼出来的：它先渲染 blur=0、
-//      再改 blur=100 渲染一次，两者间隔极短且帧号连续，前三条全过，
-//      于是第二次拿到的是 blur=0 的结果，判据直接掉到阈值外。
-// 四条任一不满足就当场同步算完，宁可慢一帧，也不把别人的画面写进这一帧。
+//   ④ 参数一致 —— 否则上一帧那份是用**旧参数**算的，等于把滑块拖动退后一格。
+//      这条是 mock_host「亮度不变」用例逼出来的：它先渲染 blur=0、再改 blur=100
+//      渲染一次，两者间隔极短且帧号连续，前三条全过，于是第二次拿到的是
+//      blur=0 的结果，判据直接掉到阈值外。
+//   ⑤ ROI 矩形完全一致 + 矩形内画面判定为静止（1.1.1.0 加）—— 见上。
+//      矩形必须先一致：采样点是按矩形相对网格取的，矩形一换，点就对不上号。
+// 五条任一不满足就当场同步算完，宁可慢一帧，也不把上一帧的画面写进这一帧。
 struct PendingResult {
     bool      valid  = false;
     int       slot   = 0;
@@ -440,6 +453,34 @@ PendingResult g_pend;
 int       g_slot = 0;          // 本帧使用哪一组 DYNAMIC/STAGING
 const double kPipeGapMs = 150.0;   // 两次调用间隔超过它就当成「非流式」
 double    g_lastEndMs = 0.0;   // 上一次 gpuSmoothRgbBand 返回的时刻
+
+// ---- 矩形内「画面静止」判据（1.1.1.0）----
+//
+// 存储：上一帧 ROI 内按网格采到的 R,G,B,mask 四个字节/点。用独立 buffer 而不是
+// 塞进 PendingResult，是因为 PendingResult 会被整结构体赋值（g_pend = PendingResult{}）
+// 几十次，里面挂个 vector 会反复申请释放几十 KB。
+std::vector<unsigned char> g_pendSig;
+int  g_pendSigStep = 0;        // 采样步长（像素）；0 表示没有可用签名
+std::vector<unsigned char> g_curSig;   // 本帧临时采样（帧头采、帧尾换给 g_pendSig）
+// 采样点上限：超过就自动把步长翻倍。4K 全屏矩形 + 步长 8 会有 12.9 万点（518KB），
+// 稀有但真会出现（人脸框异常大时），必须封顶。
+const int kSigMaxPoints = 40000;
+// 判据阈值。用「平均差 + 超阈值点占比」而不是「最大差」：视频压缩噪声会让
+// 完全静止的相邻帧同位置像素差 1~3，用最大值判定会被噪声直接击穿、永不触发。
+const float kSigAvgLimit  = 1.5f;      // 四点最大差 的平均，超过就算动了
+const float kSigBadDelta  = 8.0f;      // 单点差异超过它算一个「坏点」
+const float kSigBadRatio  = 0.005f;    // 坏点占比上限（0.5%）
+
+// 流水线被阻断的原因（1.1.1.0）。只进日志，不参与判定逻辑。
+enum PipeBlock {
+    PB_NONE = 0,    // 走成了
+    PB_NO_PREV,     // 没有待取回结果（首帧 / 刚落回同步）
+    PB_SERIAL,      // 帧号不连续、间隔超时、或换了实例
+    PB_PARAMS,      // 参数变了
+    PB_RECT,        // ROI 矩形变了
+    PB_MOTION,      // 矩形内画面在动
+};
+int g_pipeBlock = PB_NONE;
 
 // 真实尺寸（本帧逻辑边界）与分配尺寸（纹理实际大小）必须分开存：
 // 桶化之后纹理比真实矩形大一圈，shader 的 clamp / dispatch 用的是真实值，
@@ -486,6 +527,10 @@ void releaseTextures() {
     // 纹理没了，上一帧那份待取回的结果也就没了 —— 不清会把野指针当索引用
     g_pend = PendingResult{};
     g_slot = 0;
+    // 签名与 g_pend 同生共死：尺寸/矩形一变，上一帧的采样点就对不上号了，
+    // 留着只会让 compareSig 拿错位的点去比（这正是 1.1.0.0 真机闪烁的同类错误）。
+    g_pendSigStep = 0;
+    g_pendSig.clear();
     g_imgRW = g_imgRH = g_pw = g_ph = 0;
     g_allocImgW = g_allocImgH = g_allocPw = g_allocPh = 0;
 }
@@ -743,6 +788,10 @@ bool ensureResources(int imgRW, int imgRH, int pw, int ph) {
     // 重建意味着尺寸/设备变了，上一帧的待取回结果作废（releaseTextures 已清，这里再保险一次）
     g_pend = PendingResult{};
     g_slot = 0;
+    // 签名与 g_pend 同生共死：尺寸/矩形一变，上一帧的采样点就对不上号了，
+    // 留着只会让 compareSig 拿错位的点去比（这正是 1.1.0.0 真机闪烁的同类错误）。
+    g_pendSigStep = 0;
+    g_pendSig.clear();
 
     g_imgRW = imgRW; g_imgRH = imgRH; g_pw = pw; g_ph = ph;
     g_allocImgW = aImgW; g_allocImgH = aImgH;
@@ -863,6 +912,72 @@ void gpuSmoothResourceStats(long long* rebuilds, long long* deviceCreates,
     if (allocImgH)     *allocImgH     = g_allocImgH;
     if (allocPw)       *allocPw       = g_allocPw;
     if (allocPh)       *allocPh       = g_allocPh;
+}
+
+// ---------------------------------------------------------------- 矩形内静止判定
+// 见上方「1.1.0.0 的翻车」：延迟取回只有在**输入没变**时才等价于同步计算。
+// 这里用稀疏网格近似「逐字节相同」，代价约 0.1ms，远小于它要省的 2ms。
+//
+// 为什么不能逐字节比：ROI 常到 1400×950 = 135 万像素 × 4 字节 = 5.4MB，
+// 每帧读两遍再比，单这一项就要 1ms 以上，把收益吃掉一半。
+int sigStepFor(int rw, int rh) {
+    int step = 8;
+    while (((rw + step - 1) / step) * ((rh + step - 1) / step) > kSigMaxPoints)
+        step *= 2;
+    return step;
+}
+
+// 把矩形内网格点采成 R,G,B,mask 四字节/点。取格子中心（+step/2），
+// 避免采样点总压在矩形左/上边界 —— 那里通常是包围盒外扩出来的空白，判不出东西。
+// mask 可以为空，此时该通道恒填 0（不会因为「没掩码」而被当成「掩码变了」）。
+void takeSig(const unsigned char* src, const unsigned char* mask,
+             int w, int ox0, int oy0, int ox1, int oy1, int step,
+             std::vector<unsigned char>& out) {
+    out.clear();
+    if (!src || step <= 0 || ox1 <= ox0 || oy1 <= oy0) return;
+    const int half = step / 2;
+    for (int y = oy0 + half; y < oy1; y += step) {
+        const size_t row = (size_t)y * (size_t)w;
+        for (int x = ox0 + half; x < ox1; x += step) {
+            const unsigned char* p = src + (row + (size_t)x) * 4;
+            out.push_back(p[0]);
+            out.push_back(p[1]);
+            out.push_back(p[2]);
+            out.push_back(mask ? mask[row + (size_t)x] : 0);
+        }
+    }
+}
+
+// 比较两帧采样。返回 true = 判定为静止，可以延迟取回。
+// 同时看平均差与坏点占比：压缩噪声（相邻帧同点差 1~3）会抬高平均但几乎不产生坏点；
+// 真实运动会同时抬高两者。只用其中一个都会误判 —— 只用平均差，慢速运镜能蒙混过关；
+// 只用最大值，静止画面也会被噪声判成运动，流水线永不触发（1.1.0.0 就栽在这附近）。
+bool compareSig(const std::vector<unsigned char>& a,
+                const std::vector<unsigned char>& b,
+                float* outAvg, float* outBadRatio) {
+    if (outAvg)      *outAvg = 0.0f;
+    if (outBadRatio) *outBadRatio = 0.0f;
+    if (a.empty() || a.size() != b.size()) return false;
+    const size_t pts = a.size() / 4;
+    if (pts == 0) return false;
+    double sum = 0.0;
+    size_t bad = 0;
+    for (size_t i = 0; i < a.size(); i += 4) {
+        int d = std::abs((int)a[i] - (int)b[i]);
+        const int d1 = std::abs((int)a[i + 1] - (int)b[i + 1]);
+        const int d2 = std::abs((int)a[i + 2] - (int)b[i + 2]);
+        const int d3 = std::abs((int)a[i + 3] - (int)b[i + 3]);
+        if (d1 > d) d = d1;
+        if (d2 > d) d = d2;
+        if (d3 > d) d = d3;
+        sum += (double)d;
+        if ((float)d > kSigBadDelta) ++bad;
+    }
+    const float avg = (float)(sum / (double)pts);
+    const float badRatio = (float)bad / (float)pts;
+    if (outAvg)      *outAvg = avg;
+    if (outBadRatio) *outBadRatio = badRatio;
+    return avg <= kSigAvgLimit && badRatio <= kSigBadRatio;
 }
 
 // ---------------------------------------------------------------- 取回一段结果
@@ -1048,20 +1163,43 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     int    retrieved = 0;
 
     // ---- 0. 判定能否取回上一帧（2c）----
-    // 三个条件缺一不可：同一实例、帧号连续、两次调用挨得够近。任一不满足就作废
-    // 待取回结果、本帧走同步路径 —— 宁可慢一帧，也不把别人的画面写进这一帧。
+    // 五条前提见 PendingResult 上方注释。按「从便宜到贵」短路：采样要 0.1ms，
+    // 只在前面几条全过时才做 —— 掉帧、拖播放头那些帧不该再添负担。
     const bool pipeOk = allowPipeline && owner != nullptr && frameSerial >= 0;
     const double gapMs = (g_lastEndMs > 0.0) ? (tStart - g_lastEndMs) : 1e9;
-    // 参数指纹一致才复用上一帧那份（理由见 PendingResult 的 ④）。
-    // **注意不要把 bbox 放进指纹**：真人脸框每帧都会动 1~3 像素，一放进去流水线就永不触发。
-    // 包围盒变化属于「迟一帧」的固有代价，由 g_pend 自己记住的旧矩形处理。
+    // 参数指纹一致才复用上一帧那份（理由见 ④）。
+    // bbox 不进指纹，改由下面的 sameRect 直接比输出矩形 —— 是同一份信息，但语义更准：
+    // ox0..oy1 是外扩 8 并 clamp 之后的实际矩形，正是 blit 要用的那一块。
     const bool sameParams = g_pend.T == p.T && g_pend.I == p.I && g_pend.e == p.e &&
                             g_pend.protectK == p.protectK && g_pend.gwp == p.gwp &&
                             g_pend.f1 == p.f1 && g_pend.f2 == p.f2 && g_pend.fa == p.fa &&
                             g_pend.passes == passes && g_pend.halfRes == (p.halfRes != 0);
-    const bool adjacent = pipeOk && g_pend.valid && g_pend.owner == owner &&
-                          g_pend.serial + 1 == frameSerial && gapMs <= kPipeGapMs &&
-                          sameParams;
+    const bool sameRect = g_pend.ox0 == ox0 && g_pend.oy0 == oy0 &&
+                          g_pend.ox1 == ox1 && g_pend.oy1 == oy1;
+    const bool baseOk = pipeOk && g_pend.valid && g_pend.owner == owner;
+    const bool seqOk  = baseOk && g_pend.serial + 1 == frameSerial && gapMs <= kPipeGapMs;
+
+    // ⑤ 矩形内画面静止（1.1.1.0）。磨皮是确定性的：只要 src/mask 与上一帧一样，
+    // 上一帧那份结果就恒等于本帧应有的结果 —— 这是延迟取回唯一站得住脚的依据。
+    bool  sigFresh = false;
+    bool  stillOk  = false;
+    float sigAvg = 0.0f, sigBad = 0.0f;
+    if (seqOk && sameParams && sameRect && !g_pendSig.empty()) {
+        takeSig(src, mask, w, ox0, oy0, ox1, oy1, g_pendSigStep, g_curSig);
+        sigFresh = true;
+        stillOk  = compareSig(g_pendSig, g_curSig, &sigAvg, &sigBad);
+    }
+
+    const bool adjacent = seqOk && sameParams && sameRect && stillOk;
+
+    // 阻断原因只进日志：真机上一眼看出流水线为什么没跑，省得远程猜。
+    if (adjacent)         g_pipeBlock = PB_NONE;
+    else if (!baseOk)     g_pipeBlock = PB_NO_PREV;
+    else if (!seqOk)      g_pipeBlock = PB_SERIAL;
+    else if (!sameParams) g_pipeBlock = PB_PARAMS;
+    else if (!sameRect)   g_pipeBlock = PB_RECT;
+    else                  g_pipeBlock = PB_MOTION;
+
     if (!adjacent) g_pend.valid = false;
 
     if (adjacent) {
@@ -1222,6 +1360,17 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         g_pend.T = p.T; g_pend.I = p.I; g_pend.e = p.e; g_pend.protectK = p.protectK;
         g_pend.gwp = p.gwp; g_pend.f1 = p.f1; g_pend.f2 = p.f2; g_pend.fa = p.fa;
         g_pend.passes = passes; g_pend.halfRes = (p.halfRes != 0);
+
+        // ⑤ 的采样签名。帧头若已按「同一个矩形」采过，直接换过去 —— 省掉每帧一次
+        // 0.1ms 遍历。sigFresh 为真即代表本帧矩形 == 上一帧矩形，而步长只由矩形
+        // 尺寸决定，所以换过去之后 g_pendSigStep 仍然与 g_pendSig 自洽。
+        if (sigFresh) {
+            g_pendSig.swap(g_curSig);
+        } else {
+            g_pendSigStep = sigStepFor(ox1 - ox0, oy1 - oy0);
+            takeSig(src, mask, w, ox0, oy0, ox1, oy1, g_pendSigStep, g_pendSig);
+        }
+
         g_slot ^= 1;                    // 下一帧换那一组，写侧就不必等这一帧的拷贝
         if (!retrieved) {
             if (!blitStageToDst(slot, ox0, oy0, ox1, oy1, src, dst, w, h,
@@ -1261,6 +1410,9 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         timing->submitMs   = submitMs;
         timing->pipeRetrieved = retrieved;
         timing->pipeDeferred  = pipeOk ? 1 : 0;
+        timing->pipeBlock     = g_pipeBlock;
+        timing->pipeSigAvg    = sigAvg;
+        timing->pipeSigBad    = sigBad;
         timing->imgX0 = imgX0; timing->imgY0 = imgY0;
         timing->imgW = imgRW;  timing->imgH = imgRH;
         timing->planeX0 = plx0; timing->planeY0 = ply0;
