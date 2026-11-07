@@ -2881,19 +2881,47 @@ private:
         int neckPx = 0;
         int bx0 = w, by0 = h, bx1 = -1, by1 = -1;
 
+        // 1.2.6：掩码绘制按行并行。绘制本身写的是**自己那一行**的 mask，
+        // 行与行不重叠，所以可以切块；只有这两个统计量是共享的
+        // （px = 新增像素数、包围盒），必须每块各记一份再合并。
+        //
+        // 为什么只并行脸框、不并行脖子带：脖子带的 colEnd 是 thread_local 的，
+        // 由调用线程在上一趟算好，换到 worker 线程会读到空表。
+        struct PaintStat {
+            long px = 0;
+            int bx0 = 1 << 30, by0 = 1 << 30, bx1 = -1, by1 = -1;
+        };
+        PaintStat pstat;
+        std::mutex pstatMu;
+        auto mergePaint = [&](const PaintStat& s) {
+            std::lock_guard<std::mutex> lk(pstatMu);
+            pstat.px += s.px;
+            if (s.bx0 < pstat.bx0) pstat.bx0 = s.bx0;
+            if (s.bx1 > pstat.bx1) pstat.bx1 = s.bx1;
+            if (s.by0 < pstat.by0) pstat.by0 = s.by0;
+            if (s.by1 > pstat.by1) pstat.by1 = s.by1;
+        };
+        auto rowThreads = [](int rows) {
+            int nt = (g_cfg.threads > 0) ? g_cfg.threads
+                                         : (int)std::thread::hardware_concurrency();
+            if (nt > 16) nt = 16;
+            if (nt > rows / 32) nt = rows / 32;
+            return (nt < 1) ? 1 : nt;
+        };
+
         // 单像素落笔：肤色权重 × 边界羽化系数，取最大值合并（脸框与脖子通道重叠）。
         // 返回 true = 这一像素真的落了非零值（用于统计包围盒的 y 范围）。
         auto paintSkin = [&](unsigned char* mrow, const unsigned char* row,
-                             int x, int feather) {
+                             int x, int feather, PaintStat& st) {
             const int wgt = skinWeight(row[x * 4 + 0], row[x * 4 + 1],
                                        row[x * 4 + 2]);
             if (wgt <= 0) return false;
             const int v = (feather >= 256) ? wgt : (wgt * feather + 128) / 256;
             if (v <= 0) return false;
             if (!mrow[x]) {
-                px++;
-                if (x < bx0) bx0 = x;
-                if (x > bx1) bx1 = x;
+                st.px++;
+                if (x < st.bx0) st.bx0 = x;
+                if (x > st.bx1) st.bx1 = x;
             }
             // 脸框与脖子通道可能重叠：取较大值，别让后画的覆盖掉
             if (v > (int)mrow[x]) mrow[x] = (unsigned char)v;
@@ -2903,14 +2931,15 @@ private:
         // paintSkin 的「权重已算好」版本。脖子跟随肤色时，同一像素的权重
         // 要先用一次（探边界）、再用一次（落笔），重复调 skinWeight 里那个 sqrt
         // 是白费的。
-        auto paintW = [&](unsigned char* mrow, int x, int wgt, int feather) {
+        auto paintW = [&](unsigned char* mrow, int x, int wgt, int feather,
+                          PaintStat& st) {
             if (wgt <= 0) return false;
             const int v = (feather >= 256) ? wgt : (wgt * feather + 128) / 256;
             if (v <= 0) return false;
             if (!mrow[x]) {
-                px++;
-                if (x < bx0) bx0 = x;
-                if (x > bx1) bx1 = x;
+                st.px++;
+                if (x < st.bx0) st.bx0 = x;
+                if (x > st.bx1) st.bx1 = x;
             }
             if (v > (int)mrow[x]) mrow[x] = (unsigned char)v;
             return true;
@@ -2970,28 +2999,37 @@ private:
                 const float a = hw, b = hh;
                 const float ia2 = 1.0f / (a * a), ib2 = 1.0f / (b * b);
                 const float rEff = 0.5f * (a + b);
-                for (int y = y0; y < y1; y++) {
-                    const unsigned char* row = src + ((size_t)y * w) * 4;
-                    unsigned char* mrow = &mask[(size_t)y * w];
-                    const float dy = (float)y + 0.5f - cy;
-                    const float ty = dy * dy * ib2;
-                    bool any = false;
-                    for (int x = x0; x < x1; x++) {
-                        const float dx = (float)x + 0.5f - cx;
-                        const float q = sqrtf(dx * dx * ia2 + ty);
-                        if (q >= 1.0f) continue;      // 椭圆外不落笔，等价于旧的矩形裁剪
-                        const int dpx = (int)((1.0f - q) * rEff + 0.5f);
-                        if (paintSkin(mrow, row, x, featherRamp(dpx, fe))) any = true;
+                auto ellBody = [&](int yb, int ye) {
+                    PaintStat st;
+                    for (int y = yb; y < ye; y++) {
+                        const unsigned char* row = src + ((size_t)y * w) * 4;
+                        unsigned char* mrow = &mask[(size_t)y * w];
+                        const float dy = (float)y + 0.5f - cy;
+                        const float ty = dy * dy * ib2;
+                        bool any = false;
+                        for (int x = x0; x < x1; x++) {
+                            const float dx = (float)x + 0.5f - cx;
+                            const float q = sqrtf(dx * dx * ia2 + ty);
+                            if (q >= 1.0f) continue;      // 椭圆外不落笔，等价于旧的矩形裁剪
+                            const int dpx = (int)((1.0f - q) * rEff + 0.5f);
+                            if (paintSkin(mrow, row, x, featherRamp(dpx, fe), st)) any = true;
+                        }
+                        // 只在**这一行真的落了像素**时扩 y：否则椭圆上下顶点那几行没肤色，
+                        // 也会把包围盒拽到最大，ROI 白白变大、性能数据失真。
+                        if (any) {
+                            if (y < st.by0) st.by0 = y;
+                            if (y > st.by1) st.by1 = y;
+                        }
                     }
-                    // 只在**这一行真的落了像素**时扩 y：否则椭圆上下顶点那几行没肤色，
-                    // 也会把包围盒拽到最大，ROI 白白变大、性能数据失真。
-                    if (any) {
-                        if (y < by0) by0 = y;
-                        if (y > by1) by1 = y;
-                    }
-                }
+                    mergePaint(st);
+                };
+                const int ntE = rowThreads(y1 - y0);
+                if (ntE <= 1) ellBody(y0, y1);
+                else beautycore::parallelRows(y0, y1, ntE, ellBody);
             } else {
-            for (int y = y0; y < y1; y++) {
+            auto rectBody = [&](int yb, int ye) {
+            PaintStat st;
+            for (int y = yb; y < ye; y++) {
                 const unsigned char* row = src + ((size_t)y * w) * 4;
                 unsigned char* mrow = &mask[(size_t)y * w];
                 // 羽化只削「远离脸」的边：上沿永远是发际线一侧，下沿是下巴一侧。
@@ -3019,14 +3057,21 @@ private:
                     // 不会重新出现「下巴接缝」；而脖子带没盖到的地方会老老实实按 fe
                     // 平滑淡出，不再有一级台阶。
                     if (fBot < feather) feather = fBot;
-                    if (paintSkin(mrow, row, x, feather)) any = true;
+                    if (paintSkin(mrow, row, x, feather, st)) any = true;
                 }
                 // 只在**这一行真的落了像素**时扩 y：否则脸框下沿那几行没肤色，
                 // 也会把包围盒拽到最大，ROI 白白变大、性能数据失真。
                 if (any) {
-                    if (y < by0) by0 = y;
-                    if (y > by1) by1 = y;
+                    if (y < st.by0) st.by0 = y;
+                    if (y > st.by1) st.by1 = y;
                 }
+            }
+            mergePaint(st);
+            };
+            {
+                const int ntR = rowThreads(y1 - y0);
+                if (ntR <= 1) rectBody(y0, y1);
+                else beautycore::parallelRows(y0, y1, ntR, rectBody);
             }
             }
 
@@ -3071,7 +3116,8 @@ private:
             }
             // 诊断：三条脖子分支（跟随肤色 / 椭圆 / 矩形）共用一个「前后求差」，
             // 不必给每一条都插计数器 —— 分支出错时差值一样能反映出来。
-            const int pxBeforeNeck = px;
+            const long pxBeforeNeck = pstat.px;
+            PaintStat bandSt;
             if (g_maskShape & 4) {
                 // 脖子：**逐行跟随肤色的实际边界**（3.1.20）。
                 //
@@ -3237,13 +3283,14 @@ private:
                         const int dl = x - lo + 1, dr = hi - x + 1;
                         const int fx2 = featherRamp(dl < dr ? dl : dr, feNeck);
                         if (fx2 < feather) feather = fx2;
-                        if (paintW(mrow, x, wrow[x], feather)) any = true;
+                        if (paintW(mrow, x, wrow[x], feather, bandSt)) any = true;
                     }
                     if (any) {
-                        if (y < by0) by0 = y;
-                        if (y > by1) by1 = y;
+                        if (y < bandSt.by0) bandSt.by0 = y;
+                        if (y > bandSt.by1) bandSt.by1 = y;
                     }
                 }
+                mergePaint(bandSt);
             } else if (g_maskShape & 2) {
                 // 脖子也用椭圆距离场（3.1.20）：最宽处落在下颌线（yChin），向下按椭圆收窄。
                 // 旧版是 nx0..nx1 的**竖直直边**，头部摆动时两条直边在脖子上来回扫，
@@ -3263,17 +3310,19 @@ private:
                     const float dy = (float)y + 0.5f - cyN;
                     const float ty = dy * dy * ib2;
                     bool any = false;
+                    PaintStat st;
                     for (int x = nx0; x < nx1; x++) {
                         const float dx = (float)x + 0.5f - cx;
                         const float q = sqrtf(dx * dx * ia2 + ty);
                         if (q >= 1.0f) continue;
                         const int dpx = (int)((1.0f - q) * rEff + 0.5f);
-                        if (paintSkin(mrow, row, x, featherRamp(dpx, feNeck))) any = true;
+                        if (paintSkin(mrow, row, x, featherRamp(dpx, feNeck), st)) any = true;
                     }
                     if (any) {
-                        if (y < by0) by0 = y;
-                        if (y > by1) by1 = y;
+                        if (y < st.by0) st.by0 = y;
+                        if (y > st.by1) st.by1 = y;
                     }
+                    mergePaint(st);
                 }
             } else {
             for (int y = nyLo; y < nyHi; y++) {
@@ -3281,20 +3330,22 @@ private:
                 unsigned char* mrow = &mask[(size_t)y * w];
                 const int fBot = featherRamp(nyFar > y ? nyFar - y : y - nyFar, feNeck);
                 bool any = false;
+                PaintStat st;
                 for (int x = nx0; x < nx1; x++) {
                     const int dl = x - nx0 + 1, dr = nx1 - x;
                     int feather = fBot;
                     const int fx = featherRamp(dl < dr ? dl : dr, feNeck);
                     if (fx < feather) feather = fx;
-                    if (paintSkin(mrow, row, x, feather)) any = true;
+                    if (paintSkin(mrow, row, x, feather, st)) any = true;
                 }
                 if (any) {
-                    if (y < by0) by0 = y;
-                    if (y > by1) by1 = y;
+                    if (y < st.by0) st.by0 = y;
+                    if (y > st.by1) st.by1 = y;
                 }
+                mergePaint(st);
             }
             }
-            neckPx += px - pxBeforeNeck;
+            neckPx += (int)(pstat.px - pxBeforeNeck);
         }
 
         // 五官保护区：**只画眼睛，不画嘴巴**。
@@ -3329,6 +3380,8 @@ private:
             if (fx1 > fbx1) fbx1 = fx1;
             if (fy1 > fby1) fby1 = fy1;
         }
+        px = (int)pstat.px;
+        if (pstat.bx1 >= 0) { bx0 = pstat.bx0; bx1 = pstat.bx1; by0 = pstat.by0; by1 = pstat.by1; }
         stOut.skinPx   = px;
         stOut.neckPx   = neckPx;
         stOut.faceBoxA = (fbx1 > fbx0 && fby1 > fby0) ? (fbx1 - fbx0) * (fby1 - fby0) : 0;

@@ -166,8 +166,18 @@ bool FaceDetector::load(const char* modelPath, std::string& err) {
     release();
     inputSize_ = kDefaultInputSize;   // 动态 shape 时按默认值跑
     fixedSize_ = false;
+    // 推理线程数可由环境变量覆盖（1.2.6）：默认仍是 kInferThreads=2，
+    // 不改变直播场景下的输电线（编码通常占 4~6 核，抢不得）。
+    // 但导出/离线渲染时宿主不吃编码核，加线程是纯赚 —— 实测 640x640
+    // 2 线程 ≈ 8-9 ms，6 线程 ≈ 3-4 ms，而人脸检测正是「掩码」那一段的大头。
+    // 用法：set BEAUTY_INFER_THREADS=6 再启动 Resolve（导出前）。
+    int inferThreads = kInferThreads;
+    if (const char* e = getenv("BEAUTY_INFER_THREADS")) {
+        int v = atoi(e);
+        if (v >= 1 && v <= 16) inferThreads = v;
+    }
     OnnxModel* m = new OnnxModel();
-    if (!m->load(modelPath, err, kInferThreads)) {
+    if (!m->load(modelPath, err, inferThreads)) {
         delete m;
         return false;
     }
