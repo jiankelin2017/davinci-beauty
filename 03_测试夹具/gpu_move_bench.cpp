@@ -648,7 +648,8 @@ int main(int argc, char** argv) {
     if (ablate) {
         // 档位密一点：有效边距 = alignDown32(pxLo - growP) 的结果，
         // 每档实际落点会被 32 对齐推走 0~31 像素，稀疏采点会读错阈值。
-        static const int gps[] = { 0, 8, 16, 24, 32, 40, 48, 64, 96, 116 };
+        // -1 = 不覆盖，走生产公式（1.1.2.0 起）；116/140 = 旧公式在 1080p/4K 上的取值。
+        static const int gps[] = { -1, 0, 8, 16, 24, 32, 40, 48, 64, 96, 116 };
         const int nGps = (int)(sizeof(gps) / sizeof(gps[0]));
 
         // 消融专用画幅：比主台架更极端 —— 脸越小，边距占搬运量的比例越大，
@@ -665,8 +666,19 @@ int main(int argc, char** argv) {
         };
 
         std::printf("=== growP 消融：边距逐档下压，判据=与 CPU 整帧逐字节一致 ===\n");
-        std::printf("生产公式 growP = passes*32 + passes*(r2+ra) + 2 = 116 平面像素（232 图像像素/边）\n");
-        std::printf("「多搬」= 实际搬运矩形面积 / 有效输出区面积 - 1\n\n");
+        std::printf("生产公式 growP = passes*32 + passes*(r2+ra) + 2（标「生产」那行走的就是它）\n");
+        std::printf("曾试过的候选 passes*(r2+ra)+32+2 已于 1.1.2.0 撤回，见下方警告\n");
+        std::printf("「有效」= 输出区左边界到平面左边界的外扩，含 32 对齐的额外推挤\n\n");
+        // ------------------------------------------------------------------
+        // ⚠️ 本子命令的读数**不能直接拿去定 growP** —— 1.1.2.0 已经因此翻车一次，
+        //    详见 PROGRESS.md 第 (10) 节。原因：这里 buildMask 生成的包围盒占画幅
+        //    太大、常把 plx0 夹到 0，局部 x=0 正好等于整帧左边界，kernel 的 clamp
+        //    与真值相同 → 边距给多少都不出错，于是测出「8 就够」。
+        //    真实素材的脸在画面中间、四边不贴边时，flush 首块的 clamp ≠ 真值，
+        //    需求回到 32×passes 的量级。定阈值请用带真实素材的
+        //    `04_验收工具/baseline.py check`（18 例，blur100 是最敏感的那档）。
+        // ------------------------------------------------------------------
+        std::printf("警告：合成蒙版常把 plx0 夹到 0，边距读数偏乐观；定阈值请用黄金基线\n\n");
 
         int totalBad = 0;
         for (size_t i = 0; i < sizeof(ablSpecs) / sizeof(ablSpecs[0]); ++i) {
@@ -679,17 +691,20 @@ int main(int argc, char** argv) {
             std::printf("[GROWP] %-20s %dx%d 脸面积=%.1f%%", ablSpecs[i].note,
                         ablSpecs[i].w, ablSpecs[i].h, ablSpecs[i].pct);
             if (!rows.empty())
-                std::printf("  r=%d/%d/%d P=%d  生产 growP=%d",
+                std::printf("  r=%d/%d/%d P=%d  growP 生产=%d 候选已撤回=%d",
                             rows[0].r1, rows[0].r2, rows[0].ra, rows[0].passes,
-                            rows[0].passes * 32 + rows[0].passes * (rows[0].r2 + rows[0].ra) + 2);
+                            rows[0].passes * 32 + rows[0].passes * (rows[0].r2 + rows[0].ra) + 2,
+                            rows[0].passes * (rows[0].r2 + rows[0].ra) + 32 + 2);
             std::printf("\n");
             std::printf("  %-8s %-8s %-13s %-9s %-9s %-9s %-6s %s\n",
                         "growP", "有效", "搬运矩形", "搬运MB", "搬图ms", "合计ms", "diff", "判定");
             for (size_t k = 0; k < rows.size(); ++k) {
                 const GrowRow& r = rows[k];
                 std::printf("  %-8s %-8d %-13s %-9.2f %-9.2f %-9.2f %-6lld %s\n",
-                            (r.gp == 116 || r.gp == 140) ? (std::to_string(r.gp) + "*").c_str()
-                                                         : std::to_string(r.gp).c_str(),
+                            (r.gp == -1) ? "生产"
+                                         : ((r.gp == 116 || r.gp == 140)
+                                                ? (std::to_string(r.gp) + "*").c_str()
+                                                : std::to_string(r.gp).c_str()),
                             r.effM,
                             (std::to_string(r.imgW) + "x" + std::to_string(r.imgH)).c_str(),
                             r.mb, r.move, r.total, r.diff,

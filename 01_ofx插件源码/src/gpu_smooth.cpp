@@ -1112,6 +1112,15 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     //   左邻 r 个像素，于是污染向内容方向传染一块，一共传递 passes 次。
     //   实测：ROI 与整帧的 B1 差异在内缩 64 处还剩 1613 字节、96 处归零，
     //   与 32×passes = 96 完全吻合。少这一项会稳定差出 1~2 灰阶。
+    //
+    // 【1.1.2.0 撤回】曾按「台架 growp 消融」把常数项改成 32（不乘 passes），
+    //   理由是 1080p 首个零差异档只到 8。那个结论是**夹具假象**：那几组合成
+    //   蒙版的包围盒贴着画幅边缘，plx0 被 clamp 到 0，局部 x=0 恰好就是整帧
+    //   的边界，clamp 与真值相同 → 边距再小也不出错。换成 1074×604 的真实
+    //   素材跑黄金基线，growP≤52 稳定在 blur100 差 1 字节，64 才归零；而
+    //   blur100 的门控阈值 T 最大、磨皮权重最满，正是最能把 1 LSB 放大的档。
+    //   32×passes 是「污染传染 passes 块」的结构性下界，只有改 flush 方案
+    //   （让首块读到真邻居）才能去掉，压常数项做不到。
     int growP = passes * 32 + passes * (r2 + ra) + 2;
 #ifdef BEAUTY_TEST_HOOKS
     // 消融实验专用（台架 growp 子命令）。生产构建里没有这一段。

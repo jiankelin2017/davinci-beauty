@@ -303,6 +303,13 @@ DaVinci Beauty；v3.0.0 进一步**脱离旧版闭源 SDK**，改用完全自研
 - `selftest_ofx.py` —— 不经 OFX 协议，直接调 `NamaSelfTest` 跑
   「加载引擎 → 初始化 → 渲染 → 落盘」（自研引擎，无需 GL 上下文）。
 - `probe_nama.py` / `probe_*.py` / `sweep_*.py` / `diag_*.py` —— 各阶段探针与排查脚本（保留过程证据）。
+- `gpu_move_bench.cpp`（C++ 台架）—— 直接调 `gpuSmoothRgbBand`，以「本帧 CPU 整帧结果」
+  为唯一参考做逐字节比对。`gpu_move_bench.exe 5` 跑全量（5 例静态 + 6 帧运动 +
+  21 帧延迟取回）；`gpu_move_bench.exe growp` 跑 `growP` 边距消融。
+  ⚠️ **`growp` 的边距读数偏乐观，不能直接拿去定 `growP`**：它的合成蒙版常把包围盒
+  顶到画幅边缘，`plx0` 被夹到 0，边距给多少都不出错（1.1.2.0 因此翻车过一次，
+  详见 `01_ofx插件源码/PROGRESS.md` 第 (10) 节）。定阈值要用 `04_验收工具` 的
+  18 例真实素材黄金基线，`blur100` 是最敏感的那档。
 
 运行基准时需自备原始帧，可通过 `NB_BENCH_RAW`（+`NB_BENCH_W/H`）指定；
 也可用 `NAMA_OFX_DLL` 指向尚未安装的插件二进制，用 `NAMA_ENGINE_DIR` 指向引擎资源目录。
