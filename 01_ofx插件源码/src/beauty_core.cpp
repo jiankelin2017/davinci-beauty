@@ -1974,6 +1974,31 @@ public:
                                                     pr3, bp, s3roi, g_cfg.threads,
                                                     s3ScratchA_);
                     }
+                    // ---- 掩码诊断（1.1.2.0）--------------------------------------
+                    // 目的只有一个：搞清楚 ROI 为什么能涨到画面的 74%x88%。
+                    // 每 12 帧一条（掩码 4 帧一算，等于每 3 份掩码采一条）。
+                    // 只读成员，不参与任何像素运算 —— 对画面逐字节零影响。
+                    //
+                    // 三个数怎么读：
+                    //   倍数 = 盒 / 脸盒。接近 1 说明脸框本身就大（只能改脸框策略）；
+                    //          远大于 1 说明脸框之外的皮肤在拉大 ROI。
+                    //   脖 = 掩码里由脖子通道新增的比例。占皮肤一半以上，收窄脖子立刻见效。
+                    //   皮肤 = 掩码像素占全帧比例。它若远大于 脸盒，说明肤色判据把
+                    //          背景也算进来了（墙、木色家具、衣物）。
+                    if ((frameNo_ % 12) == 0 && maskStat_.skinPx > 0) {
+                        const double total = (double)((size_t)w * h);
+                        const double skinPct = 100.0 * maskStat_.skinPx / total;
+                        const double neckPct = 100.0 * maskStat_.neckPx / total;
+                        const double boxPct  = 100.0 * (double)bounds_.area() / total;
+                        const double facePct = 100.0 * (double)maskStat_.faceBoxA / total;
+                        NALOG(BEAUTY_LOG_INFO,
+                              "掩码诊断 roi=%dx%d@%d,%d 盒=%.1f%% 脸盒=%.1f%% 倍数=%.1fx"
+                              " 皮肤=%.2f%% 脖=%.2f%% 脸=%.2f%% 脸数=%d",
+                              bounds_.width(), bounds_.height(), bounds_.x0, bounds_.y0,
+                              boxPct, facePct,
+                              (facePct > 0.01) ? (boxPct / facePct) : 0.0,
+                              skinPct, neckPct, skinPct - neckPct, lastFaces_);
+                    }
                 } else if (g_cfg.s3Tap25) {
                     // 25 tap 表面模糊（第 2 批 #5/#6/#7）。与下面盒式路径的
                     // 唯一差别是「两个低频层怎么算」；合成段 I/e/skin/eye 逐行相同。
@@ -2412,10 +2437,11 @@ private:
             // 这里同步跑一次只多约 15ms，且仅限首帧，换来「第一帧就有掩码」。
             if (!everHadMask_) {
                 std::string msg;
-                int px = 0, faces = 0;
-                if (buildMaskInto(src, w, h, mask_, protect_, bounds_, faces_, px, faces, msg,
+                MaskStat st;
+                int faces = 0;
+                if (buildMaskInto(src, w, h, mask_, protect_, bounds_, faces_, st, faces, msg,
                                   imgBottomUp_)) {
-                    maskPixels_ = px;
+                    maskStat_ = st;
                     lastFaces_ = faces;
                     lastScore_ = face_.lastBestScore();   // v3.0.4：本帧真实分数
                     maskHold_ = 0;
@@ -2454,13 +2480,14 @@ private:
         maskAge_ = 0;
 
         std::string msg;
-        int px = 0, faces = 0;
-        if (!buildMaskInto(src, w, h, mask_, protect_, bounds_, faces_, px, faces, msg,
+        MaskStat st;
+        int faces = 0;
+        if (!buildMaskInto(src, w, h, mask_, protect_, bounds_, faces_, st, faces, msg,
                            imgBottomUp_)) {
             lastScore_ = face_.lastBestScore();   // v3.0.4：同步路径本来就有值
             return onDetectFailed(msg, face_.inputSize(), face_.lastBestScore());
         }
-        maskPixels_ = px;
+        maskStat_ = st;
         lastFaces_ = faces;
         lastScore_ = face_.lastBestScore();
         maskHold_ = 0;
@@ -2468,6 +2495,24 @@ private:
         faceErr_ = msg;
         return true;
     }
+
+    // 掩码诊断三件套（1.1.2.0 加）。目的只有一个：搞清楚「ROI 为什么这么大」。
+    //
+    //   skinPx  掩码非零像素数（脸 + 脖子，重叠处只算一次）
+    //   neckPx  其中由**脖子通道**新增的像素数（脸已经画过的不重复计）
+    //   faceBoxA 所有脸框（按 kFaceBoxGrow 外扩后）并集的面积
+    //
+    // 三者与 ROI 面积一比，就能判定 ROI 是被什么撑大的：
+    //   盒/脸盒 接近 1   → 脸框本身就大，只能改脸框策略
+    //   盒/脸盒 远大于 1 → 脸框外的皮肤（脖子、背景误判、多脸并集）在拉大 ROI
+    //   脖/skin 占比高    → 脖子通道是主因，收窄它立刻见效
+    //
+    // 这几个数只是统计，**不参与任何像素写入**，所以对画面逐字节零影响。
+    struct MaskStat {
+        int skinPx   = 0;
+        int neckPx   = 0;
+        int faceBoxA = 0;
+    };
 
     // 检测 + 肤色掩码 + 五官保护 + 包围盒，全部算进调用方给的缓冲。
     //
@@ -2479,7 +2524,7 @@ private:
                        std::vector<unsigned char>& protectOut,
                        beautycore::RoiRect& boundsOut,
                        std::vector<beautycore::FaceBox>& fboxOut,
-                       int& pxOut, int& facesOut, std::string& msgOut,
+                       MaskStat& stOut, int& facesOut, std::string& msgOut,
                        bool flipY) {
         if (maskOut.size() != (size_t)w * h) maskOut.assign((size_t)w * h, 0);
         if (protectOut.size() != (size_t)w * h) protectOut.assign((size_t)w * h, 0);
@@ -2536,6 +2581,10 @@ private:
         // 1080p 下那两遍各是 200 万次内存访问，纯属为诊断付的代价。
         // 只有「从 0 变 255」才计数，否则脸框与脖子通道重叠处会被重复算。
         int px = 0;
+        // 脖子通道单独计数（1.1.2.0 诊断）。做法是「记下进脖子前的 px，
+        // 出来后求差」—— paintSkin/paintW 只在 mrow[x] 由 0 变非零时才 ++px，
+        // 所以这个差值天然不含脸已经占过的像素，不需要额外的去重逻辑。
+        int neckPx = 0;
         int bx0 = w, by0 = h, bx1 = -1, by1 = -1;
 
         // 单像素落笔：肤色权重 × 边界羽化系数，取最大值合并（脸框与脖子通道重叠）。
@@ -2682,6 +2731,9 @@ private:
             const int nyLo = (ny0 < ny1) ? ny0 : ny1;
             const int nyHi = (ny0 < ny1) ? ny1 : ny0;
             const int nyFar = ny1;
+            // 诊断：三条脖子分支（跟随肤色 / 椭圆 / 矩形）共用一个「前后求差」，
+            // 不必给每一条都插计数器 —— 分支出错时差值一样能反映出来。
+            const int pxBeforeNeck = px;
             if (g_maskShape & 4) {
                 // 脖子：**逐行跟随肤色的实际边界**（3.1.20）。
                 //
@@ -2798,6 +2850,7 @@ private:
                 }
             }
             }
+            neckPx += px - pxBeforeNeck;
         }
 
         // 五官保护区：**只画眼睛，不画嘴巴**。
@@ -2813,7 +2866,29 @@ private:
             paintProtectEllipse(protect, w, h, f.kps[2], f.kps[3], ex, ey);
         }
 
-        pxOut = px;
+        // 诊断：脸框并集面积。取**并集**而不是求和 —— 两张脸重叠时求和自己就把
+        // 面积吹大了，那正好会把「多脸并集拉大 ROI」这个待查原因掩盖掉。
+        // 外扩系数用 kFaceBoxGrow，与掩码绘制时用的框保持一致，否则比出来的倍数没意义。
+        int fbx0 = w, fby0 = h, fbx1 = -1, fby1 = -1;
+        for (const auto& f : faces) {
+            const float cx = f.x + f.w * 0.5f, cy = f.y + f.h * 0.5f;
+            const float hw = f.w * kFaceBoxGrow * 0.5f, hh = f.h * kFaceBoxGrow * 0.5f;
+            int fx0 = (int)(cx - hw), fx1 = (int)(cx + hw);
+            int fy0 = (int)(cy - hh), fy1 = (int)(cy + hh);
+            if (fx0 < 0) fx0 = 0;
+            if (fy0 < 0) fy0 = 0;
+            if (fx1 > w) fx1 = w;
+            if (fy1 > h) fy1 = h;
+            if (fx1 <= fx0 || fy1 <= fy0) continue;
+            if (fx0 < fbx0) fbx0 = fx0;
+            if (fy0 < fby0) fby0 = fy0;
+            if (fx1 > fbx1) fbx1 = fx1;
+            if (fy1 > fby1) fby1 = fy1;
+        }
+        stOut.skinPx   = px;
+        stOut.neckPx   = neckPx;
+        stOut.faceBoxA = (fbx1 > fbx0 && fby1 > fby0) ? (fbx1 - fbx0) * (fby1 - fby0) : 0;
+
         // ROI 只在这里算一次（掩码每 4 帧才重算），中间帧直接复用。
         // pad 必须 >= radius：ROI 边缘像素的邻域会往外读，切掉了结果就变了。
         if (bx1 < 0) {
@@ -2837,11 +2912,17 @@ private:
             const double mrx = fabsf(f.kps[8] - f.kps[6]) * 0.5 + f.w * 0.05;
             prArea += 3.14159265 * mrx * (f.h * 0.09);
         }
-        char b[192];
+        char b[256];
+        // 1.1.2.0：加 neck / faceBox，把「ROI 被谁撑大」写进同一行。
+        // 脖= 与 脸= 相加可能大于 mask 总数以外的口径差异不在这里体现 ——
+        // 两个数都取自同一个 px 累加器，neck 是其中一部分，脸 = mask - neck。
         snprintf(b, sizeof(b),
-                 "mask=%d px (%.2f%%) faces=%d roi=%.2f%% protect=%.2f%% kps=%d",
-                 px, 100.0 * px / (double)((size_t)w * h), facesOut,
+                 "mask=%d px (%.2f%%) neck=%d (%.2f%%) faces=%d roi=%.2f%% facebox=%.2f%% protect=%.2f%% kps=%d",
+                 px, 100.0 * px / (double)((size_t)w * h),
+                 neckPx, 100.0 * neckPx / (double)((size_t)w * h),
+                 facesOut,
                  100.0 * (double)boundsOut.area() / (double)((size_t)w * h),
+                 100.0 * (double)stOut.faceBoxA / (double)((size_t)w * h),
                  100.0 * prArea / (double)((size_t)w * h),
                  (faces.empty() || !faces[0].hasKps) ? 0 : 1);
         msgOut = b;
@@ -2899,7 +2980,7 @@ private:
         std::vector<unsigned char> protect;
         beautycore::RoiRect bounds;
         std::vector<beautycore::FaceBox> fbox;   // 本帧人脸（含关键点）
-        int pixels = 0;
+        MaskStat pixels;
         int faces = 0;
         bool valid = false;
         int inputSize = 0;
@@ -2961,7 +3042,7 @@ private:
         int maskHold_ = 0;
         int lastFaces_ = 0;
         float lastScore_ = 0.0f;
-        int maskPixels_ = 0;
+        MaskStat maskStat_;
         std::vector<unsigned char> heldFrame_;
         bool maskFresh_ = false;
         // 时序 EMA：历史必须逐帧连续，跨实例混用等于把别人的画面掺进来。
@@ -3020,7 +3101,7 @@ private:
         std::swap(maskHold_, s->maskHold_);
         std::swap(lastFaces_, s->lastFaces_);
         std::swap(lastScore_, s->lastScore_);
-        std::swap(maskPixels_, s->maskPixels_);
+        std::swap(maskStat_, s->maskStat_);
         heldFrame_.swap(s->heldFrame_);
         std::swap(maskFresh_, s->maskFresh_);
         motionPrev_.swap(s->motionPrev_);
@@ -3116,7 +3197,8 @@ private:
     // 这保证拿到的掩码和 heldFrame_ 一定同源、且都属于当前实例。
     bool collectAsync(int slot) {
         beautycore::RoiRect b;
-        int px = 0, faces = 0, inputSize = 0;
+        MaskStat st;
+        int faces = 0, inputSize = 0;
         float best = 0.0f;
         bool valid = false, got = false;
         std::string msg;
@@ -3141,7 +3223,7 @@ private:
                     }
                 }
                 b = async_.bounds;
-                px = async_.pixels;
+                st = async_.pixels;
                 faces = async_.faces;
                 valid = async_.valid;
                 inputSize = async_.inputSize;
@@ -3157,7 +3239,7 @@ private:
         lastScore_ = best;   // v3.0.4：worker 的分数搬到渲染线程可读的位置
         if (valid) {
             bounds_ = b;
-            maskPixels_ = px;
+            maskStat_ = st;
             lastFaces_ = faces;
             maskHold_ = 0;
             maskValid_ = true;
@@ -3188,12 +3270,13 @@ private:
 
             beautycore::RoiRect b;
             std::vector<beautycore::FaceBox> fbox;
-            int px = 0, faces = 0, inputSize = 0;
+            MaskStat st;
+            int faces = 0, inputSize = 0;
             float best = 0.0f;
             std::string msg;
             const double t0 = nowMsCore();
             const bool ok = buildMaskInto(&async_.frame[0], w, h, mask, protect,
-                                          b, fbox, px, faces, msg, flipY);
+                                          b, fbox, st, faces, msg, flipY);
             inputSize = face_.inputSize();
             best = face_.lastBestScore();
             const double ms = nowMsCore() - t0;
@@ -3204,7 +3287,7 @@ private:
                 async_.protect.swap(protect);
                 async_.fbox.swap(fbox);
                 async_.bounds = b;
-                async_.pixels = px;
+                async_.pixels = st;
                 async_.faces = faces;
                 async_.valid = ok;
                 async_.inputSize = inputSize;
@@ -3401,7 +3484,7 @@ private:
     // 本帧（掩码那次检测）的最高候选分。v3.0.4：由 updateMask / collectAsync
     // 写入，供渲染线程日志用 —— 直接读 face_.lastBestScore() 在异步下恒为 0。
     float lastScore_ = 0.0f;
-    int maskPixels_ = 0;
+    MaskStat maskStat_;
     std::vector<unsigned char> smooth_;
     std::vector<unsigned char> warpScratch_;   /* 3.1.27：美形的 ROI 采样源 */
     std::vector<unsigned char> lowBuf_;   // 高低频的低频层
