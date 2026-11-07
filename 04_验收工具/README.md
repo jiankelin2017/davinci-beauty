@@ -57,6 +57,36 @@ python baseline.py check --only blur62 sh50
   避免把测量抖动当成输出变了。
 - 输入帧 `input_face.png` 自带在仓库内，换台机器 clone 下来就能跑。
 
+## 真机「白块」像素级定性（1.1.2.1）
+
+```
+# 1) 插件侧：设环境变量后启动 Resolve（根目录有启动器：诊断_导出白块帧.bat）
+set BEAUTY_DUMP_OUT=C:\ProgramData\DaVinciBeauty\dump
+
+# 2) 离线分析
+python dump_analyze.py [目录] [seq]      # 默认 C:\ProgramData\DaVinciBeauty\dump 的第 0 帧
+```
+
+插件会把**前 6 个「检出脸且有掩码」的帧**的 `src` / `dst` / `mask` 落盘成
+`dump_N_src.ppm` / `dump_N_dst.ppm` / `dump_N_mask.pgm`（PPM/PGM，零依赖；
+行序已按 `imgBottomUp_` 翻正，三张同尺寸同朝向可叠图）。
+
+脚本输出四个判据，用来分开两种修法相反的成因：
+
+| 输出 | 读法 |
+|---|---|
+| 变化区 bbox + **填充率** | 矩形≈1.00、椭圆≈0.785、更低说明是真实轮廓 |
+| 变化区**掩码直方图** | 满值(≥250)占 80% 以上 = 边界是硬的（羽化没进去） |
+| 变化区在 src 里的**颜色与饱和度** | R>G>B 且有饱和 → 真皮肤；接近中性灰/米色 → 衣物被误判 |
+| **提亮幅度** | 美白 LUT 中调只有 8~10 级，明显超出就不是美白造成的 |
+
+另出两张图：`analysis_N.png`（原图 + 掩码红叠 + 变化绿框）、
+`analysis_N_diff.png`（变化幅度热图，8 倍增益）。
+
+> 起因见 `01_ofx插件源码/PROGRESS.md` 的 1.1.2.1 节：脖子掩码改成「跟随肤色」后
+> 面积反而涨了 50%（`kNeckSkinMaxHalf=0.70` 比旧矩形 `0.45` 宽），且整行都判成肤色时
+> 探测顶到上限、边界退回直线。日志只有占比、没有像素，所以只能落盘看图。
+
 ## 性能 A/B 测量
 
 ```

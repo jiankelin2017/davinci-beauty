@@ -951,12 +951,27 @@ int g_maskFeatherPx = -1;
 // 没有一段是直的；羽化仍然沿用 kMaskFeatherRatio 的斜坡，所以只是「形状」变了，
 // 「软硬」不变。
 //
-// 位掩码（可用 BEAUTY_MASK_SHAPE 覆盖，离线 A/B 用）：
+// 位掩码（优先级：BEAUTY_MASK_SHAPE 环境变量 > beauty.ini 的 mask_shape > 下面的默认值）：
 //   0 = 矩形（3.1.19 及以前的旧行为）
 //   1 = 脸用椭圆
 //   2 = 脖子用椭圆
 //   3 = 两者都用椭圆
-int g_maskShape = 0;
+//   4 = 脖子逐行跟随肤色真实边界（脸保持矩形）
+//   5 = 脸椭圆 + 脖子逐行跟随肤色
+// 注：bit2(4) 与 bit1(2) 同时给时 bit2 优先（见 buildMaskInto 的分支顺序）。
+//
+// 1.1.1.5 起默认 4。定案过程（2026-11-07 真机）：
+//   现象：脖子附近一块白色长方形遮罩，跟着人走，还在闪。
+//   ① 磨皮拉到 0，白块仍在 —— 排除磨皮。代码上此时 process 走的是
+//      「磨皮为 0」分支，只是 memcpy(dst, src)，整条磨皮链没参与；
+//   ② 关掉整个效果，画面正常 —— 确认是插件写的，不是素材或宿主；
+//   ③ BEAUTY_NECK_LEN=0 关掉脖子通道，白块完全消失 —— 作用域锁定为脖子通道，
+//      即 0.90 脸宽 × 0.65 脸高那条矩形带；
+//   ④ 美白/红润走 toneColor，只对 mask 非零处生效（mv==0 直接 continue），
+//      于是那条矩形带被整块提亮，边界是直的、位置跟着脸走 = 用户看到的「遮罩」。
+// 解药不是关掉脖子（会把脖子磨皮一起丢掉），而是别再用矩形：
+// bit2 逐行从中心向两侧探肤色，左右边界落在皮肤/头发/衣领的真实分界上。
+int g_maskShape = 4;
 
 // 羽化斜坡查表：ramp[dist * 65 + fe] = smoothstep(dist/fe) × 256。
 //
@@ -1207,6 +1222,52 @@ double nowMsCore() {
 }
 
 // ---------------------------------------------------------------------------
+// 诊断导出（1.1.2.1）：真机「白块」的像素级定性
+//
+// 起因：真机反馈「脖子附近有一块白色方形遮罩，跟着人走」。日志能给出掩码占比，
+// 但给不出像素 —— 那块到底是「真皮肤被美白提亮」还是「米色衣物被判成皮肤」，
+// 两者修法完全相反（前者加长下缘羽化，后者把脖子从色调里剔除），靠推理分不开。
+//
+// 格式选 PPM(P6)/PGM(P5) 而不是 PNG：零依赖、零链接，Pillow / ffmpeg / 浏览器
+// 都能直接读，也不给插件增加任何第三方库。
+//
+// 行序按 imgBottomUp_ 翻正，所以落盘的图「看起来就是正的」，三张图同尺寸同朝向，
+// 可以直接叠图比对。
+//
+// 只在 process() 末尾、且环境变量 BEAUTY_DUMP_OUT 非空时调用 —— 不设变量时这段
+// 连一次判断都不做，对画面逐字节零影响。
+// ---------------------------------------------------------------------------
+static void dumpBgraPpm(const char* path, const unsigned char* px, int w, int h, bool flip) {
+    FILE* f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", w, h);
+    std::vector<unsigned char> row((size_t)w * 3);
+    for (int y = 0; y < h; y++) {
+        const int sy = flip ? (h - 1 - y) : y;
+        // 像素顺序是 R,G,B,A（skinWeight(row[x*4+0..2]) 按 R,G,B 传参可证）
+        const unsigned char* p = px + (size_t)sy * (size_t)w * 4;
+        for (int x = 0; x < w; x++) {
+            row[(size_t)x * 3 + 0] = p[x * 4 + 0];
+            row[(size_t)x * 3 + 1] = p[x * 4 + 1];
+            row[(size_t)x * 3 + 2] = p[x * 4 + 2];
+        }
+        fwrite(&row[0], 1, row.size(), f);
+    }
+    fclose(f);
+}
+
+static void dumpGrayPgm(const char* path, const unsigned char* m, int w, int h, bool flip) {
+    FILE* f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P5\n%d %d\n255\n", w, h);
+    for (int y = 0; y < h; y++) {
+        const int sy = flip ? (h - 1 - y) : y;
+        fwrite(m + (size_t)sy * (size_t)w, 1, (size_t)w, f);
+    }
+    fclose(f);
+}
+
+// ---------------------------------------------------------------------------
 // CoreEngine —— 自研引擎（S2 起逐步成型）
 //
 // 第一版只做磨皮一件事，这样对拍最干净：输入原图 → 自研双边滤波 → 按档位线性
@@ -1406,7 +1467,12 @@ public:
                 int v = atoi(mf);
                 g_maskFeatherPx = (v < 0) ? -1 : v;
             }
-            // 掩码几何：BEAUTY_MASK_SHAPE=0 退回矩形（3.1.19 行为），3 = 脸+脖子都用椭圆。
+            // 掩码几何：优先级「环境变量 > beauty.ini 的 mask_shape > 默认 4」。
+            // 默认 4 = 脖子逐行跟随肤色（1.1.1.5 起），原因见 g_maskShape 定义处。
+            // 0 退回矩形（3.1.19 行为），3 = 脸+脖子都用椭圆，都留给真机 A/B。
+            // ini 这一项是回退口：改完重启 Resolve 即生效，不必重编，
+            // 也不必在启动器里塞环境变量。
+            g_maskShape = (int)beautyCfgInt("mask_shape", g_maskShape);
             const char* msh = getenv("BEAUTY_MASK_SHAPE");
             if (msh && *msh) g_maskShape = atoi(msh);
             initFeatherRamp();   // 羽化查表：必须早于任何一次 buildMaskInto
@@ -2354,6 +2420,40 @@ public:
                   tMask - t0, tSmooth - tMask, tTone - tSmooth,
                   tDetail - tTone, tEnd - tDetail, tEnd - t0,
                   asyncMs_, lastFaces_, (int)maskValid_);
+        }
+
+        // ---- 诊断导出（1.1.2.1）：BEAUTY_DUMP_OUT=<目录> --------------------
+        // 见 dumpBgraPpm 上方的说明。这里只在「本帧真的有掩码、真的检出了脸」时
+        // 才导 —— 没有掩码的帧对「白块」定性没有意义，白导三张全黑的图。
+        // 只导前 6 帧：用户的操作顺序是「播到白块处暂停 → ← → 强制重渲染」，
+        // 前面可能已经有几帧被 Resolve 的缩略图/缓存渲染耗掉，留 6 个名额才
+        // 保证白块那一帧一定在里面；再多人眼挑图也麻烦、磁盘也不划算
+        // （1080p 一帧 src+dst+mask 约 14MB）。
+        if (maskValid_ && lastFaces_ > 0 && !mask_.empty() &&
+            (size_t)w * (size_t)h <= mask_.size()) {
+            static const int kDumpFrames = 6;
+            static const char* dumpDir = nullptr;
+            static int dumpLeft = -1;   // -1 = 还没读过环境变量
+            if (dumpLeft < 0) {
+                const char* e = getenv("BEAUTY_DUMP_OUT");
+                dumpDir = (e && *e) ? e : nullptr;
+                dumpLeft = dumpDir ? kDumpFrames : 0;
+                if (dumpDir) CreateDirectoryA(dumpDir, nullptr);   // 已存在则返回 FALSE，忽略
+            }
+            if (dumpLeft > 0) {
+                const int seq = kDumpFrames - dumpLeft;
+                dumpLeft--;
+                const bool flip = imgBottomUp_;
+                char path[MAX_PATH];
+                snprintf(path, sizeof(path), "%s\\dump_%d_src.ppm", dumpDir, seq);
+                dumpBgraPpm(path, src, w, h, flip);
+                snprintf(path, sizeof(path), "%s\\dump_%d_dst.ppm", dumpDir, seq);
+                dumpBgraPpm(path, dst, w, h, flip);
+                snprintf(path, sizeof(path), "%s\\dump_%d_mask.pgm", dumpDir, seq);
+                dumpGrayPgm(path, &mask_[0], w, h, flip);
+                NALOG(BEAUTY_LOG_INFO, "诊断导出 dump_%d %dx%d -> %s (flip=%d 脸=%d)",
+                      seq, w, h, dumpDir, (int)flip, lastFaces_);
+            }
         }
         return true;
     }
