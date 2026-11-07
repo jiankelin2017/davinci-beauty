@@ -1979,9 +1979,13 @@ public:
                     // 每 12 帧一条（掩码 4 帧一算，等于每 3 份掩码采一条）。
                     // 只读成员，不参与任何像素运算 —— 对画面逐字节零影响。
                     //
-                    // 三个数怎么读：
+                    // 四个数怎么读：
                     //   倍数 = 盒 / 脸盒。接近 1 说明脸框本身就大（只能改脸框策略）；
                     //          远大于 1 说明脸框之外的皮肤在拉大 ROI。
+                    //   分块 = 各脸分块面积之和 / 盒。**这是多矩形重构的收益上限**：
+                    //          ≥1 说明单矩形并不吃亏（各块自己的 pad 与脖子带把
+                    //          「并集浪费」抵消掉了），拆了白拆；
+                    //          <1 才有得赚，如 0.7 表示重构后搬图量降到 70%。
                     //   脖 = 掩码里由脖子通道新增的比例。占皮肤一半以上，收窄脖子立刻见效。
                     //   皮肤 = 掩码像素占全帧比例。它若远大于 脸盒，说明肤色判据把
                     //          背景也算进来了（墙、木色家具、衣物）。
@@ -1991,12 +1995,14 @@ public:
                         const double neckPct = 100.0 * maskStat_.neckPx / total;
                         const double boxPct  = 100.0 * (double)bounds_.area() / total;
                         const double facePct = 100.0 * (double)maskStat_.faceBoxA / total;
+                        const double boxA    = (double)bounds_.area();
                         NALOG(BEAUTY_LOG_INFO,
                               "掩码诊断 roi=%dx%d@%d,%d 盒=%.1f%% 脸盒=%.1f%% 倍数=%.1fx"
-                              " 皮肤=%.2f%% 脖=%.2f%% 脸=%.2f%% 脸数=%d",
+                              " 分块=%.2fx 皮肤=%.2f%% 脖=%.2f%% 脸=%.2f%% 脸数=%d",
                               bounds_.width(), bounds_.height(), bounds_.x0, bounds_.y0,
                               boxPct, facePct,
                               (facePct > 0.01) ? (boxPct / facePct) : 0.0,
+                              (boxA > 0.0) ? ((double)maskStat_.tileA / boxA) : 0.0,
                               skinPct, neckPct, skinPct - neckPct, lastFaces_);
                     }
                 } else if (g_cfg.s3Tap25) {
@@ -2501,17 +2507,22 @@ private:
     //   skinPx  掩码非零像素数（脸 + 脖子，重叠处只算一次）
     //   neckPx  其中由**脖子通道**新增的像素数（脸已经画过的不重复计）
     //   faceBoxA 所有脸框（按 kFaceBoxGrow 外扩后）并集的面积
+    //   tileA   （1.1.1.3 加）**按脸分块**后，各块自己包围盒的面积之和
     //
-    // 三者与 ROI 面积一比，就能判定 ROI 是被什么撑大的：
+    // 这几个数跟 ROI 面积一比，就能判定 ROI 是被什么撑大的：
     //   盒/脸盒 接近 1   → 脸框本身就大，只能改脸框策略
     //   盒/脸盒 远大于 1 → 脸框外的皮肤（脖子、背景误判、多脸并集）在拉大 ROI
     //   脖/skin 占比高    → 脖子通道是主因，收窄它立刻见效
+    //   分块 = tileA/盒 → **拆成每张脸一块**之后要搬的像素是现在的几倍。
+    //                      ≥1 说明「单矩形」并不比「多块」吃亏，拆了白拆；
+    //                      <1 才是多矩形重构的收益上限。
     //
     // 这几个数只是统计，**不参与任何像素写入**，所以对画面逐字节零影响。
     struct MaskStat {
-        int skinPx   = 0;
-        int neckPx   = 0;
-        int faceBoxA = 0;
+        int skinPx     = 0;
+        int neckPx     = 0;
+        int faceBoxA   = 0;
+        long long tileA = 0;
     };
 
     // 检测 + 肤色掩码 + 五官保护 + 包围盒，全部算进调用方给的缓冲。
@@ -2731,6 +2742,21 @@ private:
             const int nyLo = (ny0 < ny1) ? ny0 : ny1;
             const int nyHi = (ny0 < ny1) ? ny1 : ny0;
             const int nyFar = ny1;
+
+            // 诊断（1.1.1.3）：这一张脸**单独成块**时要搬的像素数。
+            // 块 = 外扩脸框 ∪ 脖子带，再按 pad 往四周放 —— pad 与 bounds_ 用的
+            // 是同一个 (g_cfg.radius + 1)，所以「分块 ÷ 盒」可以横向直接比。
+            // 已知偏差（都朝**高估分块面积**的方向，即低估收益，属安全方向）：
+            //   ① 相邻块可能互相重叠，这里照样各算一次；
+            //   ② 用的是理论矩形，不是肤色实际探到的边界。
+            {
+                const int padT = g_cfg.radius + 1;
+                const int ty0 = (y0 < nyLo) ? y0 : nyLo;
+                const int ty1 = (y1 > nyHi) ? y1 : nyHi;
+                const int tw = (x1 - x0) + 2 * padT;
+                const int th = (ty1 - ty0) + 2 * padT;
+                if (tw > 0 && th > 0) stOut.tileA += (long long)tw * (long long)th;
+            }
             // 诊断：三条脖子分支（跟随肤色 / 椭圆 / 矩形）共用一个「前后求差」，
             // 不必给每一条都插计数器 —— 分支出错时差值一样能反映出来。
             const int pxBeforeNeck = px;
