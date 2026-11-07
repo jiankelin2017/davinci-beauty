@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""dump_analyze.py —— 给真机「白块」做像素级定性（1.1.2.1）。
+"""dump_analyze.py —— 给真机「白块」做像素级定性（1.1.2.1 建立，1.1.3.0 支持暂停帧）。
 
 配套插件里的 BEAUTY_DUMP_OUT：它把 src / dst / mask 三张图落盘成 PPM/PGM，
 本脚本读回来回答四个问题 —— 这四个问题靠日志和推理都答不出来：
@@ -11,9 +11,15 @@
   4) 提亮幅度：中位 +N 级。美白 LUT 中调只有 8~10 级，超出就不是它。
 
 用法：
-    python dump_analyze.py [目录] [seq]
+    python dump_analyze.py [目录] [seq|re]
     python dump_analyze.py                      # 默认 C:\\ProgramData\\DaVinciBeauty\\dump 的第 0 帧
     python dump_analyze.py D:\\tmp\\dump 1      # 指定目录与序号
+    python dump_analyze.py D:\\tmp\\dump re     # 读 dump_re_*（暂停后强制重渲染那一帧）
+
+1.1.3.0 起插件有两组导出：
+    dump_N_*   (N=0..5)  播放阶段的前 6 帧，名额常被开头镜头用光
+    dump_re_*            暂停后按 ← → 重渲染同一帧时覆写 —— 停在哪帧就是哪帧
+分析白块优先用 `re`。
 
 产出：
     终端报告 + <目录>/analysis_<seq>.png（原图 + 掩码红叠 + 变化框）
@@ -33,10 +39,11 @@ from PIL import Image
 DEFAULT_DIR = r"C:\ProgramData\DaVinciBeauty\dump"
 
 
-def load(d, seq):
-    src_p = os.path.join(d, "dump_%d_src.ppm" % seq)
-    dst_p = os.path.join(d, "dump_%d_dst.ppm" % seq)
-    msk_p = os.path.join(d, "dump_%d_mask.pgm" % seq)
+def load(d, tag):
+    # tag 可以是数字（dump_0_*）或字符串 "re"（dump_re_*），文件名一律用 str 拼
+    src_p = os.path.join(d, "dump_%s_src.ppm" % tag)
+    dst_p = os.path.join(d, "dump_%s_dst.ppm" % tag)
+    msk_p = os.path.join(d, "dump_%s_mask.pgm" % tag)
     for p in (src_p, dst_p, msk_p):
         if not os.path.exists(p):
             raise SystemExit("缺少文件: %s" % p)
@@ -52,12 +59,12 @@ def pct(a, b):
 
 def main():
     d = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DIR
-    seq = int(sys.argv[2]) if len(sys.argv) > 2 else 0
-    src, dst, msk = load(d, seq)
+    frameTag = sys.argv[2] if len(sys.argv) > 2 else "0"   # "0".."5" 或 "re"
+    src, dst, msk = load(d, frameTag)
     h, w = msk.shape
 
     print("=" * 68)
-    print("帧 %d   %dx%d   来源 %s" % (seq, w, h, d))
+    print("帧 %s   %dx%d   来源 %s" % (frameTag, w, h, d))
     print("=" * 68)
 
     diff = dst - src
@@ -176,11 +183,11 @@ def main():
     vis[y0:y1 + 1, x1, :] = [0, 255, 0]
     vis[y0, x0:x1 + 1, :] = [0, 255, 0]
     vis[y1, x0:x1 + 1, :] = [0, 255, 0]
-    out_png = os.path.join(d, "analysis_%d.png" % seq)
+    out_png = os.path.join(d, "analysis_%s.png" % frameTag)
     Image.fromarray(vis).save(out_png)
 
     heat = np.clip(mag.astype(np.float32) * 8.0, 0, 255).astype(np.uint8)
-    heat_png = os.path.join(d, "analysis_%d_diff.png" % seq)
+    heat_png = os.path.join(d, "analysis_%s_diff.png" % frameTag)
     Image.fromarray(heat).save(heat_png)
 
     print("\n[6] 出图")

@@ -57,19 +57,32 @@ python baseline.py check --only blur62 sh50
   避免把测量抖动当成输出变了。
 - 输入帧 `input_face.png` 自带在仓库内，换台机器 clone 下来就能跑。
 
-## 真机「白块」像素级定性（1.1.2.1）
+## 真机「白块」像素级定性（1.1.2.1 建立，1.1.3.0 补暂停帧通道）
 
 ```
-# 1) 插件侧：设环境变量后启动 Resolve（根目录有启动器：诊断_导出白块帧.bat）
+# 1) 插件侧：设环境变量后启动 Resolve
+#    根目录有启动器：诊断_导出白块帧.bat（1.1.2.1）/ 诊断_验证羽化.bat（1.1.3.0）
 set BEAUTY_DUMP_OUT=C:\ProgramData\DaVinciBeauty\dump
 
 # 2) 离线分析
 python dump_analyze.py [目录] [seq]      # 默认 C:\ProgramData\DaVinciBeauty\dump 的第 0 帧
 ```
 
-插件会把**前 6 个「检出脸且有掩码」的帧**的 `src` / `dst` / `mask` 落盘成
-`dump_N_src.ppm` / `dump_N_dst.ppm` / `dump_N_mask.pgm`（PPM/PGM，零依赖；
-行序已按 `imgBottomUp_` 翻正，三张同尺寸同朝向可叠图）。
+**1.1.3.0 起有两组文件，别混用：**
+
+| 文件 | 什么时候写 | 用途 |
+|---|---|---|
+| `dump_N_{src,dst,mask}` (N=0..5) | 播放阶段，前 6 个「检出脸且有掩码」的帧 | 看整体趋势 |
+| **`dump_re_{src,dst,mask}`** | **暂停后按 ← → 强制重渲染同一帧**时覆写 | **看白块那一帧** |
+
+`re` 通道的来历：1.1.2.1 实测发现 6 个名额在播放刚开始就被开头镜头用光，
+连着两轮导出的都是别的镜头（一次是三人举手），对白块完全没用。
+宿主在暂停后按 ← → 时会重新请求**同一帧**，`frameNo_` 与上一帧相同，
+插件用这个信号覆写 `dump_re_*`（不占名额、`reLeft=20` 防爆盘）。
+**停在哪一帧，`dump_re_*` 就是哪一帧。**
+分析脚本的 `seq` 参数可直接传 `re`。
+
+PPM/PGM 零依赖，行序已按 `imgBottomUp_` 翻正，三张同尺寸同朝向可叠图。
 
 脚本输出四个判据，用来分开两种修法相反的成因：
 

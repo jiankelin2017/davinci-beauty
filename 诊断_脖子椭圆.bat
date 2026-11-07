@@ -1,5 +1,4 @@
 @echo off
-chcp 936 >nul
 setlocal
 title DaVinci Beauty - 脖子椭圆掩码
 rem 本脚本只设置一个环境变量再启动 Resolve：不改插件、不改 beauty.ini、不改工程。

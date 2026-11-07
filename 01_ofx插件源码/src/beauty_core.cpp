@@ -938,6 +938,33 @@ const float kNeckSkinMinHalf = 0.30f;
 // （wtnl-zhi 的 12% 是骑在椭圆边界上内外各一半的，我们只能向内，等价于更厚的边。）
 const float kMaskFeatherRatio = 0.08f;
 
+// 脖子通道的羽化宽度（1.1.3.0）—— **按带长取比例，不按脸宽**。
+//
+// 真机反馈（2026-11-07）：「胸部靠上有白色长方形遮罩，跟着人走」。
+// 像素级取证（BEAUTY_DUMP_OUT 落的 src/dst/mask 三张图）结论：
+//   * 那块确实是真皮肤（颈根+锁骨+上胸，src RGB≈(110,110,101)，R≈G>B），
+//     不是衣物误判 —— 领口以下的浅绿吊带 (87,120,110) 被正确排除了；
+//   * 边长全部是**几何直线**：下缘 y=616 水平、左右都是 cx±0.70 脸宽的竖直边，
+//     四条硬边把一块均匀提亮的皮肤围成了「长方形」；
+//   * 磨皮 98 把这块皮肤的纹理抹平，美白再提亮 +7~+10，于是像贴了一块白板。
+//
+// 试过的两条死路（都只用环境变量验过，代码已回退）：
+//   * BEAUTY_NECK_LEN=0.90（延长到领口）→ 白块更大。
+//     带长 156→216 px，多盖 60 px 上胸，面积 +38%。
+//   * BEAUTY_NECK_LEN=0.35（收短到颈根）→ 白块变小但边还在，且出现
+//     「脸磨了、脖子没磨」的色差。缩短只是把硬边往上挪，没消掉它。
+//   ⇒ 只要下缘是写死的长度，就必然切在皮肤上，缩短/延长都是在
+//     「有色差」和「有边」之间来回换。真正的解是把过渡做宽。
+//
+// 旧值 2*halfW*f.w+0.08 等价于 0.072 脸宽 —— 脸宽 255 px 时只有 18 px，
+// 拿 18 px 的斜坡去接 156 px 的带子末端，等于没有过渡，那条边就是这么来的。
+// 改成 0.35 带长（156 px 带子 → 55 px 羽化，约 3 倍），smoothstep 在 55 px
+// 里从 0 爬到 1，物理上不再存在一条边；左右两条竖边同时被软化。
+// 取 0.35 而不是更大：带子的前 65% 仍是满强度，不会让脖子整体「效果变弱」
+// （那是 3.1.9 踩过的坑，见上面 kMaskFeatherRatio 的注释）。
+// 上限受 kFeatherMax=64 约束，0.90 档的 75 px 会被截到 64 px。
+const float kNeckFeatherRatio = 0.35f;
+
 // -1 = 按脸宽自适应；0 = 关闭（与 3.1.8 逐字节相同，A/B 用）；>0 = 固定像素
 int g_maskFeatherPx = -1;
 
@@ -2433,26 +2460,46 @@ public:
             (size_t)w * (size_t)h <= mask_.size()) {
             static const int kDumpFrames = 6;
             static const char* dumpDir = nullptr;
-            static int dumpLeft = -1;   // -1 = 还没读过环境变量
+            static int dumpLeft = -1;      // -1 = 还没读过环境变量
+            static int prevFrameNo = -1;   // 上一帧的帧号，用于识别「重渲染同一帧」
+            static int reLeft = 20;        // 覆盖式导出的剩余次数，防爆盘
             if (dumpLeft < 0) {
                 const char* e = getenv("BEAUTY_DUMP_OUT");
                 dumpDir = (e && *e) ? e : nullptr;
                 dumpLeft = dumpDir ? kDumpFrames : 0;
                 if (dumpDir) CreateDirectoryA(dumpDir, nullptr);   // 已存在则返回 FALSE，忽略
             }
-            if (dumpLeft > 0) {
-                const int seq = kDumpFrames - dumpLeft;
-                dumpLeft--;
+            // 1.1.3.0：新增「同一帧重渲染」通道。
+            //
+            // 实测教训：用户的操作是「播到白块处 → 空格暂停 → ← → 强制重渲染」，
+            // 但前 6 个名额早在播放阶段就被开头的镜头用光了，导出来的永远是
+            // 第 0 秒那几帧，对白块完全没用（连着两轮都是别的镜头）。
+            // 暂停后按 ← → 时，宿主会重新请求**同一帧**，frameNo 与上一帧相同 ——
+            // 就用这个信号覆盖写 dump_re_*.{ppm,pgm}，不占名额、不新增文件。
+            const int curNo = (int)frameNo_;
+            const bool reRender = (prevFrameNo >= 0 && prevFrameNo == curNo);
+            prevFrameNo = curNo;
+
+            if (dumpLeft > 0 || (reRender && reLeft > 0)) {
+                const bool isRe = (dumpLeft <= 0);
+                char tag[16];
+                if (isRe) {
+                    reLeft--;
+                    snprintf(tag, sizeof(tag), "re");
+                } else {
+                    dumpLeft--;
+                    snprintf(tag, sizeof(tag), "%d", kDumpFrames - 1 - dumpLeft);
+                }
                 const bool flip = imgBottomUp_;
                 char path[MAX_PATH];
-                snprintf(path, sizeof(path), "%s\\dump_%d_src.ppm", dumpDir, seq);
+                snprintf(path, sizeof(path), "%s\\dump_%s_src.ppm", dumpDir, tag);
                 dumpBgraPpm(path, src, w, h, flip);
-                snprintf(path, sizeof(path), "%s\\dump_%d_dst.ppm", dumpDir, seq);
+                snprintf(path, sizeof(path), "%s\\dump_%s_dst.ppm", dumpDir, tag);
                 dumpBgraPpm(path, dst, w, h, flip);
-                snprintf(path, sizeof(path), "%s\\dump_%d_mask.pgm", dumpDir, seq);
+                snprintf(path, sizeof(path), "%s\\dump_%s_mask.pgm", dumpDir, tag);
                 dumpGrayPgm(path, &mask_[0], w, h, flip);
-                NALOG(BEAUTY_LOG_INFO, "诊断导出 dump_%d %dx%d -> %s (flip=%d 脸=%d)",
-                      seq, w, h, dumpDir, (int)flip, lastFaces_);
+                NALOG(BEAUTY_LOG_INFO, "诊断导出 dump_%s %dx%d -> %s (flip=%d 脸=%d 帧号=%d)",
+                      tag, w, h, dumpDir, (int)flip, lastFaces_, curNo);
             }
         }
         return true;
@@ -2814,13 +2861,18 @@ private:
                          : (int)(f.w * kMaskFeatherRatio + 0.5f);
             if (fe > kFeatherMax) fe = kFeatherMax;
             if (fe < 0) fe = 0;
-            // 脖子通道按**脖子自己的宽度**给羽化宽度 —— 3.1.9 用脸宽 12%，等价于
-            // 脖子半宽的 27%，整个脖子外侧四分之一都被压成半强度，这是真机上
-            // 「效果弱了较多」的主力来源。
+            // 脖子通道的羽化宽度（1.1.3.0）：按**带长**取比例，不再按脸宽。
+            //
+            // 旧写法 2*halfW*f.w*kMaskFeatherRatio = 0.072 脸宽，脸宽 255 px 时
+            // 只有 18 px。而带长是 0.65 脸高 ≈ 156 px —— 18 px 的斜坡接不住
+            // 156 px 的末端，下缘那条横线就是这么来的（详细取证见
+            // kNeckFeatherRatio 的定义处）。
+            //
+            // 现在 0.35 × 带长：156 px 带子给 55 px 羽化，前 65% 仍是满强度。
+            const float neckLenPxForFe = f.h * g_neck.len;
             int feNeck = (g_maskFeatherPx >= 0)
                              ? g_maskFeatherPx
-                             : (int)(2.0f * g_neck.halfW * f.w * kMaskFeatherRatio
-                                     + 0.5f);
+                             : (int)(neckLenPxForFe * kNeckFeatherRatio + 0.5f);
             if (feNeck > kFeatherMax) feNeck = kFeatherMax;
             if (feNeck < 0) feNeck = 0;
 

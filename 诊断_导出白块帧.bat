@@ -1,5 +1,4 @@
 @echo off
-chcp 936 >nul
 setlocal
 title DaVinci Beauty - µ¼³ö°×¿éÖ¡
 rem ---------------------------------------------------------------------
