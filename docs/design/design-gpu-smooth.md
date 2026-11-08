@@ -1,6 +1,6 @@
 # GPU 磨皮模块（D3D11 Compute）
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active（施工完成，保留决策与验证） ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：原 `P2_GPU磨皮施工图.md`
+> 适用代码版本：1.3.6.0 ｜ 状态：Active（施工完成，保留决策与验证） ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：原 `P2_GPU磨皮施工图.md`
 
 **这份文档管**：为什么这么切 pass、精度凭什么能逐字节、哪些常数是硬约束、验证做到什么程度、哪些路已经堵死。
 **不在这里管**：接口与配置项见 `reference-architecture.md` §5.1，性能账见 `reference-performance.md`，施工时间线与崩溃取证见 `docs/history/history-progress-1x.md`。
@@ -29,7 +29,7 @@
 
 ### 1.1 生产默认路径：`surface3RgbBand`，四个阶段
 
-面板默认 `blurType=0`（双边）→ `g_cfg.s3Band=1` → `surface3RgbBand`（`beauty_smooth.cpp:1128`，1.3.5.0 行号；施工时为 `:1087`）。
+面板默认 `blurType=0`（双边）→ `g_cfg.s3Band=1` → `surface3RgbBand`（`beauty_smooth.cpp:1128`，1.3.6.0 行号；施工时为 `:1087`）。
 
 ```
 src (RGBA8 全帧)

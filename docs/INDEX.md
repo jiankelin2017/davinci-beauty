@@ -1,6 +1,6 @@
 # 文档总表（INDEX）
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian
+> 适用代码版本：1.3.6.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian
 > 本表是文档体系的唯一索引。任何新增/移动/废弃文档，先改这张表，再动文件。
 
 ## 一、规则（四条，违反即视为文档缺陷）
@@ -30,18 +30,18 @@ docs/
 
 | 主题 | 路径 | 类型 | 状态 | 适用版本 | 维护人 | 最后核对 | 替代 / 归档去向 |
 |---|---|---|---|---|---|---|---|
-| 交付概览 | `README.md` | README | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
-| 使用入口卡 | `说明.txt` | 入口卡 | Active | 1.3.5.0 | Jian | 2026-11-08 | 详版见 `docs/guides/guide-install.md` |
-| 总索引 | `docs/INDEX.md` | reference | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
-| 变更史 | `docs/CHANGELOG.md` | CHANGELOG | Active | 1.3.5.0 | Jian | 2026-11-08 | 原始过程见 `docs/history/history-progress-1x.md` |
-| 安装 / 升级 / 回滚 | `docs/guides/guide-install.md` | guide | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
-| 开发工作流 | `docs/guides/guide-dev-workflow.md` | guide | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
-| 验收 | `docs/guides/guide-acceptance.md` | guide | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
-| 出包 | `docs/guides/guide-package.md` | guide | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
-| 架构与关键技术事实 | `docs/reference/reference-architecture.md` | reference | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
-| 性能 | `docs/reference/reference-performance.md` | reference | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
-| GPU 磨皮模块 | `docs/design/design-gpu-smooth.md` | design | Active（已完成施工，留决策） | 1.3.5.0 | Jian | 2026-11-08 | — |
-| 锐化为何无效 | `docs/adr/adr-0001-sharpen-inert.md` | adr | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 交付概览 | `README.md` | README | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
+| 使用入口卡 | `说明.txt` | 入口卡 | Active | 1.3.6.0 | Jian | 2026-11-08 | 详版见 `docs/guides/guide-install.md` |
+| 总索引 | `docs/INDEX.md` | reference | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
+| 变更史 | `docs/CHANGELOG.md` | CHANGELOG | Active | 1.3.6.0 | Jian | 2026-11-08 | 原始过程见 `docs/history/history-progress-1x.md` |
+| 安装 / 升级 / 回滚 | `docs/guides/guide-install.md` | guide | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
+| 开发工作流 | `docs/guides/guide-dev-workflow.md` | guide | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
+| 验收 | `docs/guides/guide-acceptance.md` | guide | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
+| 出包 | `docs/guides/guide-package.md` | guide | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
+| 架构与关键技术事实 | `docs/reference/reference-architecture.md` | reference | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
+| 性能 | `docs/reference/reference-performance.md` | reference | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
+| GPU 磨皮模块 | `docs/design/design-gpu-smooth.md` | design | Active（已完成施工，留决策） | 1.3.6.0 | Jian | 2026-11-08 | — |
+| 锐化为何无效 | `docs/adr/adr-0001-sharpen-inert.md` | adr | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
 | 过程记录（1.0.x–1.3.x） | `docs/history/history-progress-1x.md` | history | Active（只读归档） | 1.0.0.0–1.3.5.0 | Jian | 2026-11-08 | — |
 | 旧 SDK 区域探测 PHASE0 | `docs/archive/archive-phase0-sdk-region.md` | archive | Deprecated | 闭源 SDK 时代 | Jian | 2026-11-08 | 对象已移除（引擎替换为自研） |
 | 区域精准化 PHASE1 | `docs/archive/archive-phase1-region.md` | archive | Deprecated | 同上 | Jian | 2026-11-08 | 同上 |
@@ -49,9 +49,9 @@ docs/
 | 旧开发 README（121 KB） | `docs/archive/archive-dev-readme-20261108.md` | archive | Deprecated | ≤1.1.7.0 | Jian | 2026-11-08 | 已并入 `docs/CHANGELOG.md` |
 | 历史验收输出（1.0.7.0） | `docs/archive/archive-verification-1.0.7.0.txt` | archive | Deprecated | 1.0.7.0 | Jian | 2026-11-08 | 每次验收重新生成，不存当前版 |
 | 旧包 sha256 清单 | `docs/archive/archive-manifest-v308.txt` | archive | Deprecated | 旧编号时代 | Jian | 2026-11-08 | 现由 `package.py` 在包内生成 `MANIFEST.txt` |
-| 夹具运行记录 | `03_测试夹具/RUNS.md` | reference | Active | 1.3.5.0 | Jian | 2026-11-08 | 替代原 14 份 `.txt` 抓屏 |
+| 夹具运行记录 | `03_测试夹具/RUNS.md` | reference | Active | 1.3.6.0 | Jian | 2026-11-08 | 替代原 14 份 `.txt` 抓屏 |
 | 合规声明 | `THIRD-PARTY-NOTICES.md` | 合规 | Active | — | Jian | 2026-11-08 | bundle 内另有副本（构建产出） |
-| 文件清单 | `FILELIST.txt` | 生成物 | Active | 1.3.5.0 | Jian | 2026-11-08 | `gen_filelist.py` 生成，勿手改 |
+| 文件清单 | `FILELIST.txt` | 生成物 | Active | 1.3.6.0 | Jian | 2026-11-08 | `gen_filelist.py` 生成，勿手改 |
 | 基线数据 | `04_验收工具/baseline_manifest.txt` | data | Active | 1.3.5 | Jian | 2026-11-08 | 18 个 md5 自 1.2.5 起未变，仅头注释随版本重生成 |
 
 ## 四、已清理的内容（本轮，2026-11-08）
@@ -94,7 +94,7 @@ docs/
 
 ## 七、待人工确认
 
-- **回归抖动的机制仍未定论**（`baseline.py update` 曾因此拒绝写入）。已测到的事实：默认推理线程数下，顺序跑 18 个用例 ×2 遍会有一个用例首跑失配、复跑一致，且失配用例不固定（先后见到 `cl50`、`sh50_cl100`、`blur62_wh100`）；把 `BEAUTY_INFER_THREADS=1` 固定为单线程后，同样跑两遍 36/36 全绿。`BEAUTY_GPU_SMOOTH` 强制开/关的 md5 完全相同，所以先前「GPU 争用」的解释与这批数据不符。是 ORT 内部并行归约顺序，还是纯粹窗口变窄，尚无证据，未下结论。当前处理：`update` 一律加 `BEAUTY_INFER_THREADS=1` 跑，见 `reference-performance.md` §5.4。
+- **回归抖动已定位并修复（1.3.6.0）**：根因是 `toneColor()` 的 Sobel 边缘门控读 `dst`，而同一循环正按行并行写 `dst`——数据竞争（未定义行为）。实测证据：`blur62_wh100` 2100 次抖动 33 次（1.57%），异常行全部落在 `261 + 35k` 与 `y±1`（35 = 行块高）；强制 CPU / 强制 GPU 都抖，`BEAUTY_INFER_THREADS=1/2/4` 异常率同为 0.5%——**先前「GPU 争用」「与推理线程数相关」「必须并发才触发」三条归因全部不成立**。修复后 `blur62_wh100`/`cl50` 各 1200 次单一 md5、0 异常。代价是画面改变（0.2% 像素、≤3 级），基线已重标；`BEAUTY_INFER_THREADS=1` 那个临时绕法不再需要。详见 `reference-performance.md` §5.4。
 - **三处旧编号残留已清（2026-11-08 同日重切）**：`beauty.ini` 模板头、`CoreEngine::version()`、`install.bat` 的非 ASCII 行都已处理。前者改为 `namaBuildStr()` 现拼（实现 `return NAMA_BUILD_STR`，不写字面量副本），`install.bat` 改纯 ASCII。**同版本号重出了一份安装包**（未对外交付），所以 1.3.5.0 对应两份字节：DLL `2299c328…` → `5655699…`，安装包 `500f7b17…` → `5d422ef0…`；画面不变（基线仍 18/18）。细节见 `docs/CHANGELOG.md` 的「同日重切」。
 - **`P_*` 面板枚举有两份定义**：`beauty_params.h`（`beauty_core.h` 引用，标注「唯一出处」）与 `nama_engine.h`（名字略异：`P_THIN_FACE/P_BIG_EYE` vs `P_CHEEK/P_EYE`，下标逐位一致）。同时包含会报 C2365，是这次不得不加 `beauty_build.h` 转出版本串的原因。是否合并成一份待定——合并要改 `ofx_plugin.cpp` 的标识符，需连带验证参数接线。
-- **`1.2.6.0` / `1.3.0.0` / `1.3.2` / `1.3.3` 已核实：不是缺条目，是编号跳号**（2026-11-08）。前两个编号从未被写进 `NAMA_BUILD_STR`（1.2.5.0 → 1.2.7.0、1.2.9.0 → 1.3.1.0 直接跨过），全库零命中；后两个是 commit 说明里的工作标签，版本宏仍是 `1.3.1.0`，也没出包。所以没有补录，改为在 `CHANGELOG.md` 的「编号跳号与工作标签」一节交代证据与规则。
+- **四个「缺失版本」已核实，结论分三类**（2026-11-08，含一次更正）：`1.3.0.0` 确实没有这个号（无 commit、无安装包、装机目录也无备份）；`1.2.6.0` **有过构建但没进 git、没出包**——装机备份 `DaVinciBeauty.ofx.bak-1.2.6.0` 内嵌字符串 `1.2.6.0`；`1.3.2` / `1.3.3` 是工作标签，对应备份 DLL 内嵌的仍是 `1.3.1.0`（同类的还有 `1.2.4.0`，内嵌 `1.2.3.0`）。所以没有补录条目，改为在 `CHANGELOG.md` 的「编号跳号与工作标签」一节交代证据与规则。

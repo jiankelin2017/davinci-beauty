@@ -1,6 +1,6 @@
 # 验收：发版前的自动化检查
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：原 `04_验收工具/README.md`
+> 适用代码版本：1.3.6.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：原 `04_验收工具/README.md`
 
 **这份文档管**：怎么跑验收、28 项各查什么、失败先查哪、基线怎么维护。
 **不在这里管**：出包看 `guide-package.md`，构建与部署看 `guide-dev-workflow.md` 与 `reference-architecture.md` §3–4，性能测量看 `reference-performance.md` §5。
@@ -123,10 +123,10 @@ python baseline.py check --only blur62 sh50
 - **raw 不入库**：15×2.6 MB ≈ 41 MB，每次现生成；仓库只留 `baseline_manifest.txt`（1 KB）。
 - manifest 记录输入帧 md5 与插件版本。输入换了会显式提示"需重新标定"，不会变成一堆看不懂的 md5 失配。
 - `update` 每个用例跑两次确认 md5 一致——验的是**测试本身是否确定性**，避免把测量抖动当成输出变了。
-- **`update` 要加确定性设置**：`set BEAUTY_INFER_THREADS=1` 再跑。默认线程数下 `update` 会报「抖动，拒绝写入」（实测两次都是）。单线程下重生成是幂等的——2026-11-08 实测 18 个 md5 一个没变，diff 只有 `plugin_version` 那一行。
+- **`update` 不需要任何环境变量**（1.3.6.0 起）。1.3.5.0 及之前曾要加 `set BEAUTY_INFER_THREADS=1`，那是在绕 `toneColor()` 的数据竞争；竞争已修，绕法随之作废。
 - 输入帧 `input_face.png` 自带在仓库内，换台机器 clone 下来就能跑。
 
-**偶发 17/18 不是回归**：单个用例首跑可能失配、复跑一致，`check` 会自动复跑一次，一致则打印"抖动"并按通过计。**不需要并发就能触发**——顺序跑 `--repeat 2` 也会出现，失配用例不固定。强制 CPU 与强制 GPU 输出逐字节相同，所以与 GPU 无关；唯一稳定相关的是推理线程数。机制与全部实验数据见 `reference-performance.md` §5.4。
+**偶发 17/18 曾是数据竞争，1.3.6.0 已修**：根因是 `toneColor()` 的 Sobel 门控读正被并行写的 `dst`，实测 1.5% 概率输出差 1 级。现在 `blur62_wh100` / `cl50` 各跑 1200 次都是单一 md5。`check` 保留的「失配自动复跑一次」仍有意义（防的是真抖动），但**再出现复跑一致的情况应当当成异常信号去查，而不是当成噪声**。机制与实验数据见 `reference-performance.md` §5.4。
 
 ---
 
@@ -155,7 +155,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File pool_regress.ps1 -Force   ::
 | 装机产物行为等价 FAIL | 装机 DLL 是不是旧版：看 `ofx.log` 的 `onLoad build=` | `reference-architecture.md` §6 |
 | 参数组"面板名 ↔ SDK key 对齐" FAIL | `keys[]` 顺序与 `kParams[]` 是否同步 | 该组 FAIL 会导致"拖 A 下发 B"，编译期不报错 |
 | 回归 FAIL（某个用例） | 是否故意改了像素 | 有意改 → `baseline.py update`；无意改 → 查该用例覆盖的参数 |
-| 回归 17/18 | 复跑一次看是否一致；一致即抖动 | `reference-performance.md` §5.4 |
+| 回归 17/18 | 1.3.6.0 起不该再出现；出现即为真问题，先查 `toneColor` 类并行读写 | `reference-performance.md` §5.4 |
 | 并发组 WARN | 本机有没有 MSVC/SDK | 退出码 9 是环境问题，不是回归失败 |
 | 并发组 FAIL（`DEADLOCK`） | `rows` / `n` 两个数 | 分块守恒又破了 |
 | 工程组"资产/许可" FAIL | 三处（`install.bat` / `PAYLOAD_PLAN` / NSI）哪一处缺 | 静态判，装机之前就该抓出来 |
@@ -169,7 +169,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File pool_regress.ps1 -Force   ::
 |---|---|
 | `data check fail` | 旧版 SDK 运行时往 stderr 打的内部校验日志，不影响结果 |
 | `NamaSelfTest` 中文路径乱码 | UTF-8 被按本地码页输出，只在初始化失败时可见，不影响正常路径 |
-| 回归偶发 17/18 | 单用例首跑失配、复跑一致（与 GPU 无关，相关变量是推理线程数），见 §3 |
+| 回归偶发 17/18 | 1.3.6.0 已修数据竞争，不该再出现；见 §3 |
 | 少一项「编译」 | 不带 `--build` 时不触发编译步骤（它不属于 7 个检查组之一），清单里少这一行是正常的 |
 
 ---

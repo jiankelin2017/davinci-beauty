@@ -1,6 +1,6 @@
 # DaVinciBeauty 架构与关键事实
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：原根目录 `开发文档.md`
+> 适用代码版本：1.3.6.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：原根目录 `开发文档.md`
 
 **这份文档管**：分层结构、改代码会踩的硬约束、日志怎么读、配置项在哪、参数为什么这么定。
 **不在这里管**：安装看 `docs/guides/guide-install.md`，出包看 `guide-package.md`，验收看 `guide-acceptance.md`，历史过程看 `docs/history/history-progress-1x.md`。
@@ -148,7 +148,7 @@ f.kps[p*2+1] = flipY ? (h - vy2)     : vy2;   // 关键点：y' = h - y
 - `install.bat`：拷 `DaVinciBeauty.ofx` + `onnxruntime.dll` + `yunet.onnx`（有则加 `LICENSE` / `THIRD-PARTY-NOTICES.md`）到 `bundle\DaVinciBeauty.ofx.bundle\Contents\Win64`，再装到 `%COMMONPROGRAMFILES%\OFX\Plugins\…`，并清理旧引擎残留。引擎资产目录按"含 `onnxruntime.dll` + `yunet.onnx`"自动识别，不依赖名字。
 - 装前**必须完全退出 Resolve**（否则 DLL 被占用，改名 `.locked-<pid>` 留垃圾，攒几次上百 MB）。
 - 运行方式：管理员 cmd → `cd` → `install.bat`，**不要双击**。
-- **现状（1.3.5.0）**：`install.bat` 已不是纯 ASCII——有 3 行 UTF-8 中文（`:24` 的 echo、`:51-52` 的 rem）。解析不受影响（多次安装成功），但 936 代码页下那行 echo 会显示乱码。另含 `%~dp0..\LICENSE` 这类**父目录引用**（不是通配符里的 `..` 雷区）。
+- **现状（1.3.6.0）**：`install.bat` 是**纯 ASCII + GBK 兼容 + CRLF**，验收脚本对全部 17 个 `.bat` 逐字节检查（`批处理编码` 一项）。1.3.5.0 之前有 3 行 UTF-8 中文（`:24` 的 echo、`:51-52` 的 rem），936 代码页下 echo 会乱码，已改英文。另含 `%~dp0..\LICENSE` 这类**父目录引用**（不是通配符里的 `..` 雷区）。
 - ⚠️ **`acceptance.py` 的「批处理编码」检查抓不到这种情况**：它只判断文件能否按 GBK 解码，而 UTF-8 中文的字节恰好也能通过，于是报「17 个 .bat 全部合规」。要真查得加一条「含非 ASCII 且能按 UTF-8 解出 CJK → 违规」。是否改成这样见 `docs/INDEX.md` 待确认项。
 
 ## 5. 配置：ini 是第一层，环境变量是第二层
@@ -199,7 +199,7 @@ grep -rho 'getenv("[A-Z_0-9]*")' 01_ofx插件源码/src/*.cpp | sort -u
 
 | 行 | 含义 |
 |---|---|
-| `onLoad 成功 … build=1.3.5.0` | 插件加载成功，`build=` 是插件版本 |
+| `onLoad 成功 … build=1.3.6.0` | 插件加载成功，`build=` 是插件版本 |
 | `createInstance 预热引擎 成功 … build=… ver=…` | 引擎初始化。**`ver=` 是 `CoreEngine::version()` 硬编码值（`beauty_core.cpp:1338`），与插件版本不同源，别用它判断版本** |
 | `createInstance 语义区域 region=on` | 人脸模型已加载并完成区域推理 |
 | `createInstance 语义区域 region=off <原因>` | 模型没加载，**退回颜色启发式**（代码注释里称 "v1.4 颜色启发式"，指旧的颜色判定路径，不是版本号）。不是完全没效果，是效果不再限制在皮肤内 |
@@ -331,7 +331,7 @@ py -3.12 mock_host.py
 | "mock host 20 项" | **23 项** | `mock_host.py` 输出 23 行 |
 | "`install.bat` 纯 ASCII、无 `..`" | 有 3 行 UTF-8 中文；含 `%~dp0..\` 父目录引用（非通配符雷区） | §4 |
 | "自测 `PASS` 即通过" | `PASS` 只要求"有改动"，要看 `msg=faces=N best=X` | §9 |
-| "插件版本 3.0.x" | 旧编号已退役，唯一现行序列是 `1.3.5.0` 四段式 | `docs/CHANGELOG.md` |
+| "插件版本 3.0.x" | 旧编号已退役，唯一现行序列是 `1.3.6.0` 四段式 | `docs/CHANGELOG.md` |
 
 ## 11. 版本号的唯一出处
 

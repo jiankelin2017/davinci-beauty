@@ -1,8 +1,8 @@
 # 安装 / 升级 / 回滚
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：`安装说明.txt`（v1.0.7.0 时代，已删除）
+> 适用代码版本：1.3.6.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：`安装说明.txt`（v1.0.7.0 时代，已删除）
 
-**一句话**：先彻底退出 Resolve，再跑 `01_ofx插件源码\install.bat`；或者双击 `05_安装包\build\DaVinciBeauty_Setup_v1.3.5.0.exe`。装完重启 Resolve，效果面板在 `Effects Library > OpenFX > DaVinci Beauty`。
+**一句话**：先彻底退出 Resolve，再跑 `01_ofx插件源码\install.bat`；或者双击 `05_安装包\build\DaVinciBeauty_Setup_v1.3.6.0.exe`。装完重启 Resolve，效果面板在 `Effects Library > OpenFX > DaVinci Beauty`。
 
 ## 一、手动装（源码包形态）
 
@@ -18,13 +18,13 @@
 
 | 操作 | 命令 |
 |---|---|
-| 图形安装 | 双击 `DaVinciBeauty_Setup_v1.3.5.0.exe`（会请求管理员权限） |
-| 静默安装 | `DaVinciBeauty_Setup_v1.3.5.0.exe /S` |
-| 静默卸载 | `DaVinciBeauty_Setup_v1.3.5.0.exe --uninstall /S` |
+| 图形安装 | 双击 `DaVinciBeauty_Setup_v1.3.6.0.exe`（会请求管理员权限） |
+| 静默安装 | `DaVinciBeauty_Setup_v1.3.6.0.exe /S` |
+| 静默卸载 | `DaVinciBeauty_Setup_v1.3.6.0.exe --uninstall /S` |
 | 卸载（图形） | 「应用和功能」→「DaVinci Beauty 美颜」，或运行 `…\DaVinciBeauty.ofx.bundle\Uninstall_DaVinciBeauty.exe /S` |
 
 安装包会顺带装上 `LICENSE`（GPL-2.0-only）与 `THIRD-PARTY-NOTICES.md`，随分发一起保留。
-当前包：4.6 MB，`build\DaVinciBeauty_Setup_v1.3.5.0.exe`。重出包见 `docs/guides/guide-package.md`。
+当前包：4,856,294 字节（4.63 MB），`build\DaVinciBeauty_Setup_v1.3.6.0.exe`，md5 `50436e915a79759c91dc99e4441eb8b1`。重出包见 `docs/guides/guide-package.md`。
 
 ## 三、升级与回滚
 

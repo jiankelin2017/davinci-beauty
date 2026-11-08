@@ -1,18 +1,18 @@
 # DaVinci Beauty —— DaVinci Resolve 美颜滤镜（OFX）
 
-> 当前构建：**1.3.5.0（2026-11-08）** ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian
+> 当前构建：**1.3.6.0（2026-11-08）** ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian
 > 文档总表：`docs/INDEX.md` ｜ 版本变化：`docs/CHANGELOG.md`
 
 达芬奇 Resolve 的 OFX 美颜插件。**自研纯 CPU 美颜引擎**（移植自上一代宿主 3.1.x）+ **ONNX 人脸检测**；人脸推理有 GPU 时自动加速，无 GPU 时自动退回 CPU，效果一致。插件 ID：`com.nama.davinci.beauty`（不要改，改了历史工程里已挂的效果会失效）。
 
-**1.3.5.0 只修三处失败路径，正常渲染路径一行未动，画面逐字节不变**（基线 18/18、验收 28 项全过）：① 并行任务计数器记错（死锁，整插件卡死）；② GPU 掉驱动后永久静默停用（表现是「莫名变慢」）；③ ORT 空 session options 崩溃。细节见 `docs/CHANGELOG.md`。
+**1.3.6.0 修掉一处数据竞争**：色调段的 Sobel 门控在读正被并行写的像素，导致输出以 1.5% 概率随机漂移（表现为「逐字节回归偶发 17/18」）。改成先算边缘再写回。**画面会变**（0.2% 像素、最多 3 级，肉眼不可见），基线已重标。1.3.5.0 修的三处失败路径（死锁 / GPU 掉驱动后静默停用 / ORT 空 options 崩溃）不变。细节见 `docs/CHANGELOG.md`。
 
 ## 快速开始
 
 ```
 1. 完全退出 DaVinci Resolve
 2. 01_ofx插件源码\install.bat
-   （或用安装包：05_安装包\build\DaVinciBeauty_Setup_v1.3.5.0.exe）
+   （或用安装包：05_安装包\build\DaVinciBeauty_Setup_v1.3.6.0.exe）
 3. 重启 Resolve → Effects Library > OpenFX > DaVinci Beauty
 ```
 

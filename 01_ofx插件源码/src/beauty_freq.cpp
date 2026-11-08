@@ -738,20 +738,27 @@ void toneColor(unsigned char* dst, int w, int h,
     }
     const bool wRoi = (wsrc != mask);
 
-    runRows(roi.y0, roi.y1, threads, [&](int yBegin, int yEnd) {
-        for (int y = yBegin; y < yEnd; y++) {
-            const size_t rowOff = (size_t)y * w;
-            const unsigned char* wrow = wRoi ? (wsrc + (size_t)(y - roi.y0) * bw) : nullptr;
-            for (int x = roi.x0; x < roi.x1; x++) {
-                const unsigned char mv = wRoi ? wrow[x - roi.x0] : mask[rowOff + x];
-                if (mv == 0) continue;          // 非皮肤：一个字节都不动
-                const size_t o = (rowOff + x) * 4;
-                // 边缘门控（1.2.4）：和磨皮的 g_cfg.edgeK 同一个理由 ——
-                // 细而强的结构（压在锁骨上的碎发、链子、衣纹）不该被"整片加常数"的
-                // 美白抬亮。磨皮本来就有这道门（blendWithMask 里的 sobelEdge），
-                // 所以只开磨皮看不见；美白没有门，碎发被抬成浅色细条。
-                int edge = 0;
-                if (doWhiten || doClar) {
+    // 边缘门控（1.2.4）：和磨皮的 g_cfg.edgeK 同一个理由 ——
+    // 细而强的结构（压在锁骨上的碎发、链子、衣纹）不该被"整片加常数"的
+    // 美白抬亮。磨皮本来就有这道门（blendWithMask 里的 sobelEdge），
+    // 所以只开磨皮看不见；美白没有门，碎发被抬成浅色细条。
+    //
+    // 1.3.6.0：Sobel 必须**在写回之前单独算一遍**。
+    // 原实现把它写在写回循环里，读的是 dst 自身 —— 而 dst 正被其它线程按行并行
+    // 写美白结果。行块边界那两行读到的邻域究竟是"已美白"还是"未美白"取决于
+    // 线程调度：实测 2100 次有 33 次输出差 1 级（1.57%），异常行全部落在
+    // 261 + 35k（35 = 块高）以及其 y±1，即 Sobel 的上下邻域。
+    // 这是数据竞争（C++ 未定义行为），不是测量噪声，也是"逐字节回归"偶发
+    // 假失配的真因。改成先算到 ebuf 再读，顺带省掉写回时的九宫格重算。
+    static thread_local std::vector<unsigned char> ebuf;
+    const unsigned char* eb = nullptr;
+    if (doWhiten || doClar) {
+        const size_t en = (size_t)bw * bh;
+        if (ebuf.size() < en) ebuf.resize(en);
+        unsigned char* const ebp = &ebuf[0];
+        runRows(roi.y0, roi.y1, threads, [&](int yBegin, int yEnd) {
+            for (int y = yBegin; y < yEnd; y++) {
+                for (int x = roi.x0; x < roi.x1; x++) {
                     const int xm = (x > 0) ? (x - 1) : x;
                     const int xp = (x + 1 < w) ? (x + 1) : x;
                     const int ym = (y > 0) ? (y - 1) : y;
@@ -765,10 +772,26 @@ void toneColor(unsigned char* dst, int w, int h,
                     const int gx = (l02 + 2 * l12 + l22) - (l00 + 2 * l10 + l20);
                     const int gy = (l20 + 2 * l21 + l22) - (l00 + 2 * l01 + l02);
                     int mag = ((gx < 0 ? -gx : gx) + (gy < 0 ? -gy : gy)) / 2;
-                    if (mag >= kToneEdgeHi) edge = 192;
+                    int e = 0;
+                    if (mag >= kToneEdgeHi) e = 192;
                     else if (mag > kToneEdgeLo)
-                        edge = (int)((long long)(mag - kToneEdgeLo) * 192 / (kToneEdgeHi - kToneEdgeLo));
+                        e = (int)((long long)(mag - kToneEdgeLo) * 192 / (kToneEdgeHi - kToneEdgeLo));
+                    ebp[(size_t)(y - roi.y0) * bw + (x - roi.x0)] = (unsigned char)e;
                 }
+            }
+        });
+        eb = ebp;
+    }
+
+    runRows(roi.y0, roi.y1, threads, [&](int yBegin, int yEnd) {
+        for (int y = yBegin; y < yEnd; y++) {
+            const size_t rowOff = (size_t)y * w;
+            const unsigned char* wrow = wRoi ? (wsrc + (size_t)(y - roi.y0) * bw) : nullptr;
+            for (int x = roi.x0; x < roi.x1; x++) {
+                const unsigned char mv = wRoi ? wrow[x - roi.x0] : mask[rowOff + x];
+                if (mv == 0) continue;          // 非皮肤：一个字节都不动
+                const size_t o = (rowOff + x) * 4;
+                const int edge = eb ? (int)eb[(size_t)(y - roi.y0) * bw + (x - roi.x0)] : 0;
                 const float sk = (float)mv * (1.0f / 255.0f) * (float)(256 - edge) * (1.0f / 256.0f);
 
                 float r = (float)dst[o + 0];
