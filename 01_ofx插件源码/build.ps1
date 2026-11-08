@@ -18,7 +18,8 @@
 [CmdletBinding()]
 param(
     [switch]$Clean,
-    [switch]$NoInstall
+    [switch]$NoInstall,
+    [switch]$Sandbox
 )
 
 $ErrorActionPreference = 'Stop'
@@ -102,6 +103,9 @@ if (-not (Test-Path (Join-Path $ortInclude 'onnxruntime_c_api.h'))) {
     throw "ONNX Runtime headers not found: $ortInclude"
 }
 
+# 沙箱构建：换插件标识/标签（见 src/ofx_plugin.cpp 顶部）。用 -Sandbox 开关，
+# 不再依赖环境变量 —— 环境变量在跨进程调用时不可靠，踩过一次。
+$sandboxDefine = if ($Sandbox -or $env:NAMA_SANDBOX -eq '1') { '/DNAMA_SANDBOX_BUILD' } else { '' }
 $sources = Get-ChildItem (Join-Path $root 'src') -Filter *.cpp | Sort-Object Name | ForEach-Object { $_.FullName }
 if (-not $sources) { throw 'No .cpp sources under src\' }
 
@@ -109,6 +113,9 @@ $clArgs = @(
     '/nologo', '/O2', '/EHsc', '/MD', '/W3', '/utf-8', '/arch:AVX2', '/std:c++17',
     "/Fo$obj\", "/Fe$(Join-Path $out 'DaVinciBeauty.ofx')", '/LD',
     '/DUNICODE', '/D_UNICODE', '/D_CRT_SECURE_NO_WARNINGS',
+    # 沙箱构建（$env:NAMA_SANDBOX=1）：换插件标识与标签，避免与正式版撞标识。
+    # 正式构建时这里是空串，下面 & $cl 之前会被过滤掉（不能传空参数）。
+    $sandboxDefine,
     '/I', (Join-Path $root 'sdk\include'),
     '/I', $ortInclude
 ) + $sources + @(
@@ -127,6 +134,7 @@ $clArgs = @(
     "/IMPLIB:$(Join-Path $obj 'DaVinciBeauty.lib')"
 )
 
+$clArgs = $clArgs | Where-Object { $_ -ne '' -and $null -ne $_ }
 Write-Host "[BUILD] MSVC $($msvc.Name) + SDK $sdkVer"
 Write-Host "[BUILD] engine: $engine"
 Write-Host "[BUILD] $($sources.Count) sources -> out\DaVinciBeauty.ofx"

@@ -1,3 +1,17 @@
+// 1.3.5：沙箱构建用独立插件标识与标签（见下方 OfxPlugin 描述符）。
+//
+// 为什么必须区分：OFX 按 bundle 目录扫描、按 pluginIdentifier 注册。沙箱包只是把
+// bundle 目录改了名，二进制里的标识若还是 com.nama.davinci.beauty，宿主看到两个
+// bundle 声明同一标识，通常只认先扫到的那个 —— 「装沙箱包去试」实际跑的还是正式
+// 那份，等于没测。所以沙箱构建换标识 + 换标签。
+#ifdef NAMA_SANDBOX_BUILD
+#define NAMA_PLUGIN_ID    "com.nama.davinci.beauty.sandbox"
+#define NAMA_PLUGIN_LABEL "DaVinci Beauty 美颜（沙箱）"
+#else
+#define NAMA_PLUGIN_ID    "com.nama.davinci.beauty"
+#define NAMA_PLUGIN_LABEL "DaVinci Beauty 美颜"
+#endif
+
 // ofx_plugin.cpp —— DaVinci Beauty 的 OpenFX 插件层。
 //
 // 结构照官方 Examples/Invert/invert.cpp 的最小骨架，参数部分照
@@ -615,7 +629,7 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
     gEffectHost->getPropertySet(effect, &props);
     if (!props) return kOfxStatFailed;
 
-    gPropHost->propSetString(props, kOfxPropLabel, 0, "DaVinci Beauty 美颜");
+    gPropHost->propSetString(props, kOfxPropLabel, 0, NAMA_PLUGIN_LABEL);
     gPropHost->propSetString(props, kOfxImageEffectPluginPropGrouping, 0, "DaVinci Beauty");
     gPropHost->propSetString(props, kOfxPropShortLabel, 0, "DaVinci Beauty");
     gPropHost->propSetString(props, kOfxPropLongLabel, 0, "DaVinci Beauty");
@@ -1758,7 +1772,7 @@ static void setHostFunc(OfxHost* host) {
 
 static OfxPlugin nab = {kOfxImageEffectPluginApi,
                         1,
-                        "com.nama.davinci.beauty",
+                        NAMA_PLUGIN_ID,
                         NAMA_BUILD_MAJOR,
                         NAMA_BUILD_MINOR,
                         setHostFunc,
