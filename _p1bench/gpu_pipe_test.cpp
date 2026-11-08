@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // gpu_pipe_test.cpp —— P1 管道离线验收（RGBA8 口径）
 //
 // 验四件事：

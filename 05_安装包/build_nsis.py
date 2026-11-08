@@ -130,7 +130,7 @@ PAYLOAD_PLAN = [
 #
 # 落点与 install.bat 一致：Contents\Win64。卸载器用 RMDir /r 删整个 bundle，
 # 所以这里不需要额外的卸载条目。
-LEGAL_FILES = ["LICENSE", "THIRD-PARTY-NOTICES.md"]
+LEGAL_FILES = ["LICENSE", "THIRD-PARTY-NOTICES.md", "COPYRIGHT"]
 
 REPO = os.path.normpath(os.path.join(HERE, ".."))
 

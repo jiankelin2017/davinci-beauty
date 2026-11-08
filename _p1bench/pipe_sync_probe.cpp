@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // pipe_sync_probe.cpp —— 验证「显式 fence 排空」在本机的真实代价
 //
 // 上一个探针发现：4K 人脸 (1.84MP) 与 4K 全帧 (8.3MP) 的 CS 段都是 15.5ms，

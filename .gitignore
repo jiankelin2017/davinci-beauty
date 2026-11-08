@@ -80,3 +80,6 @@ _p2bench/run[0-9].log
 03_测试夹具/bug4_caseC_state.json
 03_测试夹具/installed_check*.txt
 03_测试夹具/mock_run*.txt
+
+# ---- 发布产物：只对 dist/ 开 exe 例外，其余构建产物仍忽略 ----
+!dist/*.exe

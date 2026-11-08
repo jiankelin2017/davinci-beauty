@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // beauty_log.h —— 引擎层 → 宿主日志的唯一出口。
 //

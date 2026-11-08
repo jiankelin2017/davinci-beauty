@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_face.cpp —— YuNet 人脸检测实现（前处理 + 推理 + 解码 + NMS）
 //
 // 解码公式是从实测反推的（640×640 上 cv2.FaceDetectorYN 当真值校准）：

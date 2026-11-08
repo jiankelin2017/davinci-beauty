@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_engine.cpp —— DaVinciBeauty 引擎适配层（v3.0.0）
 //
 // 本层不再加载旧版引擎。它把 ofx_plugin.cpp 的全部请求转给自研的

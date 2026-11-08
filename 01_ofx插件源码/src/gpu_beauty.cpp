@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // gpu_beauty.cpp —— D3D11 GPU 后端（P1：ROI 优先的传输管道）
 //
 // 设计理由见 gpu_beauty.h 文件头。这里只记实现层面必须知道的几个坑：

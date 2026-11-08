@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_pool.cpp —— 持久线程池的实现。设计说明见 beauty_pool.h。
 //
 // 取块协议（一个「代」= 一次 parallelRows 调用）：

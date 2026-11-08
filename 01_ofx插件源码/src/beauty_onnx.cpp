@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_onnx.cpp —— ONNX Runtime C API 的最小封装实现
 //
 // 只依赖 onnxruntime_c_api.h（纯 C 接口）。所有句柄以 void* 保存，避免把头文件

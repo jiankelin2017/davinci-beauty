@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // gpu_smooth_test.cpp —— P2 离线对拍台架
 //
 // 验收标准（用户 2026-11-06 拍板 A 案）：**逐字节一致**，0 字节差异。

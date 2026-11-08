@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // ---------------------------------------------------------------------------
 // gpu_smooth —— 磨皮生产路径（surface3RgbBand）的 D3D11 Compute 移植

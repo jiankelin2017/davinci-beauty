@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // ---------------------------------------------------------------------------
 // beauty_freq —— 高低频分离磨皮（频率分离）

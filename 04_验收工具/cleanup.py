@@ -60,7 +60,6 @@ GROUPS["probe"] = {
         os.path.join(_probe, "_phase1_report.txt"),
         os.path.join(_probe, "_phase2_gate_report.txt"),
         os.path.join(_probe, "probe_in.raw.bak"),
-        os.path.join(REPO, "_archive", "04_脚本版Lua源码", "旧备份", "NamaBeauty_美颜.lua.wrongpath.bak"),
     ],
 }
 

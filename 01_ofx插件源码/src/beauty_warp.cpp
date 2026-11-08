@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_warp.cpp —— 美形三项（瘦脸 / 大眼 / 下巴）的位移场实现
 //
 // 实现要点（每一条都是踩过或算过才写的，改之前先读）：

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // ---------------------------------------------------------------------------
 // beauty_face —— YuNet 人脸检测（ONNX Runtime 推理 + 自写后处理）

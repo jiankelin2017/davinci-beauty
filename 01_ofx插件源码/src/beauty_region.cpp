@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_region.cpp —— 人脸局部效果的几何层实现
 //
 // 设计要点（改动前先读）：

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // pipe_stage_probe.cpp —— 把一次 ROI 往返拆成 6 段，每段单独 fence 排空
 //
 // 目的：gpuBeautyVerifyRoi 只给出「上传 / 计算 / 下载」三段，其中「计算」段

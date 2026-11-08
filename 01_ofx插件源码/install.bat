@@ -52,6 +52,7 @@ rem GPL / MIT / BSD-3 all require shipping the notices with the copy, so the
 rem license files go in with the DLL. if exist guards trimmed source trees.
 if exist "%~dp0..\LICENSE" copy /y "%~dp0..\LICENSE" "%WIN64%\" >nul
 if exist "%~dp0..\THIRD-PARTY-NOTICES.md" copy /y "%~dp0..\THIRD-PARTY-NOTICES.md" "%WIN64%\" >nul
+if exist "%~dp0..\COPYRIGHT" copy /y "%~dp0..\COPYRIGHT" "%WIN64%\" >nul
 
 echo [2/4] Bundle contents
 dir /s /b "%WIN64%" | findstr /v "^$"
@@ -92,6 +93,7 @@ call :inst "%WIN64%\onnxruntime.dll"   "%TARGET%\onnxruntime.dll"
 call :inst "%WIN64%\DaVinciBeauty.ofx" "%TARGET%\DaVinciBeauty.ofx"
 if exist "%WIN64%\LICENSE" call :inst "%WIN64%\LICENSE" "%TARGET%\LICENSE"
 if exist "%WIN64%\THIRD-PARTY-NOTICES.md" call :inst "%WIN64%\THIRD-PARTY-NOTICES.md" "%TARGET%\THIRD-PARTY-NOTICES.md"
+if exist "%WIN64%\COPYRIGHT" call :inst "%WIN64%\COPYRIGHT" "%TARGET%\COPYRIGHT"
 
 echo [4/4] Verifying
 set "MISSING=0"

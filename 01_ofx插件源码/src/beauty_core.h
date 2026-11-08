@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // ---------------------------------------------------------------------------
 // beauty_core —— 美颜引擎抽象层

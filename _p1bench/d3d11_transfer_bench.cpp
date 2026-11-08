@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // =============================================================================
 // d3d11_transfer_bench.cpp —— P1 阶段：D3D11 搬运吞吐基准
 //

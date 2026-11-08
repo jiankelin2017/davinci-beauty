@@ -52,7 +52,7 @@ REQUIRED_ASSETS = [
 # 必须随副本分发的法律文件：GPL-2.0（本项目）与 MIT（onnxruntime / yunet）、
 # BSD-3（OFX 头）都要求「随副本附带声明与许可全文」。只放在 git 仓库里不算分发，
 # 用户拿到的安装包 / bundle 才是副本，所以三处链路都要有。
-REQUIRED_LEGAL = ["LICENSE", "THIRD-PARTY-NOTICES.md"]
+REQUIRED_LEGAL = ["LICENSE", "THIRD-PARTY-NOTICES.md", "COPYRIGHT"]
 
 _results = []
 

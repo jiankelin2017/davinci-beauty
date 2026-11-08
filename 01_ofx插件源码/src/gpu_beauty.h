@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // gpu_beauty.h —— D3D11 GPU 后端（P1：ROI 优先的传输管道）
 //

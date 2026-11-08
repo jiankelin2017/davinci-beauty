@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // beauty_pool —— 进程级持久线程池（只服务「按行/按列切块」这一种并行）
 //

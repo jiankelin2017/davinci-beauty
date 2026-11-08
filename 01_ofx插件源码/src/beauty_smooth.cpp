@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_smooth.cpp —— 自研保边平滑核实现（纯 C++，无参考版依赖）
 //
 // 实现要点（都是为性能服务的）：

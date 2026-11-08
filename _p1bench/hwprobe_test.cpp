@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // hwprobe_test.cpp —— beauty_hwprobe 的离线验收程序
 // 编译：cl /O2 /EHsc /MD /std:c++17 /utf-8 hwprobe_test.cpp beauty_hwprobe.cpp
 #include <windows.h>

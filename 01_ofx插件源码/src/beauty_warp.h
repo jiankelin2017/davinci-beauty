@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // ---------------------------------------------------------------------------
 // beauty_warp —— 美形三项的几何变形（瘦脸 / 大眼 / 下巴）

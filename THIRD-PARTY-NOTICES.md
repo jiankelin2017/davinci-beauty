@@ -153,15 +153,49 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 DLL），只在注释里写明公式来源。为避免把上游项目名散落在每一处注释里，正文统一
 写成「该 MIT 实现 / 那份 MIT 实现」，具名出处集中在本节：
 
-| 上游项目 | 许可 | 被引用的部分 | 用到哪里 |
-|---|---|---|---|
-| `dinjufen/lumina-beauty` | MIT（核心代码） | `kComposeShader`、`kSkinBlurShader`、`skinMask`、`uSmoothProtect`、`uSmoothThreshold`、`smoothGrain` | 磨皮合成式、肤色判据、五官保护、阈值软膝、颗粒回填 |
-| `wuxiwuhen/obs-beauty-filter` | MIT | `PSComposite` | Sobel 边缘门控的灵敏度口径（原值 ×10.0） |
+| 上游项目 | 许可 | 版权行（照抄上游 `LICENSE`） | 被引用的部分 | 用到哪里 |
+|---|---|---|---|---|
+| `dinjufen/lumina-beauty` | MIT（仓库根；见下方边界说明） | `Copyright (c) 2026 Lumina Beauty contributors` | `kComposeShader`、`kSkinBlurShader`、`skinMask`、`uSmoothProtect`、`uSmoothThreshold`、`smoothGrain` | 磨皮合成式、肤色判据、五官保护、阈值软膝、颗粒回填 |
+| `wuxiwuhen/obs-beauty-filter` | MIT | `Copyright (c) 2026 wuxiwuhen` | `PSComposite` | Sobel 边缘门控的灵敏度口径（原值 ×10.0） |
 
-**发布前必须做的一件事**：上面两行的版权行（`Copyright (c) <年份> <作者>`）要从
-各自仓库的 `LICENSE` 逐字抄进本节。本文档不代填 —— 猜错版权人比不写更糟。若将来
-把上述代码整段并入本项目（而不是只对齐公式），则本节要升级成第 1、2 节那样的
-完整声明，附版权行与 MIT 全文。
+**这两个上游的 MIT 全文（两份文本相同，仅版权行不同）：**
+
+```
+MIT License
+
+Copyright (c) 2026 Lumina Beauty contributors
+Copyright (c) 2026 wuxiwuhen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+> 上面把两个版权行并列写在同一份 MIT 文本下，是因为两份 `LICENSE` 除版权行外逐字相同。
+> 若将来单独引用其中一个，按「一个上游一份文本」拆开即可。
+
+**`dinjufen/lumina-beauty` 的许可边界（重要）**：该仓库不是全仓 MIT。根目录是 MIT，
+但 `plugins/obs/` 是 **GPL-2.0-or-later**（因为它链接 libobs），`models/` 是
+**Apache-2.0**。本项目只借鉴根目录 shader 里的公式与口径，**既没有引用 `plugins/obs/`
+的代码，也没有引用 `models/` 的模型**。之所以要把这条写清楚：Apache-2.0 与
+GPL-2.0 **不兼容**，一旦哪天把 `models/` 的东西并进来，整个授权结构就得重做。
+
+**若将来把上述代码整段并入本项目**（而不是只对齐公式），本节要升级成第 1、2 节那样
+的完整声明：保留版权行、附 MIT 全文、并在改动的源文件里注明来源。
 
 ## 5. 兼容性说明（给维护者看）
 

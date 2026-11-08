@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // BeautyEngine —— DaVinci Resolve OFX 美颜插件的引擎适配层。
 //

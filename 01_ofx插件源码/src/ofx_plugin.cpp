@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // 1.3.5：沙箱构建用独立插件标识与标签（见下方 OfxPlugin 描述符）。
 //
 // 为什么必须区分：OFX 按 bundle 目录扫描、按 pluginIdentifier 注册。沙箱包只是把

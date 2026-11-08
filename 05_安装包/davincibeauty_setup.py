@@ -39,7 +39,7 @@ PAYLOAD_FILES = [
 # 随包分发的法律文件（GPL-2.0 本项目 / MIT onnxruntime 与 yunet / BSD-3 OFX 头）。
 # 三条许可都要求「随副本附带声明与全文」，所以安装包里必须有这两个文件。
 # 它们不属于「插件跑不起来」的必需项：缺了只告警，不把安装判成失败。
-LEGAL_FILES = ["LICENSE", "THIRD-PARTY-NOTICES.md"]
+LEGAL_FILES = ["LICENSE", "THIRD-PARTY-NOTICES.md", "COPYRIGHT"]
 
 # 安装时必须逐项校验存在的最小集合（核心文件，缺一不可）
 CRITICAL_FILES = [

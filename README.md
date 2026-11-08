@@ -65,12 +65,15 @@ FILELIST.txt      已跟踪文件的 sha256 清单（gen_filelist.py 生成）
 
 ## 许可（License）
 
-本项目以 **GNU General Public License version 2（仅第 2 版，GPL-2.0-only）** 发布。
+本项目以 **GNU General Public License version 2（仅第 2 版，GPL-2.0-only）** 发布，Copyright (C) 2026 Jian。
 
-- 许可全文：根目录 [`LICENSE`](LICENSE)
-- 第三方组件（ONNX Runtime 1.20、YuNet 人脸模型、OpenFX 头文件）的版权与许可见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+- 版权与授权声明：根目录 [`COPYRIGHT`](COPYRIGHT)
+- 许可全文（GPL v2 原文，未作任何修改）：[`LICENSE`](LICENSE)
+- 第三方组件与算法出处：[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+- 每个源文件首行都有 `SPDX-License-Identifier: GPL-2.0-only`，机器可识别
 
-两点需要说清楚：
+三点需要说清楚：
 
-1. **「仅第 2 版」不是笔误**。文件头没有写 "or (at your option) any later version"，所以下游不能自行按 GPLv3 使用。要改成「或更高版本」，只需改本段声明，`LICENSE` 正文一个字都不用动。
-2. **GPL-2.0 与 Apache-2.0 不兼容**，与 MIT、BSD-3-Clause 兼容。现有三个第三方组件都是 MIT/BSD-3，所以这个组合成立；将来若引入 Apache-2.0 组件，整个授权结构必须重做。
+1. **「仅第 2 版」不是笔误**。声明里没有 "or (at your option) any later version"，所以下游不能自行按 GPLv3 使用。将来要改成「或更高版本」，只需改 `COPYRIGHT` 里那一句，`LICENSE` 正文一个字都不用动 —— GPL 第 2 版明文禁止修改许可证文本，所以版权声明全部放在 `COPYRIGHT`，不往 `LICENSE` 里插。
+2. **GPL-2.0 与 Apache-2.0 不兼容**，与 MIT、BSD-3-Clause 兼容。现有三个第三方组件都是 MIT/BSD-3，所以这个组合成立；将来若引入 Apache-2.0 组件（例如某个模型仓库的 `models/` 目录），整个授权结构必须重做。
+3. **MIT 上游只在合规文件里标注，不散落在注释中**。磨皮合成式与 Sobel 门控灵敏度口径分别来自两个 MIT 实现，源码注释统一写「该 MIT 实现」，具名出处、版权行与 MIT 全文集中在 `THIRD-PARTY-NOTICES.md` 第 4 节。本项目**没有分发它们的代码**，只是对齐公式。

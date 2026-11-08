@@ -1,0 +1,50 @@
+DaVinci Beauty —— DaVinci Resolve 美颜 OFX 插件
+Copyright (C) 2026 Jian
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License version 2 as
+published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with this program.  If not, see <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>.
+
+
+--------------------------------------------------------------------------
+补充说明（不是许可证条款，只解释这份项目怎么授权）
+--------------------------------------------------------------------------
+
+1. 授权范围
+   本项目整体按 GNU General Public License **第 2 版**分发，SPDX 标识符：
+       GPL-2.0-only
+   即「仅第 2 版」，不含「或任何更高版本」。完整条款见同目录的 LICENSE
+   文件 —— 那份是 GPL v2 原文，**一个字都没有改**。GPL 第 2 版正文明确
+   规定不得修改许可证文本，所以本项目的版权与授权声明放在本文件，不往
+   LICENSE 里插。
+
+2. 为什么不是「第 2 版或更高」
+   选 GPL-2.0-only 而不是 GPL-2.0-or-later，是为了让授权边界固定：将来
+   FSF 发布 GPL 第 4 版时，本项目不会自动被卷进去，要不要跟进由版权人
+   另行决定。
+
+3. 第三方组件的许可
+   本项目使用了若干第三方组件与算法出处，各自许可见
+   THIRD-PARTY-NOTICES.md。要点：
+     - ONNX Runtime ............ MIT（可商用、可闭源分发）
+     - YuNet 人脸检测模型 ...... MIT
+     - OpenFX 头文件 ........... BSD-3-Clause
+     - 两处算法出处标注 ........ MIT（仅标注公式来源，未分发其代码）
+   MIT 与 BSD-3-Clause 均与 GPL-2.0 兼容，可以并入后整体按 GPL-2.0 分发。
+
+4. 与 GPL-2.0 不兼容的许可
+   Apache-2.0 与 GPL-2.0 不兼容。本项目当前**没有**任何 Apache-2.0 组件；
+   引入前必须先改授权结构（通常只能整体转 GPL-3.0），不要绕过这条。
+
+5. 源码文件头
+   每个 .c/.cpp/.h/.hpp 的首行都有
+       // SPDX-License-Identifier: GPL-2.0-only
+   便于机器识别；文件级的版权与豁免声明以本文件为准。

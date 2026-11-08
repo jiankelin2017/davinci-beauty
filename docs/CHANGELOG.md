@@ -99,7 +99,21 @@
 
 ⚠ **环境变量断代**：`NAMA_*` 一律不再识别（无兼容读取）。自测、探针、`build.ps1`、安装器已同步改完；如果本机有手写脚本或快捷方式设过 `NAMA_*`，需要自己换成 `BEAUTY_*`。
 
-同版重出包：`DaVinciBeauty_Setup_v1.3.6.0.exe`（4,857,026 字节，md5 `d3ab6f1d…`），旧包 `50436e91…` 作废。
+同版重出包：`DaVinciBeauty_Setup_v1.3.6.0.exe`（4,857,026 字节，md5 `d3ab6f1d…`），旧包 `50436e91…` 作废。**随后又因补 `COPYRIGHT` 重出一次**，现为 4,858,896 字节、md5 `e15aaf96…`（见本节末「许可证落地」）。
+
+### 同版顺带：许可证落地（GPL-2.0-only + MIT 上游版权行）
+
+之前的合规缺口是「说了 GPL-2.0，但没有自己的版权行；THIRD-PARTY-NOTICES 里两个 MIT 上游的版权行空着」。这次补齐：
+
+| 项 | 处理 |
+|---|---|
+| 本项目版权 | 新增根目录 `COPYRIGHT`：`Copyright (C) 2026 Jian` + GPL-2.0-only 声明。`LICENSE` 保持 GPL v2 原文**一字未改** —— GPL 第 2 版明文禁止修改许可证文本，所以声明另起文件，不往 `LICENSE` 里插 |
+| 源文件标识 | 39 个 `.c/.cpp/.h` 首行加 `SPDX-License-Identifier: GPL-2.0-only` + 版权行；编译产物 md5 不变（`8736d185…`），纯注释 |
+| MIT 上游版权行 | `dinjufen/lumina-beauty` = `Copyright (c) 2026 Lumina Beauty contributors`；`wuxiwuhen/obs-beauty-filter` = `Copyright (c) 2026 wuxiwuhen`。两者 `LICENSE` 除版权行外逐字相同，附一份共用 MIT 全文 |
+| 许可边界 | lumina 仓库不是全仓 MIT：根目录 MIT、`plugins/obs/` 是 GPL-2.0-or-later、`models/` 是 **Apache-2.0**。本项目只借鉴根目录 shader 公式，未引用后两者 —— 这条写进第 4 节，因为 Apache-2.0 与 GPL-2.0 不兼容，误引会让整个授权结构失效 |
+| 分发 | `COPYRIGHT` 纳入 `install.bat` / `PAYLOAD_PLAN` / NSI `File` 指令 / `davincibeauty_setup.py` 四处；`acceptance.py` 的许可检查由 2 项改 3 项（`3/3 项`） |
+
+包因此重出：4,858,896 字节、md5 `e15aaf96…`，stage 从 5 个文件变 6 个。验收 28 项全过。
 
 ## 1.3.5.0（2026-11-08）
 

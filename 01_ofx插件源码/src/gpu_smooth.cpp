@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // gpu_smooth.cpp —— 磨皮生产路径的 D3D11 Compute 实现（P2）
 //
 // 设计动机、ROI 相位约束、外扩推导见 gpu_smooth.h 头注释。这里只记实现要点：

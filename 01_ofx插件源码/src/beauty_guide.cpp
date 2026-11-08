@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_guide.cpp —— 引导滤波实现（O(1)/像素）
 
 #include "beauty_guide.h"

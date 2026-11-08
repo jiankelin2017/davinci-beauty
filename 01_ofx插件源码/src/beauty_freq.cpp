@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_freq.cpp —— 高低频分离磨皮实现
 
 #include "beauty_freq.h"

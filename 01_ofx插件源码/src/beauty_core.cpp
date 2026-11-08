@@ -1,4 +1,6 @@
-﻿// beauty_core.cpp —— 引擎抽象层 + 三个实现的容器
+﻿// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
+// beauty_core.cpp —— 引擎抽象层 + 三个实现的容器
 //
 //   1) PassthroughEngine：直通，用来证明「开关真的生效」；
 //   2) CoreEngine：自研引擎，3.1.7 起是唯一的实现；

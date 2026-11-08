@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_hwprobe.cpp —— 硬件能力探测与渲染路径自动定档（P1 实现）
 //
 // 设计约束：

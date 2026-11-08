@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 // beauty_engine_glue.cpp —— core_glue 桥接层的实现（唯一接触 CoreEngine 的翻译单元）
 //
 // 职责：把 BeautyEngine 侧传来的原始参数转成 BeautySettings，再转调自研

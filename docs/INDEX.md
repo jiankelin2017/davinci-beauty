@@ -101,4 +101,6 @@ docs/
 - **18 份死探针已删（2026-11-08）**：只服务已移除外部 SDK 的脚本（`LoadLibrary` 那个 DLL、扫它的字符串池、读解密后的模型 bundle、跑它的区域参数）全部移出仓库，删前整份备份在本地归档；`03_测试夹具` 跟踪文件 55 → 37。留下的是跑当前插件的：`mock_host`、`selftest_ofx`、`selftest_ui`、`probe_param_visibility`、基线/性能对照、并发复现等。
 - **三份旧引擎区域探测报告已移出仓库**：内容只对已下线的旧引擎有意义，后续开发不依赖；本地归档保留，归档表已标 Removed。
 - **解密模型目录已移出项目盘**：61.6 MB，移到 `C:\Users\Administrator\LocalArchive\DaVinciBeauty\`。仓库内已无任何脚本引用该路径（唯一提及是 `package.py` 里一句「为什么不哈希它」的注释）。
+- **许可证已落地（2026-11-08）**：新增根目录 `COPYRIGHT`（`Copyright (C) 2026 Jian` + GPL-2.0-only 声明），`LICENSE` 保持 GPL v2 原文不动；39 个源文件首行加 `SPDX-License-Identifier: GPL-2.0-only`（编译 md5 不变）；`THIRD-PARTY-NOTICES.md` 第 4 节补上两个 MIT 上游的真实版权行与 MIT 全文，并写明 lumina 仓库的许可边界（`plugins/obs/` 是 GPL-2.0-or-later、`models/` 是 Apache-2.0，本项目两者都没引用）。`COPYRIGHT` 已纳入四处分发清单，验收许可检查由 2 项改 3 项。
+- **本地归档目录也已迁出项目盘**：`03_脚本版Python源码`、`04_脚本版Lua源码`、本次删除探针的备份、三份逆向报告，全部移到 `C:\Users\Administrator\LocalArchive\DaVinciBeauty\_archive\`。`cleanup.py` 里指向旧 Lua 备份的那一条已同步删除。
 - **四个「缺失版本」已核实，结论分三类**（2026-11-08，含一次更正）：`1.3.0.0` 确实没有这个号（无 commit、无安装包、装机目录也无备份）；`1.2.6.0` **有过构建但没进 git、没出包**——装机备份 `DaVinciBeauty.ofx.bak-1.2.6.0` 内嵌字符串 `1.2.6.0`；`1.3.2` / `1.3.3` 是工作标签，对应备份 DLL 内嵌的仍是 `1.3.1.0`（同类的还有 `1.2.4.0`，内嵌 `1.2.3.0`）。所以没有补录条目，改为在 `CHANGELOG.md` 的「编号跳号与工作标签」一节交代证据与规则。

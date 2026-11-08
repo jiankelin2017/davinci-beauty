@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// Copyright (C) 2026 Jian
 #pragma once
 // ---------------------------------------------------------------------------
 // beauty_onnx —— ONNX Runtime 的最小 C++ 封装（只用 C API）

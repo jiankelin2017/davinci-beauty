@@ -143,6 +143,7 @@ Section "DaVinci Beauty Plugin" SecMain
   ; 所以这里不需要额外的卸载条目。
   File "${STAGE}\LICENSE"
   File "${STAGE}\THIRD-PARTY-NOTICES.md"
+  File "${STAGE}\COPYRIGHT"
   SetOutPath "$INSTDIR"
 
   ; --- 注册表：卸载信息，让它出现在「应用和功能」---
@@ -210,6 +211,11 @@ Section "DaVinci Beauty Plugin" SecMain
   ${IfNot} ${FileExists} "$INSTDIR\THIRD-PARTY-NOTICES.md"
     ${IfNot} ${Silent}
       MessageBox MB_ICONEXCLAMATION|MB_OK "安装完成，但 bundle 里没有 THIRD-PARTY-NOTICES.md。$\r$\n这是打包缺陷（MIT / BSD-3 要求随副本附带声明），请反馈。"
+    ${EndIf}
+  ${EndIf}
+  ${IfNot} ${FileExists} "$INSTDIR\COPYRIGHT"
+    ${IfNot} ${Silent}
+      MessageBox MB_ICONEXCLAMATION|MB_OK "安装完成，但 bundle 里没有 COPYRIGHT。$\r$\n这是打包缺陷（版权与授权声明应随副本分发），请反馈。"
     ${EndIf}
   ${EndIf}
 SectionEnd
