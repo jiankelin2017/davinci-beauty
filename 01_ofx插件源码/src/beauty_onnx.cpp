@@ -130,10 +130,33 @@ bool OnnxModel::load(const char* path, std::string& err, int threads) {
     }
     env_ = env;
 
+    // CreateSessionOptions 也返回 OrtStatus*，而 ORT 1.20.1 **不判空**：
+    // 实测把 nullptr 传给 SetIntraOpNumThreads / SetSessionGraphOptimizationLevel /
+    // AddSessionConfigEntry 全是访问违例 0xC0000005。该函数只有分配失败才返回非空
+    // 状态 —— 概率低，但代价是崩溃而不是性能，所以这里自己挡一道。
     OrtSessionOptions* opts = nullptr;
-    A->CreateSessionOptions(&opts);
-    if (threads > 0) A->SetIntraOpNumThreads(opts, threads);
-    A->SetSessionGraphOptimizationLevel(opts, ORT_ENABLE_ALL);
+    {
+        OrtStatus* s = A->CreateSessionOptions(&opts);
+        if (!opts) {
+            err = s ? (std::string("CreateSessionOptions 失败: ") + A->GetErrorMessage(s))
+                    : std::string("CreateSessionOptions 返回空 options");
+            if (s) A->ReleaseStatus(s);
+            A->ReleaseEnv(env);
+            env_ = nullptr;
+            return false;
+        }
+        if (s) A->ReleaseStatus(s);   // 指针可用但状态非空：释放状态后继续
+    }
+    // 这两个返回值旧写法直接丢了：失败时那块 OrtStatus 没人释放（本文件
+    // AddSessionConfigEntry 那两处就是「忽略但 ReleaseStatus」，这里落了半套）。
+    if (threads > 0) {
+        OrtStatus* s = A->SetIntraOpNumThreads(opts, threads);
+        if (s) A->ReleaseStatus(s);
+    }
+    {
+        OrtStatus* s = A->SetSessionGraphOptimizationLevel(opts, ORT_ENABLE_ALL);
+        if (s) A->ReleaseStatus(s);
+    }
 
     // 关掉 ORT 的线程自旋（默认是开的）。
     //

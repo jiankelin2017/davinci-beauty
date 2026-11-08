@@ -437,6 +437,10 @@ bool  g_ready = false;
 // 日志里永远看不到适配器型号——1.0.10.0 把播报移到懒加载处，两处共用本标志避免重复。
 bool  g_initLogged = false;
 char  g_err[512] = {0};
+// 最近一次 setErr 记下的 HRESULT。存在的唯一理由：ensureResources 的成败只在
+// 函数内部知道，而「要不要拆设备重来」的判定在调用方（见 gpuSmoothRgbBand 里
+// 那次 ensureResources 调用），中间又没有别的返回通道。
+HRESULT g_lastErrHr = S_OK;
 
 ID3D11Device*        g_dev = nullptr;
 ID3D11DeviceContext* g_ctx = nullptr;
@@ -582,6 +586,7 @@ double nowMsQpc() {
 
 void setErr(const char* what, HRESULT hr) {
     std::snprintf(g_err, sizeof(g_err), "%s (hr=0x%08lX)", what, (unsigned long)hr);
+    g_lastErrHr = hr;
 }
 
 // 只释放「按尺寸分配」的资源（纹理 / SRV / UAV / staging）。
@@ -677,6 +682,12 @@ void teardownDevice() {
     g_initLogged = false;
 }
 
+// 「设备级失败」的统一判据。只认这两个：其它 hr（尺寸、用法、显存不足里的
+// 单次分配失败）拆设备重来没有意义，反而把已经建好的资源全扔了。
+bool isDeviceLost(HRESULT hr) {
+    return hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET;
+}
+
 bool createDevice() {
     // 已经建过就先拆干净：直接覆盖 g_dev 会泄漏旧设备，且旧设备建的纹理还在，
     // 新上下文一碰就返回 DEVICE_REMOVED。这条在 mock_host 的多实例序列里必现。
@@ -762,6 +773,7 @@ bool createDevice() {
 inline int bucket64(int v) { return (v > 0) ? (((v / 64) + 1) * 64) : 0; }
 
 bool ensureResources(int imgRW, int imgRH, int pw, int ph) {
+    g_lastErrHr = S_OK;   // 清掉上一次的残留：下面调用方要据此判断「是不是设备级失败」
     const int aImgW = bucket64(imgRW), aImgH = bucket64(imgRH);
     const int aPw   = bucket64(pw),   aPh   = bucket64(ph);
     // D3D11 11.0 的 2D 纹理上限 16384：超了就回落 CPU，别让 CreateTexture2D
@@ -1141,8 +1153,8 @@ bool blitStageToDst(int slot, int ox0, int oy0, int ox1, int oy1,
         // 设备真丢了（驱动更新 / TDR / 独显休眠）就整套拆掉，下一帧重建。
         // 不拆的话会一直失败到进程结束，而日志里只见「Map 失败」，
         // 看不出设备已经没了 —— 真实环境里这条迟早会遇到。
-        if (hrMap == DXGI_ERROR_DEVICE_REMOVED || hrMap == DXGI_ERROR_DEVICE_RESET) {
-            NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮：设备已移除（hr=0x%08X），下次调用重建",
+        if (isDeviceLost(hrMap)) {
+            NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮：设备已移除（读回 Map，hr=0x%08X），下次调用重建",
                   (unsigned)hrMap);
             teardownDevice();
         }
@@ -1269,7 +1281,17 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
             NALOG(BEAUTY_LOG_INFO, "GPU 磨皮后端已就绪：%s", g_adapterInfo);
         }
     }
-    if (!ensureResources(imgRW, imgRH, pw, ph)) return false;
+    if (!ensureResources(imgRW, imgRH, pw, ph)) {
+        // CreateTexture2D / SRV / UAV 失败也可能是设备已经没了。这条出口以前直接
+        // return：而上传失败会让 g_pend.valid 一直停在 false，读回那处检测点再也
+        // 走不到，于是 g_ready 永远是 true —— GPU 静默停用到进程结束。
+        if (isDeviceLost(g_lastErrHr)) {
+            NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮：设备已移除（分配资源，hr=0x%08X），下次调用重建",
+                  (unsigned)g_lastErrHr);
+            teardownDevice();
+        }
+        return false;
+    }
 
     const double tStart = nowMsQpc();
 
@@ -1340,8 +1362,15 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     {
         D3D11_MAPPED_SUBRESOURCE m{};
         double tm = nowMsQpc();
-        if (FAILED(g_ctx->Map(g_packSrc[g_slot], 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
-            std::snprintf(g_err, sizeof(g_err), "Map(packSrc) 失败");
+        const HRESULT hrUp = g_ctx->Map(g_packSrc[g_slot], 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
+        if (FAILED(hrUp)) {
+            // 带 hr：以前只写「Map(packSrc) 失败」，分不清是设备丢了还是尺寸/用法不对。
+            std::snprintf(g_err, sizeof(g_err), "Map(packSrc) 失败 hr=0x%08X", (unsigned)hrUp);
+            if (isDeviceLost(hrUp)) {
+                NALOG(BEAUTY_LOG_WARNING, "GPU 磨皮：设备已移除（上传 Map，hr=0x%08X），下次调用重建",
+                      (unsigned)hrUp);
+                teardownDevice();
+            }
             return false;
         }
         upMapMs += nowMsQpc() - tm;
@@ -1360,8 +1389,16 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
             const unsigned char* srcPlane = (k == 0) ? mask : protect;
             const unsigned char fill = (k == 0) ? 255 : 0;   // 与旧写法同义
             double tm2 = nowMsQpc();
-            if (FAILED(g_ctx->Map(tex, 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
-                std::snprintf(g_err, sizeof(g_err), "Map(%s) 失败", (k == 0) ? "mask" : "prot");
+            const HRESULT hrUp2 = g_ctx->Map(tex, 0, D3D11_MAP_WRITE_DISCARD, 0, &m);
+            if (FAILED(hrUp2)) {
+                std::snprintf(g_err, sizeof(g_err), "Map(%s) 失败 hr=0x%08X",
+                              (k == 0) ? "mask" : "prot", (unsigned)hrUp2);
+                if (isDeviceLost(hrUp2)) {
+                    NALOG(BEAUTY_LOG_WARNING,
+                          "GPU 磨皮：设备已移除（上传 Map，hr=0x%08X），下次调用重建",
+                          (unsigned)hrUp2);
+                    teardownDevice();
+                }
                 return false;
             }
             upMapMs += nowMsQpc() - tm2;

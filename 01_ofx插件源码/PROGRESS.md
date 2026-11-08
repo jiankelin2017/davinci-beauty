@@ -1,7 +1,40 @@
 # DaVinci Beauty OFX 插件 —— 进展与决策记录
 
-最后更新：2026-11-08 14:55
+最后更新：2026-11-08 16:26
 
+> **16:26 缺陷修复（合入 1.3.5.0）—— ORT 空 options、GPU 设备丢失后永久静默停用。**
+> 两项都是「不知道会不会出事」的悬案，这次都用实测收口：
+> 1. `beauty_onnx.cpp` 的 `CreateSessionOptions(&opts)` 不判返回值。拿仓库里的
+>    `onnxruntime.dll`（实测 1.20.1 / API 20）写探针直接喂 `nullptr`：
+>    `SetIntraOpNumThreads` / `SetSessionGraphOptimizationLevel` /
+>    `AddSessionConfigEntry` **全是 0xC0000005**（`ReleaseSessionOptions(nullptr)` 安全）。
+>    即 ORT 不判空，`opts` 为 null 时是确定性崩溃；而该函数只有分配失败才返回非空状态，
+>    属低概率×硬崩。修：判 `opts` + 失败时 `ReleaseEnv`；顺带补上 `:135/:136`
+>    丢弃的 `OrtStatus*`（失败时不释放就是泄漏，同文件 `AddSessionConfigEntry` 那两处是对的）。
+> 2. `gpu_smooth.cpp` 只有**读回 Map** 一处识别 `DEVICE_REMOVED/DEVICE_RESET` 并
+>    `teardownDevice()`。上传的两处 Map 与 `ensureResources` 失败都是裸 `return false`，
+>    而上传失败会让 `g_pend.valid` 停在 false（只在流水线提交处才置回 true），
+>    读回那处从此再也走不到 —— `g_ready` 恒 true，**GPU 加速静默停用到进程卸载**，
+>    新建实例也救不回（`gpuSmoothInit` 见 `g_tried` 直接返回）。不是刻意设计：
+>    代码注释与本文档 1.0.3.0 一节都写明「拆掉、下一帧重建」。
+>    修：加 `isDeviceLost()` 统一判据，三条失败出口补拆设备，日志首次带 hr。
+> 验证：全量编译 0 error 0 warning；`baseline` **18/18 逐字节不变**；`acceptance.py`
+> **PASS 28 / FAIL 0**（含并发 5227 组、mock host 23 项）。
+> 待确认（未实测，需真 TDR 才能验）：掉驱动后 `Map(WRITE_DISCARD)` 是否必然返回
+> `DEVICE_REMOVED`；若是，则修复前这条路确实会永久停用，若不是，则只有资源分配那条路会。
+>
+> **16:09 缺陷修复（合入 1.3.5.0）—— parallelRows 死锁：计数器记线程数而不是块数。**
+> 1.3.4.0 定版后复查发现：`beauty_pool.cpp` 的 `run()` 把 `busy_` 设成 `nt`，而真实块数是
+> `ceil(rows / ceil(rows/nt))`。两者不等时（例：`rows=65`、`nt=16` → `chunk=5` → 只有 13 块）
+> `busy_` 永远减不到 0，`cvDone_.wait` 不返回 —— 调用线程永久挂死，而它此刻还持着引擎的
+> `slotStateMx` 全局递归锁，**整个插件（含其它实例）一起卡死**。
+> 生产触发点在 `beauty_freq.cpp` 的色调权重低通（`bh`/`bw` 落在 65..80 一类区间 + 16 线程）；
+> `beauty_smooth`/`beauty_guide`/`beauty_core` 的调用点都钳到 `nt ≤ rows/16`，数学上安全。
+> 修复：`busy_.store(真实块数)`（2 行）。回归：`04_验收工具/pool_regress.cpp` 扫 5227 组
+> (rows, nt)，要求每行恰好命中一次，自带 20 s 看门狗；已接入 `acceptance.py` 的「并发」组。
+> 验证：用修好的源码全量编译 0 error，`baseline` **18/18 逐字节不变**。
+> 版本号是否升到 1.3.5.0、以及是否重出安装包，待定（会牵动四份文档里的版本串与 exe 文件名）。
+>
 > **14:55 1.3.4.0 —— GPU 预热挪到 createInstance，片头不再顿。**
 > 1.3.2 用 D3D11_QUERY_EVENT 劈开 5.66 ms：执行 4.53 / 拷贝 0.11。
 > 1.3.3 试了 BOX2D 合并（6→3 dispatch）：数值对、性能无收益，证伪，默认关。
