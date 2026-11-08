@@ -349,11 +349,34 @@ def main():
             print("OK   %-14s %s" % (n, results[n]))
         for n in missing:
             print("缺失 %-14s 基线里没有这个用例" % n)
+        # 复测一次再判「变」：2026-11-08 实测过 GPU 争用时 mode2 偶发失配
+        # （三个 check 并发跑，其中一个 17/18；单独跑 6 次全 18/18；
+        #  BEAUTY_GPU_SMOOTH=0 时并发也不再复现）。那是测量抖动，不是输出变了 ——
+        # 但也不能直接放过，所以：重跑一次，一致就标 FLAKE 并保留告警行。
+        flakes = []
+        if diff:
+            by_name = {c[0]: c for c in CASES}
+            again = []
+            for n, b, c in diff:
+                _n, blur, whiten, env = by_name[n]
+                r2, err2 = run_case(lib, stage, n, blur, whiten, env)
+                if err2 is None and r2 == b:
+                    flakes.append(n)          # 复跑就一致 → 抖动
+                else:
+                    again.append((n, b, r2 if r2 else c))
+            diff = again
         for n, b, c in diff:
             print("变了 %-14s 基线 %s" % (n, b))
             print("     %-14s 当前 %s" % ("", c))
+        for n in flakes:
+            print("抖动 %-14s 第一次失配、复跑一致（GPU 争用，非输出变化）" % n)
         print("-" * 60)
-        print("逐字节一致: %d/%d" % (len(same), len(same) + len(diff) + len(missing)))
+        total = len(same) + len(diff) + len(missing) + len(flakes)
+        if flakes:
+            print("逐字节一致: %d/%d（其中 %d 个首跑失配、复跑一致 → 抖动，不算失败）"
+                  % (len(same), total, len(flakes)))
+        else:
+            print("逐字节一致: %d/%d" % (len(same), total))
         ok = not diff and not missing and not errs and not unstable
         print("结论       : %s" % ("PASS" if ok else "FAIL"))
         return 0 if ok else 1
