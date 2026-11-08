@@ -6,8 +6,8 @@
 //   * 面板参数枚举（P_*）
 //   * 面板设置结构体（BeautySettings）
 //
-// 版本号**不在这里**。唯一出处是 nama_engine.h 的 NAMA_BUILD_*（四段式），
-// 需要字符串时调 beauty_build.h 的 namaBuildStr()，别在本文件再写一份字面量
+// 版本号**不在这里**。唯一出处是 beauty_engine.h 的 BEAUTY_BUILD_*（四段式），
+// 需要字符串时调 beauty_build.h 的 beautyBuildStr()，别在本文件再写一份字面量
 // 副本 —— 两份版本号必然走散。
 //
 // 为什么单独拆出来：本文件原先长在引擎头里，导致插件为了拿一个十余项的

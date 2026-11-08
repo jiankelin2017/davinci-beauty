@@ -60,7 +60,7 @@ def run_case(label, photo):
         f.write(b"")
     src = pbr.build_frame(photo)
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     drv = pbr.pws.Driver(dll)
     # 面板固定：磨皮开（历史 sweep 的条件）+ 美白 0。

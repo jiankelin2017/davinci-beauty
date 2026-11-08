@@ -4,7 +4,7 @@
 DaVinci Beauty 安装包构建器（NSIS 版）。
 
 产物：单个真正的 .exe（DaVinciBeauty_Setup_v<版本>.exe），双击即装、一键卸载。
-版本号默认从 src\nama_engine.h 的 NAMA_BUILD_* 宏自动读取。
+版本号默认从 src\beauty_engine.h 的 BEAUTY_BUILD_* 宏自动读取。
 
 为什么是 NSIS
 -------------
@@ -46,11 +46,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NSI = os.path.join(HERE, "davincibeauty.nsi")
 SETUP_PY = os.path.join(HERE, "davincibeauty_setup.py")
 
-# 版本号的唯一出处是源码头的 NAMA_BUILD_* 宏。
+# 版本号的唯一出处是源码头的 BEAUTY_BUILD_* 宏。
 # 本脚本不再维护第二份版本号 —— 历史上 --version 默认写死 "1.4"，
 # 导致产物名（DaVinciBeauty_Setup_v1.4.exe）与实际版本长期脱节。
 SRC_HEADER = os.path.normpath(os.path.join(
-    HERE, "..", "01_ofx插件源码", "src", "nama_engine.h"))
+    HERE, "..", "01_ofx插件源码", "src", "beauty_engine.h"))
 
 # 引擎资源的候选来源，按优先级回落。
 # 说明：仓库里的 bundle/ 是 install.bat 的 stage 中间产物，会被 cleanup.py 判为
@@ -170,7 +170,7 @@ def collect_payload(stage, engine_dir, ofx_bin):
 
 
 def read_source_version():
-    """从 nama_engine.h 的 NAMA_BUILD_* 宏读版本号，让版本号只有一个来源。"""
+    """从 beauty_engine.h 的 BEAUTY_BUILD_* 宏读版本号，让版本号只有一个来源。"""
     try:
         with open(SRC_HEADER, encoding="utf-8") as f:
             txt = f.read()
@@ -181,14 +181,14 @@ def read_source_version():
         m = re.search(r"#define\s+%s\s+(\d+)\b" % name, txt)
         return int(m.group(1)) if m else None
 
-    major, minor = macro("NAMA_BUILD_MAJOR"), macro("NAMA_BUILD_MINOR")
+    major, minor = macro("BEAUTY_BUILD_MAJOR"), macro("BEAUTY_BUILD_MINOR")
     if major is None or minor is None:
         return None
     # 2026-11-06 起版本号是四段式（PROGRESS「版本号规则 v2」）。产物文件名也跟
-    # 四段走，否则验收按 NAMA_BUILD_STR 去找 DaVinciBeauty_Setup_v1.0.7.0.exe
+    # 四段走，否则验收按 BEAUTY_BUILD_STR 去找 DaVinciBeauty_Setup_v1.0.7.0.exe
     # 会找不到 —— 文件名与版本串必须是同一个来源。
-    parts = [major, minor, macro("NAMA_BUILD_PATCH") or 0]
-    rev = macro("NAMA_BUILD_REV")
+    parts = [major, minor, macro("BEAUTY_BUILD_PATCH") or 0]
+    rev = macro("BEAUTY_BUILD_REV")
     if rev is not None:
         parts.append(rev)
     return ".".join(str(n) for n in parts)
@@ -215,7 +215,7 @@ def main():
     ap.add_argument("--engine", default=DEFAULT_ENGINE_DIR, help="引擎资源目录")
     ap.add_argument("--ofx", default=os.path.normpath(DEFAULT_OFX_BIN), help="插件二进制")
     ap.add_argument("--version", default=None,
-                    help="版本号（默认从 nama_engine.h 的 NAMA_BUILD_* 宏读取）")
+                    help="版本号（默认从 beauty_engine.h 的 BEAUTY_BUILD_* 宏读取）")
     ap.add_argument("--out", default=None, help="输出 exe 路径")
     ap.add_argument("--sandbox", action="store_true",
                     help="沙箱构建：用隔离的 APPID / bundle 名安装到旁处，"

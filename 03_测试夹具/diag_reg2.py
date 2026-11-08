@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""用 GetReg(id) 遍历注册表，找出所有 OpenFX / Nama 条目。"""
+"""用 GetReg(id) 遍历注册表，找出所有 OpenFX / 旧插件名条目。"""
 import os
 import sys
 

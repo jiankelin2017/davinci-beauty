@@ -10,8 +10,8 @@
 ## 一、日常改动的 5 步
 
 ```
-1. 改源码    01_ofx插件源码\src\          (beauty_*.cpp 自研引擎 / nama_engine.cpp 适配层 / ofx_plugin.cpp / nama_engine.h)
-2. 改版本号  01_ofx插件源码\src\nama_engine.h 的 NAMA_BUILD_MAJOR/MINOR/PATCH/STR
+1. 改源码    01_ofx插件源码\src\          (beauty_*.cpp 自研引擎 / beauty_engine.cpp 适配层 / ofx_plugin.cpp / beauty_engine.h)
+2. 改版本号  01_ofx插件源码\src\beauty_engine.h 的 BEAUTY_BUILD_MAJOR/MINOR/PATCH/STR
              —— 版本号只有这一个出处：面板显示、二进制内嵌、安装包文件名全从这里派生
 3. 编译      01_ofx插件源码\build.bat     → out\DaVinciBeauty.ofx
              （薄壳，实际编译在 build.ps1；自动探测 VS/MSVC/Windows SDK）
@@ -75,20 +75,20 @@ Resolve 不渲染 OFX 的 Page 和 Group——试过三版折叠分组全部被�
 
 **⑥ 排错先落盘，别靠猜；也别信夹具的 `PASS`。**
 「没效果 / 0 检出」先开 `BEAUTY_DEBUG_DETECT=1` 看每帧 `ncand/faces/best/输入均值`，必要时开 `BEAUTY_DEBUG_DUMP=<纯ASCII目录>` 把 `in.f32` 落盘交给 Python 用同一个 onnx 重跑——这一步能一次性切开「输入错 / 推理错 / 解码错」。
-另外 `selftest_ofx.py` 的 `PASS` **只表示画面有改动**，输出文件是上次残留的旧文件也能过；判据要看 `msg=faces=N best=X`。早期两版就是因为 `NamaSelfTest` 把文件路径当图像、而夹具仍报 `PASS`，白查了三轮。详见 `docs/reference/reference-architecture.md` §2-b。
+另外 `selftest_ofx.py` 的 `PASS` **只表示画面有改动**，输出文件是上次残留的旧文件也能过；判据要看 `msg=faces=N best=X`。早期两版就是因为 `BeautySelfTest` 把文件路径当图像、而夹具仍报 `PASS`，白查了三轮。详见 `docs/reference/reference-architecture.md` §2-b。
 
 **⑦ OFX 帧是 bottom-up，夹具也必须按 bottom-up 造帧。**
 `kOfxImagePropData` 指向**图像左下角**，Resolve 严格照做：插件拿到的第 0 行是画面最下面一行。检测要按视觉方向读行（`letterboxRgb` 的 `flipY`），检测出的框/关键点再映射回缓冲行号（`f.y = h - vy - f.h`、`kps.y = h - vy`），下游掩码/磨皮/变形才不用改。
-**新增或修改任何夹具时，帧必须先过 `mock_host.py::_to_bottom_up()`**——以前夹具按 top-down 造帧，等于替插件掩盖了方向 bug，离线 0.92 全 PASS、真机 0.25 全灭。离线单帧工具喂 top-down 文件时，`NamaSelfTest` 已内部强制 top-down；要回归真机帧设 `BEAUTY_IMG_BOTTOMUP=1`。详见 `docs/reference/reference-architecture.md` §2-c。
+**新增或修改任何夹具时，帧必须先过 `mock_host.py::_to_bottom_up()`**——以前夹具按 top-down 造帧，等于替插件掩盖了方向 bug，离线 0.92 全 PASS、真机 0.25 全灭。离线单帧工具喂 top-down 文件时，`BeautySelfTest` 已内部强制 top-down；要回归真机帧设 `BEAUTY_IMG_BOTTOMUP=1`。详见 `docs/reference/reference-architecture.md` §2-c。
 
 **⑧ 凡是「上/下」有语义的几何量，都必须显式接收 `flipY`，不许靠注释约定。**
 「美形 y 方向」那次的教训（早期版本，编号已退役）：检测的行序修好之后，下游 `beauty_warp.cpp::makeGeom()` 仍然按 top-down 用 `f.y` 推「下巴底 / 眼线 / 嘴线」，结果瘦脸压到眉毛、下巴压到发际线。**伪装性极强**——径向各向同性的「大眼」完全不受影响，看起来像「只有某一项坏了」，实际是方向整体反了。
 规矩：函数里只要出现 `f.y + k·f.h` 表示「往下 k 距离」，或者出现 `sy > 某个 y` 这种不等式，就必须有 `flipY` 参数并用 `sgn = flipY ? -1 : +1` 统一表达方向；比例值也要换成「从缓冲最小行往上数」（`0.38 → 0.62`、`0.72 → 0.28`）。
 
 **⑨ 面板参数有两条链路，两边都要有用例。**
-`baseline.py` 走 `NamaSelfTest` 的 `NAMA_ST_*` 钩子，直接调引擎、**绕过 `ofx_plugin.cpp::readParams()`**；`mock_host.py` 走 `paramSetValue`，才是真人拖控件的路径。「下拉框对调」那次就是因为只测了前者，`readParams` 里的 `map[3]={1,0,2}` 把「双边滤波」和「高斯」对调了而 18/18 全绿。
+`baseline.py` 走 `BeautySelfTest` 的 `BEAUTY_ST_*` 钩子，直接调引擎、**绕过 `ofx_plugin.cpp::readParams()`**；`mock_host.py` 走 `paramSetValue`，才是真人拖控件的路径。「下拉框对调」那次就是因为只测了前者，`readParams` 里的 `map[3]={1,0,2}` 把「双边滤波」和「高斯」对调了而 18/18 全绿。
 规矩：改任何面板参数，面板侧必须补一条 `mock_host.py` 用例，且断言**方向**（档位对调时「有变化」依然成立，只有方向能抓住）。
-另：`mock_host.py` 默认驱动**已装机**版，验证新产物要显式 `set NAMA_OFX_DLL=...\out\DaVinciBeauty.ofx`，否则量到的是旧二进制。
+另：`mock_host.py` 默认驱动**已装机**版，验证新产物要显式 `set BEAUTY_OFX_DLL=...\out\DaVinciBeauty.ofx`，否则量到的是旧二进制。
 
 **⑩ 「幅度不足」和「接线错误」表现一样，先用数字分开。**
 「磨皮算法三档 / 磨皮模式四档无明显变化」那次的触发点：当时 `ofx.log` 已经证明参数送达
@@ -133,7 +133,7 @@ Resolve 不渲染 OFX 的 Page 和 Group——试过三版折叠分组全部被�
 
 改动版本号时会自动/需要同步的地方：
 
-- `nama_engine.h` 的四个 `NAMA_BUILD_*` 宏 ← **唯一出处**
+- `beauty_engine.h` 的四个 `BEAUTY_BUILD_*` 宏 ← **唯一出处**
 - 面板右下角「版本」参数（引用宏，自动）
 - 安装包文件名、NSIS 卸载项注册表 `DisplayVersion`（`build_nsis.py` 从源码宏读取）
 - 文档：`README.md`、`说明.txt`、`docs/CHANGELOG.md`、`docs/guides/guide-package.md`（`acceptance.py` 的文档组按这份清单校验）

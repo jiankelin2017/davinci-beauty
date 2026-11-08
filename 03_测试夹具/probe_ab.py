@@ -153,7 +153,7 @@ def main():
     panel_a = json.loads(sys.argv[4]) if len(sys.argv) > 4 else {}
     panel_b = json.loads(sys.argv[5]) if len(sys.argv) > 5 else {}
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     src = load_frame(photo)
 

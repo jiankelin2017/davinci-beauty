@@ -13,7 +13,7 @@
 
 检查分组
 --------
-    版本    源码宏 / 二进制内嵌串 / NamaVersion / 装机产物是否同源（字节比对为硬判据）
+    版本    源码宏 / 二进制内嵌串 / BeautyVersion / 装机产物是否同源（字节比对为硬判据）
     参数    三张表对齐、默认值、隐藏项
     回归    18 个用例逐字节比对黄金基线
     并发    parallelRows 分块守恒（线程池死锁回归，独立进程 + 看门狗）
@@ -39,7 +39,7 @@ INSTALLED = (r"C:\Program Files\Common Files\OFX\Plugins"
 BUNDLE = os.path.dirname(INSTALLED)
 PROBE = os.path.join(REPO, "03_测试夹具")
 
-BUILD_DLL = os.environ.get("NAMA_OFX_DLL", BUILD)
+BUILD_DLL = os.environ.get("BEAUTY_OFX_DLL", BUILD)
 PY = sys.executable
 
 # 装机 bundle 里必须存在的引擎资产（缺一个插件就起不来）
@@ -103,18 +103,18 @@ def block_after(txt, marker):
 # A. 版本
 # --------------------------------------------------------------------------
 def read_version_macros():
-    txt = open(os.path.join(SRC, "nama_engine.h"), "r", encoding="utf-8").read()
+    txt = open(os.path.join(SRC, "beauty_engine.h"), "r", encoding="utf-8").read()
     got = {}
     for k in ("MAJOR", "MINOR", "PATCH"):
-        m = re.search(r"#define\s+NAMA_BUILD_%s\s+(\d+)" % k, txt)
+        m = re.search(r"#define\s+BEAUTY_BUILD_%s\s+(\d+)" % k, txt)
         if not m:
             return None
         got[k] = int(m.group(1))
     # REV 是可选的第四段。2026-11-06 起版本号改成四段式（见 docs/history/history-progress-1x.md
     # 「版本号规则 v2」）：纯文档 / 注释改动走 REV，其余三档不变。
-    m = re.search(r"#define\s+NAMA_BUILD_REV\s+(\d+)", txt)
+    m = re.search(r"#define\s+BEAUTY_BUILD_REV\s+(\d+)", txt)
     got["REV"] = int(m.group(1)) if m else None
-    m = re.search(r'#define\s+NAMA_BUILD_STR\s+"([^"]+)"', txt)
+    m = re.search(r'#define\s+BEAUTY_BUILD_STR\s+"([^"]+)"', txt)
     if not m:
         return None
     got["STR"] = m.group(1)
@@ -125,7 +125,7 @@ def check_version():
     print("\n[版本]")
     v = read_version_macros()
     if not v:
-        rec("版本", "读到源码版本宏", False, "nama_engine.h 里没找到 NAMA_BUILD_*")
+        rec("版本", "读到源码版本宏", False, "beauty_engine.h 里没找到 BEAUTY_BUILD_*")
         return
     # 段数由「有没有 REV 宏」决定，不写死三段 —— 旧版这里按三段拼期望值，
     # 四段式一上线它就恒报 FAIL，而源码其实是对的。（2026-11-06 修）
@@ -133,22 +133,22 @@ def check_version():
     if v["REV"] is not None:
         seg.append(v["REV"])
     expect = ".".join(str(n) for n in seg)
-    rec("版本", "NAMA_BUILD_STR 与宏一致", v["STR"] == expect,
+    rec("版本", "BEAUTY_BUILD_STR 与宏一致", v["STR"] == expect,
         "%s == %s（%d 段）" % (v["STR"], expect, len(seg)))
 
     # 二进制里必须能搜到完整版本串：这是「装的这个 DLL 是哪个版本」的
-    # 唯一自证途径，因为 NamaVersion() 丢掉了 PATCH 位。
+    # 唯一自证途径，因为 BeautyVersion() 丢掉了 PATCH 位。
     blob = open(BUILD_DLL, "rb").read()
     has_str = v["STR"].encode("ascii") in blob
     rec("版本", "二进制内嵌版本串", has_str, "搜 '%s' %s"
         % (v["STR"], "命中" if has_str else "未命中"))
 
     lib = ctypes.WinDLL(BUILD_DLL)
-    lib.NamaVersion.restype = ctypes.c_ulong
-    lib.NamaVersion.argtypes = []
-    got = lib.NamaVersion()
+    lib.BeautyVersion.restype = ctypes.c_ulong
+    lib.BeautyVersion.argtypes = []
+    got = lib.BeautyVersion()
     want = (v["MAJOR"] << 16) | v["MINOR"]
-    rec("版本", "NamaVersion 编码", got == want,
+    rec("版本", "BeautyVersion 编码", got == want,
         "0x%x，期望 (MAJOR<<16)|MINOR = 0x%x" % (got, want))
 
     if os.path.isfile(INSTALLED):
@@ -172,7 +172,7 @@ def check_version():
 
         # 行为等价：让装机 DLL 跑同一组黄金用例，与编译 DLL 得出相同输出。
         # 这才是「装的是不是这一版的效果」。
-        env = dict(os.environ, NAMA_OFX_DLL=INSTALLED)
+        env = dict(os.environ, BEAUTY_OFX_DLL=INSTALLED)
         p = subprocess.run([PY, os.path.join(HERE, "baseline.py"), "check",
                             "--only", "blur62", "shape100", "mode2"],
                            cwd=HERE, capture_output=True, text=True,
@@ -190,7 +190,7 @@ def check_version():
 # B. 参数表
 # --------------------------------------------------------------------------
 def parse_enum():
-    # 1.3.6.0：P_* 枚举已合并到 beauty_params.h（唯一出处），nama_engine.h 只
+    # 1.3.6.0：P_* 枚举已合并到 beauty_params.h（唯一出处），beauty_engine.h 只
     # `#include` 它。这里跟着改读点 —— 若将来再搬家，本函数会因解析不到而 FAIL，
     # 不会静默通过。
     txt = strip_comments(open(os.path.join(SRC, "beauty_params.h"), "r",
@@ -219,7 +219,7 @@ def parse_params():
 
 
 def parse_keys():
-    txt = strip_comments(open(os.path.join(SRC, "nama_engine.cpp"), "r",
+    txt = strip_comments(open(os.path.join(SRC, "beauty_engine.cpp"), "r",
                               encoding="utf-8").read())
     body = block_after(txt, "keys[P_COUNT]")
     if body is None:
@@ -337,7 +337,7 @@ def check_interface():
     print("\n[接口]")
     mh = os.path.join(PROBE, "mock_host.py")
     if os.path.isfile(mh):
-        env = dict(os.environ, NAMA_OFX_DLL=INSTALLED if os.path.isfile(INSTALLED)
+        env = dict(os.environ, BEAUTY_OFX_DLL=INSTALLED if os.path.isfile(INSTALLED)
                    else BUILD_DLL)
         p = subprocess.run([PY, mh], cwd=PROBE, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", env=env)
@@ -358,7 +358,7 @@ def check_interface():
         # 这个脚本默认把引擎目录取成 DLL 所在目录。bundle/ 内的 .ofx 与
         # onnxruntime.dll / yunet.onnx 同目录，初始化即可成功；装机不可用时回退到 DLL 目录。
         eng = BUNDLE if os.path.isdir(BUNDLE) else os.path.dirname(BUILD_DLL)
-        env = dict(os.environ, NAMA_OFX_DLL=BUILD_DLL, NAMA_ENGINE_DIR=eng)
+        env = dict(os.environ, BEAUTY_OFX_DLL=BUILD_DLL, BEAUTY_ENGINE_DIR=eng)
         p = subprocess.run([PY, st], cwd=PROBE, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", env=env)
         out = p.stdout or ""
@@ -393,7 +393,7 @@ def check_bundle():
 # G. 工程一致性（都是事后才被发现的成本，能静态判的就别靠人记）
 # --------------------------------------------------------------------------
 # v2.3.1 踩的坑：install.bat 从来没拷过 ai_face_processor_pc_plain.bundle，
-# 旧 bundle 里那份是手工放的。全新装机就缺资产，NamaSelfTest 直接崩（rc=0xC0000005）。
+# 旧 bundle 里那份是手工放的。全新装机就缺资产，BeautySelfTest 直接崩（rc=0xC0000005）。
 MISSING_MSG = "install.bat 没拷过这笔资产 —— 全新装机必崩，不是可用可不用"
 
 
@@ -425,7 +425,7 @@ def check_project():
 
     # 1b) 装机资产清单散在三处，任何一处漏了都会产出「能装但会崩」的包。
     #     v2.3.1 时三处同时漏掉 ai_face_processor_pc_plain.bundle —— 缺它不是报错，
-    #     是 NamaSelfTest 直接崩（rc=0xC0000005），所以这里对三处一并静态校验。
+    #     是 BeautySelfTest 直接崩（rc=0xC0000005），所以这里对三处一并静态校验。
     #     ① install.bat 的 copy/inst 行  ② build_nsis.py 的 PAYLOAD_PLAN
     #     ③ davincibeauty.nsi 的 File 指令
     file_assets = [a for a in REQUIRED_ASSETS if a not in ("model", "graphics")]
@@ -488,8 +488,8 @@ def check_project():
             "干净" if not paren else "仍带括号: " + " / ".join(paren))
 
     # 4) 文档版本号必须跟上源码宏 —— 之前四个文档全线停在旧版本，用户照着看会错
-    htxt = readtext(os.path.join(SRC, "nama_engine.h"))
-    mv = re.search(r'#define\s+NAMA_BUILD_STR\s+"([^"]+)"', htxt)
+    htxt = readtext(os.path.join(SRC, "beauty_engine.h"))
+    mv = re.search(r'#define\s+BEAUTY_BUILD_STR\s+"([^"]+)"', htxt)
     if mv:
         ver = mv.group(1)
         # 05_安装包/ 的 README 也在内：它历史上长期停在 v1.4 无人发现。

@@ -4,13 +4,13 @@
 // bundle 目录改了名，二进制里的标识若还是 com.nama.davinci.beauty，宿主看到两个
 // bundle 声明同一标识，通常只认先扫到的那个 —— 「装沙箱包去试」实际跑的还是正式
 // 那份，等于没测。所以沙箱构建换标识 + 换标签。
-#ifdef NAMA_SANDBOX_BUILD
+#ifdef BEAUTY_SANDBOX_BUILD
 #pragma message("SANDBOX BUILD ACTIVE")
-#define NAMA_PLUGIN_ID    "com.nama.davinci.beauty.sandbox"
-#define NAMA_PLUGIN_LABEL "DaVinci Beauty 美颜（沙箱）"
+#define BEAUTY_PLUGIN_ID    "com.nama.davinci.beauty.sandbox"
+#define BEAUTY_PLUGIN_LABEL "DaVinci Beauty 美颜（沙箱）"
 #else
-#define NAMA_PLUGIN_ID    "com.nama.davinci.beauty"
-#define NAMA_PLUGIN_LABEL "DaVinci Beauty 美颜"
+#define BEAUTY_PLUGIN_ID    "com.nama.davinci.beauty"
+#define BEAUTY_PLUGIN_LABEL "DaVinci Beauty 美颜"
 #endif
 
 // ofx_plugin.cpp —— DaVinci Beauty 的 OpenFX 插件层。
@@ -19,7 +19,7 @@
 // Examples/Basic/basic.cpp。所有 OpenFX 幂等常量与 suite 签名都来自官方头文件，
 // 没有手抄 magic number。
 //
-// 分工：这一层只负责「跟 Resolve 对话」，真正的美颜在 nama_engine.cpp 里。
+// 分工：这一层只负责「跟 Resolve 对话」，真正的美颜在 beauty_engine.cpp 里。
 // 两者不共享任何 OpenFX 类型，所以引擎层可以被自测独立驱动。
 //
 // 三件事在这一层特别讲究：
@@ -45,7 +45,7 @@
 #include "ofxMultiThread.h"
 #include "ofxParam.h"
 #include "ofxPixels.h"
-#include "nama_engine.h"
+#include "beauty_engine.h"
 #include "beauty_hwprobe.h"   // 硬件探测与渲染路径定档（P1）
 #include "beauty_log.h"      // 引擎层日志的钩子（必须在本文件注册，否则 NALOG 进不了 ofx.log）
 #include "gpu_beauty.h"      // P1 GPU 管道：卸载时必须显式关闭（否则设备和纹理留到进程退出）
@@ -63,13 +63,13 @@ static OfxMessageSuiteV1* gMsgHost = nullptr;
 // ---------------------------------------------------------------------------
 // 自带日志
 //
-// 落在 %ProgramData%\DaVinciBeauty\logs\ofx.log。设 NAMA_OFX_LOG 可改路径，
+// 落在 %ProgramData%\DaVinciBeauty\logs\ofx.log。设 BEAUTY_OFX_LOG 可改路径，
 // 设成 0 可整体关闭。
 //
 // 只对前若干帧做详细记录，之后按间隔抽样，避免正常播放时把磁盘写满。
 // ---------------------------------------------------------------------------
-#define NAMA_LOG_DEFAULT "C:\\ProgramData\\DaVinciBeauty\\logs\\ofx.log"
-#define NAMA_LOG_MAX_BYTES (4 * 1024 * 1024)
+#define BEAUTY_LOG_DEFAULT "C:\\ProgramData\\DaVinciBeauty\\logs\\ofx.log"
+#define BEAUTY_LOG_MAX_BYTES (4 * 1024 * 1024)
 
 // ---------------------------------------------------------------------------
 // 手写的 clip 属性名前缀
@@ -79,9 +79,9 @@ static OfxMessageSuiteV1* gMsgHost = nullptr;
 // 即 <前缀><clip 名>，但头文件里只给了注释、**没有 #define**。
 // 所以只能手抄。这些字符串绝不能改 —— 改一个字母宿主就收不到。
 // ---------------------------------------------------------------------------
-#define NAMA_CLIP_PROP_DEPTH_PREFIX "OfxImageClipPropDepth_"
-#define NAMA_CLIP_PROP_COMPONENTS_PREFIX "OfxImageClipPropComponents_"
-#define NAMA_CLIP_PROP_PAR_PREFIX "OfxImageClipPropPAR_"
+#define BEAUTY_CLIP_PROP_DEPTH_PREFIX "OfxImageClipPropDepth_"
+#define BEAUTY_CLIP_PROP_COMPONENTS_PREFIX "OfxImageClipPropComponents_"
+#define BEAUTY_CLIP_PROP_PAR_PREFIX "OfxImageClipPropPAR_"
 
 static CRITICAL_SECTION g_logCs;
 static INIT_ONCE g_logCsOnce = INIT_ONCE_STATIC_INIT;
@@ -127,13 +127,13 @@ static void ensureDirRecursive(const std::string& dir) {
 }
 
 static void ofxLog(const char* fmt, ...) {
-    const char* env = getenv("NAMA_OFX_LOG");
+    const char* env = getenv("BEAUTY_OFX_LOG");
     if (env && env[0] == '0' && env[1] == 0) return;
 
     ofxLogEnsureCs();
     EnterCriticalSection(&g_logCs);
 
-    std::string path = (env && *env) ? std::string(env) : std::string(NAMA_LOG_DEFAULT);
+    std::string path = (env && *env) ? std::string(env) : std::string(BEAUTY_LOG_DEFAULT);
     size_t slash = path.find_last_of("\\/");
     if (slash != std::string::npos) {
         static std::string dirDone;
@@ -153,7 +153,7 @@ static void ofxLog(const char* fmt, ...) {
         LARGE_INTEGER sz;
         sz.LowPart = fad.nFileSizeLow;
         sz.HighPart = (LONG)fad.nFileSizeHigh;
-        if (sz.QuadPart > NAMA_LOG_MAX_BYTES) DeleteFileA(path.c_str());
+        if (sz.QuadPart > BEAUTY_LOG_MAX_BYTES) DeleteFileA(path.c_str());
     }
 
     FILE* f = nullptr;
@@ -204,8 +204,8 @@ struct ParamDef {
 // 沿用 20 会让用户第一眼以为插件没生效。50 档对应 mad 0.087，是肉眼可辨
 // 的轻磨皮，也是旧宿主侧标定的常用档（纹理保留约 86%）。
 //
-// ⚠ 顺序必须与 nama_engine.h 的 P_* 枚举逐一对应：readParams() 按下标写进
-// NamaSettings::panel[]，顺序错一位就会「拖 A 滑块、B 效果变」。编译期只能保证
+// ⚠ 顺序必须与 beauty_engine.h 的 P_* 枚举逐一对应：readParams() 按下标写进
+// BeautyEngineSettings::panel[]，顺序错一位就会「拖 A 滑块、B 效果变」。编译期只能保证
 // 元素个数不多不少，保证不了顺序 —— 改这里务必同时看枚举。
 static const ParamDef kParams[P_COUNT] = {
     // v2.0.3 曾把默认值从 50 提到 62，依据是物理摄像头 GT：同类产品默认 blur=80
@@ -253,7 +253,7 @@ static const ParamDef kParams[P_COUNT] = {
     // 同一块下半脸像素，同时推会互相打架，所以不做成滑块。
     //
     // ⚠️ 形变是像素位移，与本插件「只在皮肤掩码内动手、掩码外逐字节不动」的
-    // 承诺有冲突，引擎侧为此加了两处处理（见 nama_engine.cpp 的 shapeOn 分支）：
+    // 承诺有冲突，引擎侧为此加了两处处理（见 beauty_engine.cpp 的 shapeOn 分支）：
     //   1) 磨皮强度不再用 CPU 混合（那会把形变稀释成 t 倍并留双线）；
     //   2) 掩码与「不动基准」都改用形变后的帧，否则掩码错位 + 鬼影。
     {"cheek_thinning", "瘦脸", 0,
@@ -272,7 +272,7 @@ static const char* kBlurTypeChoices[] = {"双边滤波", "高斯", "弱磨皮"};
 // v2.0 新增：磨皮模式四档。这一项**不是 SDK 参数**（旧宿主侧做过 14 组实验，
 // heavy_blur / *_smooth 系列输出逐位相同，已证伪），而是引擎自己的 CPU 后处理：
 // 按结构自适应决定平坦皮肤与边缘轮廓各回填多少细节。
-// 索引直接对应 NamaSettings::smooth_mode，不要改动顺序。
+// 索引直接对应 BeautyEngineSettings::smooth_mode，不要改动顺序。
 static const char* kSmoothModeChoices[] = {
     "人像磨皮",
     "清晰磨皮",
@@ -294,7 +294,7 @@ struct InstanceData {
     OfxParamHandle skinDetect;
     // v2.0：磨皮模式四档（0 人像 / 1 清晰 / 2 精细 / 3 朦胧）
     OfxParamHandle smoothMode;
-    // 本实例在引擎里独占的 SDK 道具槽位（>=0 有效）。见 NamaEngine::acquireSlot。
+    // 本实例在引擎里独占的 SDK 道具槽位（>=0 有效）。见 BeautyEngine::acquireSlot。
     int slot = -1;
     // 本实例是否已经把「引擎不可用」的报错抛给宿主了。
     // 以前这是函数级 static，跨实例共享且永不重置 —— 第一个实例报过一次之后，
@@ -325,7 +325,7 @@ static InstanceData* getData(OfxImageEffectHandle instance) {
 // ---------------------------------------------------------------------------
 // 参数读取
 // ---------------------------------------------------------------------------
-static void readParams(InstanceData* d, NamaSettings& s) {
+static void readParams(InstanceData* d, BeautyEngineSettings& s) {
     for (int i = 0; i < P_COUNT; i++) {
         // v3.0.3：句柄取不到时不能默默给 0。
         // 以前这里 `v` 初值 0、句柄为空就跳过 —— 结果是「面板参数全 0」，
@@ -361,7 +361,7 @@ static void readParams(InstanceData* d, NamaSettings& s) {
         // 语义（beauty_core.cpp 里 `s.blur_type == 1` 走高斯）直接按**面板序**
         // 定义，这层 map 就把「双边」和「高斯」对调了。
         //
-        // 为什么上一版没测出来：baseline.py 走 NamaSelfTest 的 NAMA_ST_ALG 钩子，
+        // 为什么上一版没测出来：baseline.py 走 BeautySelfTest 的 BEAUTY_ST_ALG 钩子，
         // 绕过了 readParams()，只有真机拖下拉框才会经过这里。现在
         // mock_host.py 的「下拉框接线」用例覆盖了这条路径。
         s.blur_type = (c >= 0 && c < 3) ? c : 0;
@@ -371,7 +371,7 @@ static void readParams(InstanceData* d, NamaSettings& s) {
         gParamHost->paramGetValue(d->skinDetect, &b);
         s.skin_detect = b ? 1 : 0;
     }
-    // v2.0：磨皮模式。取不到句柄时保持 NamaSettings 的默认 0（人像磨皮），
+    // v2.0：磨皮模式。取不到句柄时保持 BeautyEngineSettings 的默认 0（人像磨皮），
     // 这样老工程（1.x 存的、没有这个参数）打开后观感不变。
     if (d && d->smoothMode) {
         int m = 0;
@@ -630,7 +630,7 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
     gEffectHost->getPropertySet(effect, &props);
     if (!props) return kOfxStatFailed;
 
-    gPropHost->propSetString(props, kOfxPropLabel, 0, NAMA_PLUGIN_LABEL);
+    gPropHost->propSetString(props, kOfxPropLabel, 0, BEAUTY_PLUGIN_LABEL);
     gPropHost->propSetString(props, kOfxImageEffectPluginPropGrouping, 0, "DaVinci Beauty");
     gPropHost->propSetString(props, kOfxPropShortLabel, 0, "DaVinci Beauty");
     gPropHost->propSetString(props, kOfxPropLongLabel, 0, "DaVinci Beauty");
@@ -678,7 +678,7 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
     // 规范里三档的含义（ofxImageEffect.h）：Unsafe = 同一时刻只能有一个 render；
     // InstanceSafe = 不同实例可以并行；FullySafe = 同一实例也可以并行。
     //
-    // 现在每个实例已经独占自己的 SDK 道具与参数缓存（NamaEngine 的 slot 池），
+    // 现在每个实例已经独占自己的 SDK 道具与参数缓存（BeautyEngine 的 slot 池），
     // 所以「实例之间互相覆盖参数」的问题没有了。真正让它无法升到 InstanceSafe 的
     // 是引擎的**物理约束**：旧版引擎非可重入，全部调用必须走单一 GL 上下文，引擎
     // 内部还有一把全局互斥在串行化。既然宿主串行化与这把锁效果相同（零额外损失），
@@ -687,7 +687,7 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
                              kOfxImageEffectRenderUnsafe);
 
     ofxLog("describe            label=DaVinci Beauty 美颜 grouping=DaVinci Beauty contexts=Filter,General "
-           "depths=Byte,Float par=1 noSpatial=false tiles=0 threadsafe=Unsafe build=" NAMA_BUILD_STR);
+           "depths=Byte,Float par=1 noSpatial=false tiles=0 threadsafe=Unsafe build=" BEAUTY_BUILD_STR);
     return kOfxStatOK;
 }
 
@@ -881,8 +881,8 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
     //   OFX 无法指定「右下角 / 左下角」这类绝对位置 —— Resolve 严格按 paramDefine
     //   的顺序纵向渲染，所以「最后一个定义」就是最靠近面板底部的稳定落点。
     //
-    // 为什么它能自动同步：default 直接引用 NAMA_BUILD_STR —— 那是版本号唯一出处
-    // （nama_engine.h）。以后每次升级只改宏，这里跟着变，不存在"忘了手动同步"。
+    // 为什么它能自动同步：default 直接引用 BEAUTY_BUILD_STR —— 那是版本号唯一出处
+    // （beauty_engine.h）。以后每次升级只改宏，这里跟着变，不存在"忘了手动同步"。
     //
     // kOfxParamPropEnabled=0 让它灰显不可编辑，只是个标签。
     if (gParamHost->paramDefine(paramSet, kOfxParamTypeString, "build_version", &pp) == kOfxStatOK) {
@@ -891,7 +891,7 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
         gPropHost->propSetString(pp, kOfxParamPropHint, 0,
                                  "插件版本号（只读）。随每次升级自动变化，"
                                  "排障/反馈时请一并告知这个值。");
-        gPropHost->propSetString(pp, kOfxParamPropDefault, 0, NAMA_BUILD_STR);
+        gPropHost->propSetString(pp, kOfxParamPropDefault, 0, BEAUTY_BUILD_STR);
         gPropHost->propSetInt(pp, kOfxParamPropEnabled, 0, 0);
         if (pageHandle) gPropHost->propSetString(pp, kOfxParamPropParent, 0, "Main");
     }
@@ -941,7 +941,7 @@ static OfxStatus getClipPreferences(OfxImageEffectHandle instance,
     char* depth = nullptr;
     if (gPropHost->propGetString(cp, kOfxImageEffectPropPixelDepth, 0, &depth) == kOfxStatOK &&
         depth) {
-        std::string dp = std::string(NAMA_CLIP_PROP_DEPTH_PREFIX) + kOfxImageEffectOutputClipName;
+        std::string dp = std::string(BEAUTY_CLIP_PROP_DEPTH_PREFIX) + kOfxImageEffectOutputClipName;
         if (gPropHost->propSetString(outArgs, dp.c_str(), 0, depth) == kOfxStatOK) changed = true;
     }
 
@@ -949,7 +949,7 @@ static OfxStatus getClipPreferences(OfxImageEffectHandle instance,
     char* comps = nullptr;
     if (gPropHost->propGetString(cp, kOfxImageEffectPropComponents, 0, &comps) == kOfxStatOK &&
         comps) {
-        std::string cp2 = std::string(NAMA_CLIP_PROP_COMPONENTS_PREFIX) +
+        std::string cp2 = std::string(BEAUTY_CLIP_PROP_COMPONENTS_PREFIX) +
                           kOfxImageEffectOutputClipName;
         if (gPropHost->propSetString(outArgs, cp2.c_str(), 0, comps) == kOfxStatOK) changed = true;
     }
@@ -960,7 +960,7 @@ static OfxStatus getClipPreferences(OfxImageEffectHandle instance,
     double par = 0.0;
     if (gPropHost->propGetDouble(cp, kOfxImagePropPixelAspectRatio, 0, &par) == kOfxStatOK &&
         par > 0.0) {
-        std::string pp = std::string(NAMA_CLIP_PROP_PAR_PREFIX) + kOfxImageEffectOutputClipName;
+        std::string pp = std::string(BEAUTY_CLIP_PROP_PAR_PREFIX) + kOfxImageEffectOutputClipName;
         if (gPropHost->propSetDouble(outArgs, pp.c_str(), 0, par) == kOfxStatOK) changed = true;
     }
 
@@ -1024,7 +1024,7 @@ static OfxStatus createInstance(OfxImageEffectHandle instance) {
     // 预热引擎 + 为实例申请一个独占槽位。加锁判断在 preheat 内部完成，避免
     // 「无锁读 ready_/poisoned_」的 TOCTOU（旧报告 B4）；槽位让多实例各用各的
     // SDK 道具与参数缓存（旧报告 B5）。
-    NamaEngine& engine = NamaEngine::inst();
+    BeautyEngine& engine = BeautyEngine::inst();
     std::string err;
     bool didInit = false;
     double t0 = (double)GetTickCount64();
@@ -1044,10 +1044,10 @@ static OfxStatus createInstance(OfxImageEffectHandle instance) {
     double ms = (double)GetTickCount64() - t0;
 
     if (didInit) {
-        const char* ng = getenv("NAMA_ENGINE_NO_GLLOCK");
+        const char* ng = getenv("BEAUTY_ENGINE_NO_GLLOCK");
         const char* glTxt = (ng && ng[0] == '1') ? "off" : "on";
         ofxLog("createInstance 预热引擎 %s 耗时=%.0fms build=%s ver=%s item=%d ownerTid=%lu gllock=%s %s",
-               ok ? "成功" : "失败", ms, NAMA_BUILD_STR,
+               ok ? "成功" : "失败", ms, BEAUTY_BUILD_STR,
                engine.version() ? engine.version() : "?",
                engine.itemId(), engine.ownerThread(), glTxt, ok ? "" : err.c_str());
         // 语义区域（自研皮肤分割）单独打一行。它是 v1.5 的核心，出问题时的
@@ -1095,7 +1095,7 @@ static OfxStatus destroyInstance(OfxImageEffectHandle instance) {
     InstanceData* d = getData(instance);
     if (d) {
         if (d->slot >= 0) {
-            NamaEngine::inst().releaseSlot(d->slot);
+            BeautyEngine::inst().releaseSlot(d->slot);
             d->slot = -1;
         }
         delete d;
@@ -1199,7 +1199,7 @@ static OfxStatus isIdentity(OfxImageEffectHandle instance,
     }
 
     InstanceData* d = getData(instance);
-    NamaSettings s;
+    BeautyEngineSettings s;
     readParams(d, s);
     if (!s.allZero()) return kOfxStatReplyDefault;
 
@@ -1220,7 +1220,7 @@ static OfxStatus isIdentity(OfxImageEffectHandle instance,
 //   · 默认开，但每实例只记前 kDiagMaxCalls 次、全进程只记 kDiagMaxLines 行 ——
 //     不需要设任何环境变量（Resolve 从桌面图标启动时环境变量继承不到，
 //     这个坑 beauty_hwprobe.cpp 里已经踩过一次），也不会把 4MB 日志刷爆。
-//   · NAMA_DIAG_FP=0 可整体关掉。
+//   · BEAUTY_DIAG_FP=0 可整体关掉。
 //
 // 指纹：均匀采样 64 个点、每点取 4 字节做 FNV-1a。目的不是逐字节相等，
 // 而是回答「这两次 render 的输出是不是同一张画面」—— 32 位足够。
@@ -1230,7 +1230,7 @@ static const long long kDiagMaxLines = 4000;   // 全进程上限
 
 static bool diagFpOn() {
     static const bool on = [] {
-        const char* e = getenv("NAMA_DIAG_FP");
+        const char* e = getenv("BEAUTY_DIAG_FP");
         return !(e && e[0] == '0' && e[1] == 0);
     }();
     return on;
@@ -1263,9 +1263,9 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
                             OfxPropertySetHandle inArgs,
                             OfxPropertySetHandle /*outArgs*/) {
     LONG seq = InterlockedIncrement(&g_renderCount);
-    // 默认只详细记录前若干帧，之后抽样；NAMA_OFX_LOG_ALL=1 则逐帧记录。
+    // 默认只详细记录前若干帧，之后抽样；BEAUTY_OFX_LOG_ALL=1 则逐帧记录。
     // 抽样阈值写成常量，免得正常播放时把 4MB 的日志上限刷爆。
-    const char* logAll = getenv("NAMA_OFX_LOG_ALL");
+    const char* logAll = getenv("BEAUTY_OFX_LOG_ALL");
     const bool verbose = (seq <= 8) || (seq % 120 == 0) ||
                          (logAll && logAll[0] == '1' && logAll[1] == 0);
 
@@ -1460,7 +1460,7 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
             fpDstPre = fpFrame(dstPtr, dstRowBytes, dw, dh, dstBpp);
         }
 
-        NamaSettings s;
+        BeautyEngineSettings s;
         readParams(d, s);
 
         // v3.0.3：面板参数变化时记一行。
@@ -1575,7 +1575,7 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
         // ---- 美颜 ----
         // 每个实例独占一个引擎槽位；createInstance 时没拿到就再试一次，
         // 仍失败则走透传 + 报错（旧报告 B5）。
-        NamaEngine& engine = NamaEngine::inst();
+        BeautyEngine& engine = BeautyEngine::inst();
         int slot = d ? d->slot : -1;
         if (d && slot < 0) {
             std::string serr;
@@ -1649,7 +1649,7 @@ static OfxStatus renderMain(OfxImageEffectHandle instance,
                    "fpSrc=%08X fpDstIn=%08X fpDstOut=%08X wrote=%d subst=%d st=%d",
                    (long long)(d ? d->calls : 0), (void*)d, (void*)instance, time,
                    w, h, srcPtrSeen, dstPtr, fpSrc, fpDstPre, fpDstOut,
-                   (int)wroteDst, (int)NamaEngine::inst().frameSubstituted(), (int)status);
+                   (int)wroteDst, (int)BeautyEngine::inst().frameSubstituted(), (int)status);
         }
     }
 
@@ -1707,7 +1707,7 @@ static OfxStatus onLoad(void) {
     if (gPropHost->propGetString((OfxPropertySetHandle)gHost->host, kOfxPropName, 0,
                                  &hostName) != kOfxStatOK)
         hostName = nullptr;
-    ofxLog("onLoad 成功 宿主=%s paramSuite=%d msgSuite=%d build=" NAMA_BUILD_STR,
+    ofxLog("onLoad 成功 宿主=%s paramSuite=%d msgSuite=%d build=" BEAUTY_BUILD_STR,
            hostName ? hostName : "(未提供)", gParamHost ? 1 : 0, gMsgHost ? 1 : 0);
 
     // 硬件探测与渲染路径自动定档（P1）。
@@ -1727,7 +1727,7 @@ static OfxStatus onLoad(void) {
 static OfxStatus onUnload(void) {
     // v3.0.0 起不再有旧版引擎（旧文案「卸载 SDK」会误导排错方向）。
     ofxLog("unload：释放引擎（CoreEngine + ONNX 会话）");
-    NamaEngine::inst().release();
+    BeautyEngine::inst().release();
     // 2026-11-06：GPU 后端此前没有任何关闭点（gpuBeautyShutdown / gpuSmoothShutdown
     // 定义了却零调用），D3D11 设备、5 张 R32G32B32A32 平面纹理和 CS 会一直挂到
     // 进程退出。4K 素材下这是数百 MB 显存；Resolve 重载插件时就是一次白占。
@@ -1773,9 +1773,9 @@ static void setHostFunc(OfxHost* host) {
 
 static OfxPlugin nab = {kOfxImageEffectPluginApi,
                         1,
-                        NAMA_PLUGIN_ID,
-                        NAMA_BUILD_MAJOR,
-                        NAMA_BUILD_MINOR,
+                        BEAUTY_PLUGIN_ID,
+                        BEAUTY_BUILD_MAJOR,
+                        BEAUTY_BUILD_MINOR,
                         setHostFunc,
                         pluginMain};
 

@@ -75,7 +75,7 @@ public:
     // 帧行序声明：true = 源缓冲第 0 行是画面最下面一行（bottom-up）。
     //
     // OFX 宿主（Resolve）给的就是 bottom-up，所以 CoreEngine 默认 true；
-    // NamaSelfTest / 离线夹具喂的是 top-down 的 raw 文件，必须显式设 false，
+    // BeautySelfTest / 离线夹具喂的是 top-down 的 raw 文件，必须显式设 false，
     // 否则人脸检测会看到上下颠倒的画面（v3.0.4 之前一直是这个状态）。
     // 老引擎（legacy/passthrough）不做人脸检测，默认空实现即可。
     virtual void setImageBottomUp(bool) {}

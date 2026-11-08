@@ -54,7 +54,7 @@ FACE  ROI 平均改动量（delta）：
 
 ### 根因
 
-`nama_engine.cpp` 的 `applyRegionEffects()` 做的是：
+`beauty_engine.cpp` 的 `applyRegionEffects()` 做的是：
 
 ```cpp
 const int d = (int)row[c] - (int)srow[c];      // SDK 输出 - 输入

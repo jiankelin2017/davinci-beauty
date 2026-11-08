@@ -18,7 +18,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-SRC_H = os.path.join(REPO, "01_ofx插件源码", "src", "nama_engine.h")
+SRC_H = os.path.join(REPO, "01_ofx插件源码", "src", "beauty_engine.h")
 
 # 引擎资产候选（按顺序取第一个有效的）。仓库自带那份优先 —— 打包要自包含，
 # 不能依赖 ProgramData 是否 stage 过；装机 bundle 作为最后的兜底。
@@ -69,7 +69,7 @@ EXCLUDE_NAMES = ("probe_out.raw", "_phase1_overlay.png", "_phase2_overlay.png")
 
 def version():
     txt = open(SRC_H, encoding="utf-8", errors="replace").read()
-    m = re.search(r'#define\s+NAMA_BUILD_STR\s+"([^"]+)"', txt)
+    m = re.search(r'#define\s+BEAUTY_BUILD_STR\s+"([^"]+)"', txt)
     return m.group(1) if m else "unknown"
 
 

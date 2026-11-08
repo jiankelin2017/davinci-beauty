@@ -48,9 +48,9 @@ python acceptance.py --report 验收报告.txt    :: 落盘一份
 
 | 检查 | 判据 / 为什么 |
 |---|---|
-| `NAMA_BUILD_STR` 与宏一致 | 四段必须自洽。版本号唯一出处在 `nama_engine.h` 的 `NAMA_BUILD_*` |
-| 二进制内嵌版本串 | `NamaVersion()` **只编码 MAJOR/MINOR，PATCH 位被有意丢弃**（保持对外 ABI），所以"装的到底是哪个版本"只能靠二进制里的字符串判 |
-| `NamaVersion()` 编码 | `== (MAJOR<<16) \| MINOR`，两段各 16 位，不是每 8 位一段 |
+| `BEAUTY_BUILD_STR` 与宏一致 | 四段必须自洽。版本号唯一出处在 `beauty_engine.h` 的 `BEAUTY_BUILD_*` |
+| 二进制内嵌版本串 | `BeautyVersion()` **只编码 MAJOR/MINOR，PATCH 位被有意丢弃**（保持对外 ABI），所以"装的到底是哪个版本"只能靠二进制里的字符串判 |
+| `BeautyVersion()` 编码 | `== (MAJOR<<16) \| MINOR`，两段各 16 位，不是每 8 位一段 |
 | 装机产物**行为等价** | 让装机 DLL 跑同一组黄金用例，输出必须与编译产物相同 |
 | 装机产物**字节比对** | **硬判据**。`build.ps1` 的 `Reset-PeTimestamp` 把 COFF 与 `IMAGE_DEBUG_DIRECTORY` 两个 `TimeDateStamp` 清零，同源码重编 md5 恒定（实测 `5655699…`）。不一致 = 没 `install.bat`，直接 FAIL。注意 `/Brepro` 在本工具链上单独**不生效**，别把它当成可复现的原因 |
 
@@ -92,7 +92,7 @@ python acceptance.py --report 验收报告.txt    :: 落盘一份
 
 | 检查 | 判据 / 为什么 |
 |---|---|
-| `install.bat` 覆盖必备资产 | 当前 2/2。v2.3.1 踩的大坑：装机脚本从来没拷过 `ai_face_processor_pc_plain.bundle`（旧 bundle 里那份是手工放的），全新装机就缺资产，`NamaSelfTest` 直接崩 `0xC0000005` |
+| `install.bat` 覆盖必备资产 | 当前 2/2。v2.3.1 踩的大坑：装机脚本从来没拷过 `ai_face_processor_pc_plain.bundle`（旧 bundle 里那份是手工放的），全新装机就缺资产，`BeautySelfTest` 直接崩 `0xC0000005` |
 | 安装包 `PAYLOAD_PLAN` 覆盖必备资产 | 同上，安装包那条链路 |
 | 安装包 NSI `File` 指令覆盖必备资产 | 同上，NSI 打包那条链路 |
 | `install.bat` 收录许可文件 | 当前 2/2。漏了就是"能装但合规不全" |
@@ -168,7 +168,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File pool_regress.ps1 -Force   ::
 | 现象 | 说明 |
 |---|---|
 | `data check fail` | 旧版 SDK 运行时往 stderr 打的内部校验日志，不影响结果 |
-| `NamaSelfTest` 中文路径乱码 | UTF-8 被按本地码页输出，只在初始化失败时可见，不影响正常路径 |
+| `BeautySelfTest` 中文路径乱码 | UTF-8 被按本地码页输出，只在初始化失败时可见，不影响正常路径 |
 | 回归偶发 17/18 | 1.3.6.0 已修数据竞争，不该再出现；见 §3 |
 | 少一项「编译」 | 不带 `--build` 时不触发编译步骤（它不属于 7 个检查组之一），清单里少这一行是正常的 |
 
@@ -176,7 +176,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File pool_regress.ps1 -Force   ::
 
 ## 7. 发版流程
 
-1. 改源码 → 升 `nama_engine.h` 的 `NAMA_BUILD_*`
+1. 改源码 → 升 `beauty_engine.h` 的 `BEAUTY_BUILD_*`
 2. `build.bat`
 3. `install.bat`（**先完全退出 Resolve**）
 4. `python acceptance.py --build --report 验收报告_vX.Y.Z.txt`

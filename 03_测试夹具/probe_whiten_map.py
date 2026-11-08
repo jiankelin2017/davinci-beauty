@@ -133,7 +133,7 @@ def main():
     photo = sys.argv[1]
     extra = sys.argv[2] if len(sys.argv) > 2 else ""
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     extra_file = os.path.join(HERE, "_sweep_extra.txt")
     with open(extra_file, "w", encoding="utf-8") as f:

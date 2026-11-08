@@ -38,7 +38,7 @@ def main():
     panel_b = _load_panel(sys.argv[4] if len(sys.argv) > 4 else "", {
         "blur_level": 100, "skin_detect": 1, "color_level": 100})
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle"
         r"\Contents\Win64\DaVinciBeauty.ofx")
     src = pa.load_frame(PHOTO)

@@ -28,7 +28,7 @@
 ```
 OFX 宿主层   ofx_plugin.cpp            取帧 / 色彩转换(blitFrame) / 写回 / 日志
    ↓
-引擎适配层   nama_engine.cpp           NamaSettings → 引擎参数，转调
+引擎适配层   beauty_engine.cpp           BeautyEngineSettings → 引擎参数，转调
    ↓
 桥接层       core_glue.h / beauty_engine_glue.cpp    C ABI（固定 14 项参数）
    ↓
@@ -183,7 +183,7 @@ f.kps[p*2+1] = flipY ? (h - vy2)     : vy2;   // 关键点：y' = h - y
 | `BEAUTY_IMG_BOTTOMUP` | `0` / `1` | 源帧行序。不设=引擎默认 bottom-up；离线喂 top-down raw 时设 `0` |
 | `BEAUTY_DEBUG_DETECT` | `1` | 每帧检测结果追加到日志，含 `ncand / faces / best / 输入 min-max-mean / flip` |
 | `BEAUTY_DEBUG_DUMP` | **纯 ASCII** 目录 | 落盘第一帧的 `src.raw` / `lb.raw` / `in.f32` / 12 个输出张量，用于"输入错还是推理错"二分 |
-| `NAMA_OFX_LOG` | 路径 | 覆盖日志路径，默认 `C:\ProgramData\DaVinciBeauty\logs\ofx.log` |
+| `BEAUTY_OFX_LOG` | 路径 | 覆盖日志路径，默认 `C:\ProgramData\DaVinciBeauty\logs\ofx.log` |
 
 源码里共 **113 个** `getenv` 名字（其中 109 个是 `BEAUTY_*`），绝大多数是磨皮/区域/GPU 的标定旋钮（`BEAUTY_S3_*`、`BEAUTY_REG_*`、`BEAUTY_FREQ_*` 等），**不属于对外接口**。查全集：
 
@@ -195,7 +195,7 @@ grep -rho 'getenv("[A-Z_0-9]*")' 01_ofx插件源码/src/*.cpp | sort -u
 
 ## 6. 日志判读
 
-日志：`C:\ProgramData\DaVinciBeauty\logs\ofx.log`（`NAMA_OFX_LOG` 可改）。关键行：
+日志：`C:\ProgramData\DaVinciBeauty\logs\ofx.log`（`BEAUTY_OFX_LOG` 可改）。关键行：
 
 | 行 | 含义 |
 |---|---|
@@ -242,7 +242,7 @@ grep -rho 'getenv("[A-Z_0-9]*")' 01_ofx插件源码/src/*.cpp | sort -u
 1. **模式 1/2 必须自带回填**，不能复用 `wantBlurRefill`——那条路要求"锐化=0 且清晰=0"，且只在 band 分支求值。用户拖"磨皮模式"时锐化通常是 0，不另开一条这个下拉框依旧是死的。
 2. **倍率必须远大于 1，且两档都带中频**。`blurRefill=0.06` 是给 band 路径标定的，单靠细频只回填 5%，落在 8bit 上四舍五入后**一格都不动**（第一版 `mode1` 增益 1.0×，实测与默认档 md5 完全相同）。
 
-⚠️ `NamaSettings::blur_type` 的默认值已从 `1` 改成 `0`：旧默认与面板默认（0）不一致，只是过去从不被读所以没暴露；一旦接线，自测路径会静默跑成"高斯"，把 18 条基线全部打掉。
+⚠️ `BeautyEngineSettings::blur_type` 的默认值已从 `1` 改成 `0`：旧默认与面板默认（0）不一致，只是过去从不被读所以没暴露；一旦接线，自测路径会静默跑成"高斯"，把 18 条基线全部打掉。
 
 ### 7.3 强度总增益：为什么是"事后乘"
 
@@ -265,7 +265,7 @@ dst' = src + (dst − src) · gain      // beautycore::amplifySmooth
 
 | 链路 | 入口 | 覆盖它的测试 | 验的是什么 |
 |---|---|---|---|
-| 自测 | `NamaSelfTest` + `NAMA_ST_*` | `baseline.py`（18 条逐字节） | 引擎**接没接**这个参数 |
+| 自测 | `BeautySelfTest` + `BEAUTY_ST_*` | `baseline.py`（18 条逐字节） | 引擎**接没接**这个参数 |
 | 面板 | `readParams()` → `coreBeautyProcess` | `mock_host.py`（`paramSetValue`） | 参数有没有**正确送到**引擎 |
 
 `baseline.py` 直接调引擎、**绕过 `readParams()`**，那里的错误它一律看不见：曾在 `readParams` 里留着 SDK 时代的 `map[3] = {1,0,2}`（面板序 ↔ SDK 序互换），把"双边"和"高斯"对调，而 18 条基线全绿。
@@ -286,8 +286,8 @@ dst' = src + (dst − src) · gain      // beautycore::amplifySmooth
 跑夹具**必须指定引擎目录与 Python**（PATH 里的 `python` 是 Microsoft Store 占位符）：
 
 ```bat
-set NAMA_OFX_DLL=%CD%\..\01_ofx插件源码\out\DaVinciBeauty.ofx
-set NAMA_ENGINE_DIR=%CD%\..\01_ofx插件源码\out
+set BEAUTY_OFX_DLL=%CD%\..\01_ofx插件源码\out\DaVinciBeauty.ofx
+set BEAUTY_ENGINE_DIR=%CD%\..\01_ofx插件源码\out
 set PYTHONUTF8=1
 py -3.12 mock_host.py
 ```
@@ -335,8 +335,8 @@ py -3.12 mock_host.py
 
 ## 11. 版本号的唯一出处
 
-`nama_engine.h` 的 `NAMA_BUILD_MAJOR/MINOR/PATCH/REV` 与 `NAMA_BUILD_STR`。面板显示、二进制内嵌串、安装包文件名、验收清单里那几份文档的版本行全部派生自此；改一处而漏其它，`acceptance.py` 的"版本"组与"文档版本号同步"会直接红。
+`beauty_engine.h` 的 `BEAUTY_BUILD_MAJOR/MINOR/PATCH/REV` 与 `BEAUTY_BUILD_STR`。面板显示、二进制内嵌串、安装包文件名、验收清单里那几份文档的版本行全部派生自此；改一处而漏其它，`acceptance.py` 的"版本"组与"文档版本号同步"会直接红。
 
 ```bash
-grep -rn "NAMA_BUILD_STR" 01_ofx插件源码/src/nama_engine.h
+grep -rn "BEAUTY_BUILD_STR" 01_ofx插件源码/src/beauty_engine.h
 ```

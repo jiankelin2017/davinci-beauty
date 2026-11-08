@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""遍历 Resolve 注册表，找出所有 OpenFX / Nama 相关条目。"""
+"""遍历 Resolve 注册表，找出所有 OpenFX / 旧插件名相关条目。"""
 import os
 import sys
 
@@ -42,7 +42,7 @@ print("命中 %d 个: %s" % (len(cand), cand[:20]))
 
 # 全量遍历，用 GetAttrs 拿 TOOLB_Name / TOOLS_Name
 print("")
-print("=== 全量遍历取名称（找 Nama/Beauty 字样）===")
+print("=== 全量遍历取名称（找旧名 / 新名字样）===")
 found = []
 scanned = 0
 for rid in ids:

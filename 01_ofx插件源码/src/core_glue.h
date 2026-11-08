@@ -1,10 +1,10 @@
 #pragma once
-// core_glue.h —— NamaEngine 与自研 CoreEngine 之间的桥接层。
+// core_glue.h —— BeautyEngine 与自研 CoreEngine 之间的桥接层。
 //
-// 为什么需要这一层：nama_engine.h 自带一份面板参数枚举（P_*），而 beauty_params.h
+// 为什么需要这一层：beauty_engine.h 自带一份面板参数枚举（P_*），而 beauty_params.h
 // 也有一份同名枚举；两者若同时进入同一个翻译单元会重定义。本桥接层只传原始数据
 // （double panel[14] + 三个 int），不暴露任何一方的枚举/结构体，从而让
-// nama_engine.cpp 完全不必 include beauty_params.h / beauty_core.h，从根本上避开冲突。
+// beauty_engine.cpp 完全不必 include beauty_params.h / beauty_core.h，从根本上避开冲突。
 //
 // 唯一真正接触 CoreEngine 的翻译单元是 beauty_engine_glue.cpp。
 
@@ -25,7 +25,7 @@ void coreBeautyReleaseSlot(int slot);
 void coreBeautySetDetectOptions(int rotate, int landmarkQuality, int maxFaces);
 
 // 帧行序（v3.0.4）。bottomUp=1 表示源缓冲第 0 行是画面最下面一行 ——
-// OFX/Resolve 的约定，也是引擎默认值；NamaSelfTest / 离线夹具喂的是
+// OFX/Resolve 的约定，也是引擎默认值；BeautySelfTest / 离线夹具喂的是
 // top-down 的 raw 文件，必须传 0，否则人脸检测看到的是上下颠倒的画面。
 void coreBeautySetImageBottomUp(int bottomUp);
 

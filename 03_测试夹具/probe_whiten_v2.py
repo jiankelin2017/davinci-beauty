@@ -153,7 +153,7 @@ def analyze(ref, test, face):
 def build_face_mask(photo):
     """人脸掩码 = 磨皮 skin_detect=1 与 skin_detect=0 的差分（两帧都跑 SDK）。"""
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     set_extra("")
     src = load_frame(photo)
@@ -172,7 +172,7 @@ def build_face_mask(photo):
 
 def run(photo, extra, panel):
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     set_extra(extra)
     src = load_frame(photo)

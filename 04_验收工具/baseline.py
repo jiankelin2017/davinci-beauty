@@ -18,7 +18,7 @@
    会显式报出来，不会变成一堆莫名其妙的 md5 失配。
 4. 支持 --repeat：同一用例连跑两次，md5 必须一致。这一条验证的是**测试
    本身是否确定性**，避免把「测量抖动」误判成「输出变了」。
-5. 输出路径走 ASCII 临时目录中转。NamaSelfTest 的入参是窄字符 const char*，
+5. 输出路径走 ASCII 临时目录中转。BeautySelfTest 的入参是窄字符 const char*，
    路径含中文（本仓库就在 D:\\插件\\ 下）时部分系统码页会 fopen 失败。
 
 用法
@@ -41,18 +41,18 @@ REPO = os.path.dirname(HERE)
 
 # 尺寸沿用历史基线（1074x604），改了会让所有 md5 失配 —— 那是重新标定，
 # 不是 bug。要改就同步 update 基线。
-W = int(os.environ.get("NAMA_SELFTEST_W") or 1074)
-H = int(os.environ.get("NAMA_SELFTEST_H") or 604)
+W = int(os.environ.get("BEAUTY_SELFTEST_W") or 1074)
+H = int(os.environ.get("BEAUTY_SELFTEST_H") or 604)
 
-SRC_PNG = os.environ.get("NAMA_BASELINE_SRC") or os.path.join(HERE, "input_face.png")
-MANIFEST = os.environ.get("NAMA_BASELINE_MANIFEST") or os.path.join(HERE, "baseline_manifest.txt")
+SRC_PNG = os.environ.get("BEAUTY_BASELINE_SRC") or os.path.join(HERE, "input_face.png")
+MANIFEST = os.environ.get("BEAUTY_BASELINE_MANIFEST") or os.path.join(HERE, "baseline_manifest.txt")
 
 DLL = os.environ.get(
-    "NAMA_OFX_DLL",
+    "BEAUTY_OFX_DLL",
     os.path.join(REPO, "01_ofx插件源码", "bundle",
                  "DaVinciBeauty.ofx.bundle", "Contents", "Win64", "DaVinciBeauty.ofx"))
 ENGINE = os.environ.get(
-    "NAMA_ENGINE_DIR",
+    "BEAUTY_ENGINE_DIR",
     r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64")
 
 # (用例名, 磨皮, 美白, 额外环境变量)
@@ -65,26 +65,26 @@ CASES = [
     ("blur100",     100.0,  0.0, {}),
     ("blur62_wh30",  62.0, 30.0, {}),
     ("blur62_wh100", 62.0, 100.0, {}),
-    ("sh50",         62.0, 30.0, {"NAMA_ST_SHARPEN": 50}),
-    ("sh100",        62.0, 30.0, {"NAMA_ST_SHARPEN": 100}),
-    ("cl50",         62.0, 30.0, {"NAMA_ST_CLARITY": 50}),
-    ("sh50_cl100",   62.0, 30.0, {"NAMA_ST_SHARPEN": 50, "NAMA_ST_CLARITY": 100}),
-    ("gs50",         62.0, 30.0, {"NAMA_ST_GSHARP": 50}),
-    ("shape100",     62.0, 30.0, {"NAMA_ST_CHEEK": 100, "NAMA_ST_EYE": 60,
-                                  "NAMA_ST_CHIN": 40}),
-    ("mode1",        62.0, 30.0, {"NAMA_ST_SMOOTH": 1}),
-    ("mode2",        62.0, 30.0, {"NAMA_ST_SMOOTH": 2}),
-    ("mode3",        62.0, 30.0, {"NAMA_ST_SMOOTH": 3}),
+    ("sh50",         62.0, 30.0, {"BEAUTY_ST_SHARPEN": 50}),
+    ("sh100",        62.0, 30.0, {"BEAUTY_ST_SHARPEN": 100}),
+    ("cl50",         62.0, 30.0, {"BEAUTY_ST_CLARITY": 50}),
+    ("sh50_cl100",   62.0, 30.0, {"BEAUTY_ST_SHARPEN": 50, "BEAUTY_ST_CLARITY": 100}),
+    ("gs50",         62.0, 30.0, {"BEAUTY_ST_GSHARP": 50}),
+    ("shape100",     62.0, 30.0, {"BEAUTY_ST_CHEEK": 100, "BEAUTY_ST_EYE": 60,
+                                  "BEAUTY_ST_CHIN": 40}),
+    ("mode1",        62.0, 30.0, {"BEAUTY_ST_SMOOTH": 1}),
+    ("mode2",        62.0, 30.0, {"BEAUTY_ST_SMOOTH": 2}),
+    ("mode3",        62.0, 30.0, {"BEAUTY_ST_SMOOTH": 3}),
     # v3.0.5：磨皮算法三档。alg0 = 默认档（双边/保边），应当与 blur62_wh30 逐字节相同；
     # alg1/alg2 必须与 alg0 不同 —— 三者全同就说明接线又断了（v3.0.5 之前正是如此）。
-    ("alg0",         62.0, 30.0, {"NAMA_ST_ALG": 0}),
-    ("alg1",         62.0, 30.0, {"NAMA_ST_ALG": 1}),
-    ("alg2",         62.0, 30.0, {"NAMA_ST_ALG": 2}),
+    ("alg0",         62.0, 30.0, {"BEAUTY_ST_ALG": 0}),
+    ("alg1",         62.0, 30.0, {"BEAUTY_ST_ALG": 1}),
+    ("alg2",         62.0, 30.0, {"BEAUTY_ST_ALG": 2}),
 ]
 
-_ST_ENV = ("NAMA_ST_CHEEK", "NAMA_ST_EYE", "NAMA_ST_CHIN", "NAMA_ST_SHARPEN",
-           "NAMA_ST_CLARITY", "NAMA_ST_GSHARP", "NAMA_ST_SMOOTH", "NAMA_ST_DELSPOT",
-           "NAMA_ST_NASO", "NAMA_ST_ALG")
+_ST_ENV = ("BEAUTY_ST_CHEEK", "BEAUTY_ST_EYE", "BEAUTY_ST_CHIN", "BEAUTY_ST_SHARPEN",
+           "BEAUTY_ST_CLARITY", "BEAUTY_ST_GSHARP", "BEAUTY_ST_SMOOTH", "BEAUTY_ST_DELSPOT",
+           "BEAUTY_ST_NASO", "BEAUTY_ST_ALG")
 
 
 def md5file(p):
@@ -96,19 +96,19 @@ def md5file(p):
 
 
 def source_version():
-    """从 nama_engine.h 的宏读完整三段版本。源码是版本号的唯一出处。
+    """从 beauty_engine.h 的宏读完整三段版本。源码是版本号的唯一出处。
 
-    不用 NamaVersion()：它只编码 MAJOR<<16|MINOR，PATCH 位被有意丢掉了
+    不用 BeautyVersion()：它只编码 MAJOR<<16|MINOR，PATCH 位被有意丢掉了
     （保持对外 ABI 语义），程序化查询拿不到修订号。
     """
-    h = os.path.join(REPO, "01_ofx插件源码", "src", "nama_engine.h")
+    h = os.path.join(REPO, "01_ofx插件源码", "src", "beauty_engine.h")
     if not os.path.isfile(h):
         return None
     txt = open(h, "r", encoding="utf-8").read()
     got = {}
     for key in ("MAJOR", "MINOR", "PATCH"):
         import re
-        m = re.search(r"#define\s+NAMA_BUILD_%s\s+(\d+)" % key, txt)
+        m = re.search(r"#define\s+BEAUTY_BUILD_%s\s+(\d+)" % key, txt)
         if not m:
             return None
         got[key] = int(m.group(1))
@@ -143,12 +143,12 @@ def load_lib():
         raise SystemExit("FAIL 无法加载插件 DLL: %s (err=%d)"
                          % (DLL, ctypes.get_last_error()))
     lib = ctypes.WinDLL(DLL)
-    lib.NamaSelfTest.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+    lib.BeautySelfTest.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
                                  ctypes.c_int, ctypes.c_int, ctypes.c_double,
                                  ctypes.c_double, ctypes.c_char_p, ctypes.c_int]
-    lib.NamaSelfTest.restype = ctypes.c_int
-    lib.NamaVersion.argtypes = []
-    lib.NamaVersion.restype = ctypes.c_ulong
+    lib.BeautySelfTest.restype = ctypes.c_int
+    lib.BeautyVersion.argtypes = []
+    lib.BeautyVersion.restype = ctypes.c_ulong
     return lib
 
 
@@ -172,7 +172,7 @@ def run_case(lib, stage, name, blur, whiten, env):
         child_env.pop(k, None)
     for k, v in env.items():
         child_env[k] = str(v)
-    child_env["NAMA_ENGINE_ASSET_DIR"] = ENGINE
+    child_env["BEAUTY_ENGINE_ASSET_DIR"] = ENGINE
     child_env.setdefault("PYTHONUTF8", "1")
     child_env.setdefault("PYTHONIOENCODING", "utf-8")
 
@@ -196,7 +196,7 @@ def run_case_child(name, blur, whiten, out):
     lib = load_lib()
     inp = os.path.join(os.path.dirname(out), "input_%dx%d.raw" % (W, H))
     buf = ctypes.create_string_buffer(4096)
-    rc = lib.NamaSelfTest(ENGINE.encode("utf-8"), inp.encode("utf-8"),
+    rc = lib.BeautySelfTest(ENGINE.encode("utf-8"), inp.encode("utf-8"),
                           out.encode("utf-8"), W, H, blur, whiten, buf, 4096)
     if rc != 0 or not os.path.isfile(out):
         print("FAIL rc=%d %s" % (rc, buf.value.decode("utf-8", "ignore")))
@@ -270,18 +270,18 @@ def main():
     try:
         inp, imd5 = make_input(stage)
         lib = load_lib()
-        ver = lib.NamaVersion()
-        vstr = source_version() or "(未读到 nama_engine.h)"
-        # NamaVersion 只编码 MAJOR/MINOR，这里顺手校验它与源码宏一致。
+        ver = lib.BeautyVersion()
+        vstr = source_version() or "(未读到 beauty_engine.h)"
+        # BeautyVersion 只编码 MAJOR/MINOR，这里顺手校验它与源码宏一致。
         # 编码是 (MAJOR << 16) | MINOR —— 两段各占 16 位，不是每 8 位一段。
         vmaj_min = (ver >> 16, ver & 0xFFFF)
         expect_mm = tuple(int(x) for x in vstr.split(".")[:2]) if "." in vstr else None
 
         print("DLL    : %s" % DLL)
-        print("版本   : %s (NamaVersion=0x%x → %d.%d)"
+        print("版本   : %s (BeautyVersion=0x%x → %d.%d)"
               % (vstr, ver, vmaj_min[0], vmaj_min[1]))
         if expect_mm and vmaj_min != expect_mm:
-            print("WARN NamaVersion 的 MAJOR.MINOR(%d.%d) 与源码宏(%s) 不一致"
+            print("WARN BeautyVersion 的 MAJOR.MINOR(%d.%d) 与源码宏(%s) 不一致"
                   % (vmaj_min[0], vmaj_min[1], vstr))
         print("输入   : %s -> %dx%d  md5=%s" % (os.path.basename(SRC_PNG), W, H, imd5))
         print("用例   : %d" % len([c for c in CASES if not only or c[0] in only]))

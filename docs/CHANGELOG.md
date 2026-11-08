@@ -6,7 +6,7 @@
 
 **有条目 ≠ 有产物**：`1.2.0.0` 到 `1.3.3` 是同一天的内部连续迭代，没有逐个出包；`05_安装包/build/` 里在 `1.3.4.0` 之前最后一个包是 `1.1.1.4`。这些条目的价值是「哪天改了什么、为什么」，不是「有哪几个安装包可下」。
 
-**版本号规则**：四段式 `MAJOR.MINOR.PATCH.REV`，唯一出处是 `01_ofx插件源码/src/nama_engine.h` 的 `NAMA_BUILD_*`。判据是「用户能看出来吗」：看不出→REV；看出「变好了」→PATCH；看出「多了个东西」→MINOR；看出「以前的设置全乱了」→MAJOR。跨档取高、不叠加。详见 `docs/guides/guide-dev-workflow.md`。
+**版本号规则**：四段式 `MAJOR.MINOR.PATCH.REV`，唯一出处是 `01_ofx插件源码/src/beauty_engine.h` 的 `BEAUTY_BUILD_*`。判据是「用户能看出来吗」：看不出→REV；看出「变好了」→PATCH；看出「多了个东西」→MINOR；看出「以前的设置全乱了」→MAJOR。跨档取高、不叠加。详见 `docs/guides/guide-dev-workflow.md`。
 
 ---
 
@@ -28,15 +28,15 @@
 
 **没修的地方**：`clarityRgb()` 同样并行写 `dst`，但它只读自己那一像素，不构成竞争（已逐处核对）。
 
-产物：`DaVinciBeauty_Setup_v1.3.6.0.exe`（4,856,294 字节，md5 `50436e91…`），装机 DLL md5 `c89e2daa…`。
+产物：`DaVinciBeauty_Setup_v1.3.6.0.exe`（4,856,294 字节，md5 `50436e91…`），装机 DLL md5 `c89e2daa…`。**同版随后因标识符改名重出**（见本节末），现为 4,857,026 字节、md5 `d3ab6f1d…`、DLL `8736d185…`。
 
 验证：编译 0 error 0 warning、连编两次 md5 恒为 `c89e2daa…`；`baseline.py update` 一次通过（**不再需要** `BEAUTY_INFER_THREADS=1` 这个临时绕法）；`check` 连跑两次 18/18；`acceptance.py` 全量 PASS 28。
 
 ### 同版顺带：`P_*` 枚举合并成一份（零字节变化）
 
-面板枚举原来有**两份**：`beauty_params.h`（标注「唯一出处」，被 `beauty_core.h` 引用）与 `nama_engine.h`（下标逐位一致，但两个名字不同：`P_THIN_FACE/P_BIG_EYE` vs `P_CHEEK/P_EYE`）。两份同时包含会报 13 条 `C2365 重定义`，这也是上一版不得不加 `beauty_build.h` 转出版本串的原因。
+面板枚举原来有**两份**：`beauty_params.h`（标注「唯一出处」，被 `beauty_core.h` 引用）与 `beauty_engine.h`（当时名 `nama_engine.h`；下标逐位一致，但两个名字不同：`P_THIN_FACE/P_BIG_EYE` vs `P_CHEEK/P_EYE`）。两份同时包含会报 13 条 `C2365 重定义`，这也是上一版不得不加 `beauty_build.h` 转出版本串的原因。
 
-现在 `nama_engine.h` 只 `#include "beauty_params.h"`，`nama_engine.cpp` 的两处引用改成新名。`beauty_params.h` 里补上了原来只在 `nama_engine.h` 才有两条警告（美型三项面板沉底、`kParams` 换序必须逐位对应；为何只接三项不接 `cheek_narrow` 一族）。
+现在 `beauty_engine.h` 只 `#include "beauty_params.h"`，`beauty_engine.cpp` 的两处引用改成新名。`beauty_params.h` 里补上了原来只在 `beauty_engine.h` 才有两条警告（美型三项面板沉底、`kParams` 换序必须逐位对应；为何只接三项不接 `cheek_narrow` 一族）。
 
 顺带发现的 3.x 死常量与 240 行面板考古已在本版一并删除，见下一节。
 
@@ -48,7 +48,7 @@
 
 | 项 | 处置 |
 |---|---|
-| 3.x 死常量 | 删除。版本号唯一出处仍是 `nama_engine.h` 的 `NAMA_BUILD_*` |
+| 3.x 死常量 | 删除。版本号唯一出处仍是 `beauty_engine.h` 的 `BEAUTY_BUILD_*` |
 | 240 行面板考古 | 删除。属「过程叙事」，按文档纪律该由 `docs/history/` 承载；要查可看 git 历史 |
 | 头注释 | 改为「面板参数唯一出处」，并明写「版本号不在这里，别写第二份字面量」 |
 
@@ -73,6 +73,33 @@
 **刻意没动的两处**：`THIRD-PARTY-NOTICES.md` 里的上游项目名（MIT 要求保留出处，删了才是问题）、以及 `LegacyEngine` / `LegacyAdapter` 两个**类名**（自研代码的标识符，在 `#ifdef BEAUTY_WITH_LEGACY_ENGINE` 分支里还在用）。
 
 ⚠ 顺带暴露一处合规缺口：第 4 节新增两条 MIT 上游，但**版权行必须从上游 `LICENSE` 逐字抄**，没有代填 —— 猜错版权人比不写更糟。发布前要补。
+
+### 同版顺带：`Nama` 前缀统一改名（画面零变化，产物哈希变）
+
+`Nama` 是引擎包在外部 SDK 时代留下的前缀，产品对外一直叫 `DaVinci Beauty`，两套名字长期并存。本次一次改齐：
+
+| 旧 | 新 | 处数（src 内） |
+|---|---|---|
+| `NamaEngine` | `BeautyEngine` | 42 |
+| `NamaSettings` | `BeautyEngineSettings` | 15（与 `beauty_params.h` 的 `BeautySettings` 区分，不复用） |
+| `NamaSelfTest` / `NamaVersion` | `BeautySelfTest` / `BeautyVersion` | 7 / 3（**DLL 导出名**，探针脚本同步） |
+| `namaBuildStr()` | `beautyBuildStr()` | 7 |
+| `nama_engine.h/.cpp` | `beauty_engine.h/.cpp` | 文件重命名 |
+| `NAMA_*`（版本宏、日志、诊断、自测开关） | `BEAUTY_*` | 剩余全部 |
+
+**证据是画面没动**：基线 18/18 逐字节一致（16.8s）、`acceptance.py` **PASS 28 / FAIL 0 / WARN 0**。产物 md5 由 `c89e2daa…` 变为 `8736d185…`（符号表与字符串变长），连编两次恒定。
+
+**刻意没改的三处**：
+
+| 项 | 值 | 为什么不动 |
+|---|---|---|
+| 插件注册标识 | `com.nama.davinci.beauty`（沙箱加 `.sandbox`） | 宿主用这个 ID 认插件。改了等于换插件，已装实例的预置与工程文件会「找不到插件」 |
+| 历史文件清理清单 | `NamaBeauty.ofx`、`NamaBeauty_美颜.py` | 升级时要靠旧名删残留，改了就删不掉 |
+| 旧版引擎升级清理 | `install.bat` 里的四个旧 DLL/bundle 名 | 同上。不清会留下几十 MB 僵尸文件 |
+
+⚠ **环境变量断代**：`NAMA_*` 一律不再识别（无兼容读取）。自测、探针、`build.ps1`、安装器已同步改完；如果本机有手写脚本或快捷方式设过 `NAMA_*`，需要自己换成 `BEAUTY_*`。
+
+同版重出包：`DaVinciBeauty_Setup_v1.3.6.0.exe`（4,857,026 字节，md5 `d3ab6f1d…`），旧包 `50436e91…` 作废。
 
 ## 1.3.5.0（2026-11-08）
 

@@ -8,7 +8,7 @@ CPU 开销。本基准用同一帧、同一实例，只切换 color_level=0/100�
 用法：
     python bench_whiten.py [照片] [宽] [高] [重复次数]
 默认：~/Pictures/A7300538.jpg  1920 1080  5
-环境变量：NAMA_OFX_DLL / NAMA_ENGINE_DIR（同 mock_host.py）
+环境变量：BEAUTY_OFX_DLL / BEAUTY_ENGINE_DIR（同 mock_host.py）
 """
 import ctypes
 import os
@@ -102,7 +102,7 @@ def main():
         print("找不到照片：%s" % photo)
         return 2
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     src = load_frame(photo)
     drv = Driver(dll)

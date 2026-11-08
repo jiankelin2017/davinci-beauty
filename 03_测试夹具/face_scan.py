@@ -18,7 +18,7 @@ PHOTO_DIR = os.environ.get(
 def main():
     d = sys.argv[1] if len(sys.argv) > 1 else PHOTO_DIR
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle"
         r"\Contents\Win64\DaVinciBeauty.ofx")
     photos = sorted(

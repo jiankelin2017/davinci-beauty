@@ -126,7 +126,7 @@ def main():
     panel = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {
         "blur_level": 100, "skin_detect": 1, "color_level": 0}
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     with open(EXTRA_FILE, "w", encoding="utf-8") as f:
         f.write(extra)

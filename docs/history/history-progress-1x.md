@@ -3,6 +3,7 @@
 > 状态：Active（只读归档，不要再往里追记新内容）｜ 覆盖区间：1.0.0.0 – 1.3.5.0 ｜ 最后更新：2026-11-08 ｜ 维护人：Jian
 > **这是过程记录，不是结论**：按时间倒序、越靠前越新，含当时的报错、逐帧数据、被推翻的猜测。要看结论去 `docs/CHANGELOG.md`，要看怎么做去 `docs/guides/`。
 > **关于 3.x 编号**：本文后半部分出现的 `v3.0.x`/`v3.2.x`/`v3.3.0` 是 2026-11-06 之前的旧编号，已退役，与 1.x 无一一对应；本文保留原文不改，只为可追溯。
+> **关于 `Nama` 前缀**：文中 `NAMA_*` 环境变量与宏、`NamaEngine`、`NamaSettings`、`NamaSelfTest`、`NamaVersion`、`nama_engine.h/.cpp` 都是 2026-11-08 统一改名前的历史叫法，现分别为 `BEAUTY_*`、`BeautyEngine`、`BeautyEngineSettings`、`BeautySelfTest`、`BeautyVersion`、`beauty_engine.h/.cpp`。历史正文保持原样，不逐条改写。
 
 最后更新：2026-11-08 16:40
 
@@ -2284,7 +2285,7 @@ A/B 做法：临时把 fill 块的入口条件改成恒假，编译一版「无 
 的 DMA 也要占用内存控制器。两边抢同一份带宽，所以没有净重叠，甚至可能互相拖慢。
 要证实需要抓 PCIe 与内存控制器的计数器，本机没有这个条件。
 
-**这个结论的不确定性（必须写清）**：测量时本机负载 42%，WorkBuddy 自身与 OBS 都在占 CPU；
+**这个结论的不确定性（必须写清）**：测量时本机负载 42%，WorkBuddy 自身与一款录屏软件都在占 CPU；
 同一版本连跑三轮，4K 大脸 total 在 17.70~20.91 之间波动，接近一倍。
 上表用 CPU 基准对齐来消掉一部分漂移，但**绝对数值不可作为验收依据**，
 需要在干净环境下重测才能写进结论。
@@ -3989,7 +3990,7 @@ AB 对照（同参数跑 3 帧取 md5）：管道关 `09d7afb6…`，管道开 `
 
 ### (4) 本版未做（P1 剩余 + P2）
 
-- [ ] 磨皮 21 趟搬成 CS（P2 主体，照 `OBS美颜GPU版/shaders/smooth.hlsl`）
+- [ ] 磨皮 21 趟搬成 CS（P2 主体，照旧版 GPU 美颜工程的 `smooth.hlsl`）
 - [ ] GPU 结果直接写进 `sm` 缓冲，替掉 CPU 磨皮（现在只验证、结果丢弃）
 - [ ] `renderMain` 的按分辨率选路（日志已能打印决策，渲染仍走 CPU）
 - [ ] 多实例 per-slot 纹理池（现在一把锁串行化，多实例并发会互等）
@@ -4026,8 +4027,8 @@ AB 对照（同参数跑 3 帧取 md5）：管道关 `09d7afb6…`，管道开 `
 2. **双缓冲异步削 30%**：4K 48.06→33.65ms、1080p 16.97→6.91ms，下载被完全藏住。
    管道必须做异步，同步单缓冲等于白干。
 3. **ROI 是最大杠杆**：4K 全帧 33.65ms → 人脸 ROI 6.44ms（5.2×），因为 ROI 只占 1/5.6 面积。
-4. 16F 与 32F 差 6% 以内，**选 16F**：OBS 在 RTX 5060 上踩过「32F 渲染目标 + Linear 采样
-   → device-lost 崩溃」（见 `OBS美颜GPU版/shaders/smooth.hlsl` 文件头），同款卡不要冒险。
+4. 16F 与 32F 差 6% 以内，**选 16F**：旧版 GPU 美颜工程在 RTX 5060 上踩过「32F 渲染目标 + Linear 采样
+   → device-lost 崩溃」（见该工程 `smooth.hlsl` 文件头），同款卡不要冒险。
 
 ### (3) 新增 `beauty_hwprobe`（本版唯一功能改动）
 
@@ -4090,7 +4091,7 @@ cs5=1 uav16=1 uav32=1 | bw=measured upload=8.6 download=21.6 GB/s | path=GPU thr
 - [ ] 接入 `renderMain` 的按分辨率选路（日志已能打印决策，但渲染仍走 CPU）
 - [ ] 硬件探测结果缓存到 `%PROGRAMDATA%\DaVinciBeauty\hwcache.txt`（省掉每次 80ms 校准）
 
-P1 完成后进入 P2：把 `OBS美颜GPU版/shaders/smooth.hlsl` 的 21 趟搬成 CS，
+P1 完成后进入 P2：把旧版 GPU 美颜工程 `smooth.hlsl` 的 21 趟搬成 CS，
 目标是 4K 磨皮 70.7ms → ≤8ms。
 
 ---

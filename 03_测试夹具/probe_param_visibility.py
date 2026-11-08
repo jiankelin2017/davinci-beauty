@@ -14,8 +14,8 @@ sys.path.insert(0, HERE)
 import mock_host as mh  # noqa: E402
 
 DLL = os.environ.get(
-    "NAMA_OFX_DLL",
-    # 默认指向**已安装**的那份：它和 CNamaSDK.dll / fuai.dll / 明文 bundle
+    "BEAUTY_OFX_DLL",
+    # 默认指向**已安装**的那份：它和插件自己的运行时 DLL 放在同一目录
     # 同目录，describeInContext 不需要引擎真初始化也能读参数属性。
     r"C:\Program Files\Common Files\OFX\Plugins"
     r"\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")

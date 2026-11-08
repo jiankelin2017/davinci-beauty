@@ -19,7 +19,7 @@
 #include "beauty_log.h"
 #include "beauty_warp.h"   /* 3.1.27：美形三项的几何变形 */
 #include "gpu_beauty.h"    /* P1：D3D11 ROI 传输管道（beauty.ini 的 gpu_pipe 控制） */
-#include "beauty_build.h"  /* 版本串：转出 NAMA_BUILD_STR，见该头注释（不能直接包含 nama_engine.h） */
+#include "beauty_build.h"  /* 版本串：转出 BEAUTY_BUILD_STR，见该头注释（不能直接包含 beauty_engine.h） */
 #include "gpu_smooth.h"    /* P2：磨皮生产路径的 D3D11 Compute 版（beauty.ini 的 gpu_smooth 控制） */
 #include "beauty_hwprobe.h" /* 3.3.0：beauty.ini 配置读取（gpu_pipe 三态） */
 
@@ -1338,7 +1338,7 @@ static void dumpGrayPgm(const char* path, const unsigned char* m, int w, int h, 
 class CoreEngine : public IBeautyEngine {
 public:
     const char* id() const override { return "core"; }
-    const char* version() const override { return namaBuildStr(); }
+    const char* version() const override { return beautyBuildStr(); }
     // GPU 执行提供器名：人脸检测（YuNet/ONNX）实际使用的执行提供器，
     // 自动检测为 "DirectML"（onnxruntime-directml 构建版）或 "CPU"。
     const char* gpuProvider() const override { return face_.provider(); }
@@ -1710,7 +1710,7 @@ public:
         // BUG4（2026-11-06）：以前这里恒 return 0，于是「两个实例」在引擎眼里
         // 长得一模一样 —— 日志里也都是 slot=0，也没法判断刚才那次渲染是不是
         // 另一个实例。现在给每个实例一个唯一 id（只用于诊断与串台判据，
-        // 引擎状态仍然全局共享，见 nama_engine.h 的警示）。
+        // 引擎状态仍然全局共享，见 beauty_engine.h 的警示）。
         static std::atomic<int> next{1};
         return next.fetch_add(1);
     }
@@ -1728,7 +1728,7 @@ public:
     void setDetectOptions(int, int, int) override {}
     // v3.0.4：OFX/Resolve 给的是 bottom-up 帧（默认 true，见 beauty_core.h）
     void setImageBottomUp(bool v) override { imgBottomUp_ = v; }
-    // v3.0.4：自测/离线对拍必须确定性 —— 关掉异步检测（见 NamaSelfTest）
+    // v3.0.4：自测/离线对拍必须确定性 —— 关掉异步检测（见 BeautySelfTest）
     void setAsyncDetect(bool on) override {
         asyncOn_ = on;
         if (!on) stopAsync();

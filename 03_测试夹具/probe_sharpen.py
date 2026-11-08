@@ -10,13 +10,13 @@
 
 做法：完全复用 Phase 0/1 的帧构造与度量口径（probe_blur_region），
 每个用例在独立子进程里跑（SDK 道具参数下发后不复位，同进程连扫会互相污染）。
-整矩阵跑两遍：一遍语义区域开（1.51 默认），一遍 NAMA_REGION_OFF=1（退回 1.4 行为）。
+整矩阵跑两遍：一遍语义区域开（1.51 默认），一遍 BEAUTY_REGION_OFF=1（退回 1.4 行为）。
 
 用法：
     python probe_sharpen.py                 # 两遍都跑
     python probe_sharpen.py --case <label>  # 子进程内部用
 环境变量：
-    NAMA_OFX_DLL   指向待测插件（默认用已安装的那份）
+    BEAUTY_OFX_DLL   指向待测插件（默认用已安装的那份）
 """
 import json
 import os
@@ -92,7 +92,7 @@ def run_case(label):
 
     photo = _raw_to_png()
     src = pbr.build_frame(photo)
-    dll = os.environ.get("NAMA_OFX_DLL", DLL_DEFAULT)
+    dll = os.environ.get("BEAUTY_OFX_DLL", DLL_DEFAULT)
 
     with open(pbr.EXTRA_FILE, "wb") as f:
         f.write(b"")
@@ -129,9 +129,9 @@ def run_case(label):
 def _run_matrix(region_off):
     env = dict(os.environ)
     if region_off:
-        env["NAMA_REGION_OFF"] = "1"
+        env["BEAUTY_REGION_OFF"] = "1"
     else:
-        env.pop("NAMA_REGION_OFF", None)
+        env.pop("BEAUTY_REGION_OFF", None)
 
     rows = []
     for label, _ in CASES:
@@ -180,7 +180,7 @@ def _exact():
     """
     photo = _raw_to_png()
     src = pbr.build_frame(photo)
-    dll = os.environ.get("NAMA_OFX_DLL", DLL_DEFAULT)
+    dll = os.environ.get("BEAUTY_OFX_DLL", DLL_DEFAULT)
 
     with open(pbr.EXTRA_FILE, "wb") as f:
         f.write(b"")
@@ -218,7 +218,7 @@ def main():
     _report("语义区域 ON（1.51）", on)
 
     print("")
-    print("[2/2] 语义区域 OFF（NAMA_REGION_OFF=1，退回 1.4 行为）...", flush=True)
+    print("[2/2] 语义区域 OFF（BEAUTY_REGION_OFF=1，退回 1.4 行为）...", flush=True)
     off = _run_matrix(True)
     _report("语义区域 OFF（1.4 行为）", off)
 

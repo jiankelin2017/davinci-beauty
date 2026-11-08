@@ -239,7 +239,7 @@ def main():
     photo = argv[0] if argv else PHOTO
     do_map = "--map" in sys.argv
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle"
         r"\Contents\Win64\DaVinciBeauty.ofx")
     src = load_frame(photo)

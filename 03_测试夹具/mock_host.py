@@ -8,10 +8,10 @@ import sys
 import time
 from ctypes import c_char_p, c_double, c_int, c_void_p, POINTER
 
-# 默认驱动已安装的插件；用 NAMA_OFX_DLL 可以指向刚编译出来、还没来得及安装
+# 默认驱动已安装的插件；用 BEAUTY_OFX_DLL 可以指向刚编译出来、还没来得及安装
 # 的二进制（Resolve 开着会锁住安装目录，装不进去时靠这个继续验证）。
 DLL = os.environ.get(
-    "NAMA_OFX_DLL",
+    "BEAUTY_OFX_DLL",
     r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx",
 )
 
@@ -1303,26 +1303,26 @@ def main():
 
     def _with_log(fn):
         """临时把插件日志定向到 a1_log 再执行 fn，返回 (结果, 日志文本)。"""
-        prev = os.environ.get("NAMA_OFX_LOG")
-        prev_all = os.environ.get("NAMA_OFX_LOG_ALL")
+        prev = os.environ.get("BEAUTY_OFX_LOG")
+        prev_all = os.environ.get("BEAUTY_OFX_LOG_ALL")
         try:
             os.remove(a1_log)
         except OSError:
             pass
-        os.environ["NAMA_OFX_LOG"] = a1_log
-        os.environ["NAMA_OFX_LOG_ALL"] = "1"
+        os.environ["BEAUTY_OFX_LOG"] = a1_log
+        os.environ["BEAUTY_OFX_LOG_ALL"] = "1"
         try:
             r = fn()
         finally:
             txt = _read_text(a1_log)
             if prev is None:
-                os.environ.pop("NAMA_OFX_LOG", None)
+                os.environ.pop("BEAUTY_OFX_LOG", None)
             else:
-                os.environ["NAMA_OFX_LOG"] = prev
+                os.environ["BEAUTY_OFX_LOG"] = prev
             if prev_all is None:
-                os.environ.pop("NAMA_OFX_LOG_ALL", None)
+                os.environ.pop("BEAUTY_OFX_LOG_ALL", None)
             else:
-                os.environ["NAMA_OFX_LOG_ALL"] = prev_all
+                os.environ["BEAUTY_OFX_LOG_ALL"] = prev_all
         return r, txt
 
     aw, ah = 160, 120
@@ -1402,7 +1402,7 @@ def main():
 
     # ---- (6) B5：第二个实例应拿到独立槽位，且渲染结果互不干扰 ----
     # v3.0.4：判据从「日志里有没有 slot=1 这句话」改成「行为上互不干扰」。
-    # 原来那条断言依赖日志文本，而 `_with_log` 把 NAMA_OFX_LOG 指到临时文件后
+    # 原来那条断言依赖日志文本，而 `_with_log` 把 BEAUTY_OFX_LOG 指到临时文件后
     # 只要有一处写不进去就恒为 False，既可能是假 FAIL 也可能是假 PASS（A1 那条
     # 「日志里有没有『无需 SDK』」同理）。行为断言不依赖日志管道，更硬。
     eff2 = Effect()
@@ -1579,8 +1579,8 @@ def main():
     # ---- (2f) 下拉框接线：磨皮算法三档 / 磨皮模式四档（**面板路径**）----
     #
     # v3.0.6 新增。v3.0.5 里这两个下拉框「引擎侧接了、面板侧没接」，而所有既有
-    # 用例都没发现，因为 baseline.py 走的是 NamaSelfTest 的 NAMA_ST_ALG /
-    # NAMA_ST_SMOOTH 钩子 —— 它直接调引擎，**绕过了 ofx_plugin.cpp::readParams()**。
+    # 用例都没发现，因为 baseline.py 走的是 BeautySelfTest 的 BEAUTY_ST_ALG /
+    # BEAUTY_ST_SMOOTH 钩子 —— 它直接调引擎，**绕过了 ofx_plugin.cpp::readParams()**。
     # 真机拖下拉框走的却是 readParams，那里有两个缺陷：
     #   ① 还留着 旧版引擎时代的 `map[3] = {1, 0, 2}`，把面板序 {双边,高斯,弱磨皮}
     #      换成旧版引擎序 {1=双边,0=高斯,2=弱磨皮} —— 面板选「双边」实际跑高斯、

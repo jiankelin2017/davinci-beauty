@@ -2,7 +2,7 @@
 """测「美白(color_level)」的真实作用域 —— 通用双帧差分器。
 
 **测量纪律（踩过的坑，务必保留）**
-1. 插件在八项面板参数全 0 时会**直接透传，SDK 根本没跑**（nama_engine.h 的
+1. 插件在八项面板参数全 0 时会**直接透传，SDK 根本没跑**（beauty_engine.h 的
    allZero()）。所以「全 0 的渲染」= 原始图，不是 SDK 基准输出。
    差分必须选两帧**都真的跑了 SDK**、且只差一个变量的组合。
 2. SDK 道具参数是**粘住**的，set 过就一直有效 → 每个组合独立进程测。
@@ -209,7 +209,7 @@ def do_mask(photo, crop):
     磨皮在 skin_detect=1 时只动人脸 → 差分即人脸区域。
     """
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     set_extra("")
     src = load_frame(photo, crop)
@@ -231,7 +231,7 @@ def do_mask(photo, crop):
 
 def do_diff(photo, crop, ref_panel, test_panel, ref_extra, test_extra):
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     src = load_frame(photo, crop)
     drv = Driver(dll)

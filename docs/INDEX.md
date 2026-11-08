@@ -43,9 +43,7 @@ docs/
 | GPU 磨皮模块 | `docs/design/design-gpu-smooth.md` | design | Active（已完成施工，留决策） | 1.3.6.0 | Jian | 2026-11-08 | — |
 | 锐化为何无效 | `docs/adr/adr-0001-sharpen-inert.md` | adr | Active | 1.3.6.0 | Jian | 2026-11-08 | — |
 | 过程记录（1.0.x–1.3.x） | `docs/history/history-progress-1x.md` | history | Active（只读归档） | 1.0.0.0–1.3.5.0 | Jian | 2026-11-08 | — |
-| 旧 SDK 区域探测 PHASE0 | `docs/archive/archive-phase0-sdk-region.md` | archive | Deprecated | 闭源 SDK 时代 | Jian | 2026-11-08 | 对象已移除（引擎替换为自研） |
-| 区域精准化 PHASE1 | `docs/archive/archive-phase1-region.md` | archive | Deprecated | 同上 | Jian | 2026-11-08 | 同上 |
-| 语义区域 PHASE2 | `docs/archive/archive-phase2-semantic-region.md` | archive | Deprecated | 同上 | Jian | 2026-11-08 | 同上 |
+| 旧版引擎区域探测 PHASE0/1/2 | 已移出仓库（本地归档，不随仓库分发） | archive | Removed | 旧版引擎时代 | Jian | 2026-11-08 | 对象已移除；内容只对已下线的旧引擎有意义，后续开发不依赖 |
 | 旧开发 README（121 KB） | `docs/archive/archive-dev-readme-20261108.md` | archive | Deprecated | ≤1.1.7.0 | Jian | 2026-11-08 | 已并入 `docs/CHANGELOG.md` |
 | 历史验收输出（1.0.7.0） | `docs/archive/archive-verification-1.0.7.0.txt` | archive | Deprecated | 1.0.7.0 | Jian | 2026-11-08 | 每次验收重新生成，不存当前版 |
 | 旧包 sha256 清单 | `docs/archive/archive-manifest-v308.txt` | archive | Deprecated | 旧编号时代 | Jian | 2026-11-08 | 现由 `package.py` 在包内生成 `MANIFEST.txt` |
@@ -95,9 +93,12 @@ docs/
 ## 七、待人工确认
 
 - **回归抖动已定位并修复（1.3.6.0）**：根因是 `toneColor()` 的 Sobel 边缘门控读 `dst`，而同一循环正按行并行写 `dst`——数据竞争（未定义行为）。实测证据：`blur62_wh100` 2100 次抖动 33 次（1.57%），异常行全部落在 `261 + 35k` 与 `y±1`（35 = 行块高）；强制 CPU / 强制 GPU 都抖，`BEAUTY_INFER_THREADS=1/2/4` 异常率同为 0.5%——**先前「GPU 争用」「与推理线程数相关」「必须并发才触发」三条归因全部不成立**。修复后 `blur62_wh100`/`cl50` 各 1200 次单一 md5、0 异常。代价是画面改变（0.2% 像素、≤3 级），基线已重标；`BEAUTY_INFER_THREADS=1` 那个临时绕法不再需要。详见 `reference-performance.md` §5.4。
-- **三处旧编号残留已清（2026-11-08 同日重切）**：`beauty.ini` 模板头、`CoreEngine::version()`、`install.bat` 的非 ASCII 行都已处理。前者改为 `namaBuildStr()` 现拼（实现 `return NAMA_BUILD_STR`，不写字面量副本），`install.bat` 改纯 ASCII。**同版本号重出了一份安装包**（未对外交付），所以 1.3.5.0 对应两份字节：DLL `2299c328…` → `5655699…`，安装包 `500f7b17…` → `5d422ef0…`；画面不变（基线仍 18/18）。细节见 `docs/CHANGELOG.md` 的「同日重切」。
-- **`P_*` 面板枚举已合并为一份（1.3.6.0）**：原来 `beauty_params.h` 与 `nama_engine.h` 各一份，下标逐位一致但名字不同（`P_THIN_FACE/P_BIG_EYE` vs `P_CHEEK/P_EYE`），同时包含报 C2365。现在 `nama_engine.h` 只 `#include "beauty_params.h"`，`nama_engine.cpp` 的两处引用改为新名；验收的 `parse_enum()` 跟着改读 `beauty_params.h`（解析不到会 FAIL，不会静默通过）。**编译产物 md5 不变**（`c89e2daa…`），验收 28 项全过。`beauty_build.h` 保留：它已不再需要规避重定义，但仍是最小依赖（改版本号不必拖进整份适配层头）。
-- **`beauty_params.h` 已收敛为纯参数头（1.3.6.0 同版）**：3.x 死常量（`BEAUTY_BUILD_MAJOR/MINOR/PATCH`、`BEAUTY_BUILD_STR "3.1.39"`）与它上方 240 行 3.x 面板尺寸考古一起删除，332 行 → 87 行，编译产物 md5 不变（`c89e2daa…`）。版本号唯一出处仍是 `nama_engine.h` 的 `NAMA_BUILD_*`。
+- **三处旧编号残留已清（2026-11-08 同日重切）**：`beauty.ini` 模板头、`CoreEngine::version()`、`install.bat` 的非 ASCII 行都已处理。前者改为 `beautyBuildStr()` 现拼（实现 `return BEAUTY_BUILD_STR`，不写字面量副本），`install.bat` 改纯 ASCII。**同版本号重出了一份安装包**（未对外交付），所以 1.3.5.0 对应两份字节：DLL `2299c328…` → `5655699…`，安装包 `500f7b17…` → `5d422ef0…`；画面不变（基线仍 18/18）。细节见 `docs/CHANGELOG.md` 的「同日重切」。
+- **`P_*` 面板枚举已合并为一份（1.3.6.0）**：原来 `beauty_params.h` 与 `beauty_engine.h` 各一份，下标逐位一致但名字不同（`P_THIN_FACE/P_BIG_EYE` vs `P_CHEEK/P_EYE`），同时包含报 C2365。现在 `beauty_engine.h` 只 `#include "beauty_params.h"`，`beauty_engine.cpp` 的两处引用改为新名；验收的 `parse_enum()` 跟着改读 `beauty_params.h`（解析不到会 FAIL，不会静默通过）。**编译产物 md5 不变**（`c89e2daa…`），验收 28 项全过。`beauty_build.h` 保留：它已不再需要规避重定义，但仍是最小依赖（改版本号不必拖进整份适配层头）。
+- **`beauty_params.h` 已收敛为纯参数头（1.3.6.0 同版）**：3.x 死常量（`BEAUTY_BUILD_MAJOR/MINOR/PATCH`、`BEAUTY_BUILD_STR "3.1.39"`）与它上方 240 行 3.x 面板尺寸考古一起删除，332 行 → 87 行，编译产物 md5 不变（`c89e2daa…`）。版本号唯一出处仍是 `beauty_engine.h` 的 `BEAUTY_BUILD_*`。
 - **源码第三方标识已清（1.3.6.0 同版，零字节变化）**：`src/` 里的外部产品名（宿主与美颜商业产品，10 行）、商业 SDK 指代（13 行）、逆向口气（反编译 / 离线基准 DLL 的内部名 / 基准输出俗称，10 行）、外部开源仓库名（17 行）全部换成中性描述；两个指代外部产品的占位词（37 行 + 101 行）统一为「旧宿主」「参考版」。外部 MIT 上游的具名出处集中到 `THIRD-PARTY-NOTICES.md` 第 4 节，正文只留指针 —— **这份索引不复述具体名字，复述等于没清**。核对改动看 `git show c5d8304..b446a25`。**遗留一件人工活**：那两条 MIT 上游的版权行要从各自 `LICENSE` 逐字抄进去，没有代填。
-- **两处待定（尚未动手，需要拍板）**：① `Nama` 前缀（`NamaEngine` / `NamaSettings` / `NamaSelfTest` / `NamaVersion` / `NAMA_*` 环境变量）是包外部 SDK 时代留下的命名，约 60 处标识符 + 验收/基线脚本各若干处，改名要连带改导出符号与文档；② `03_测试夹具/` 里有 18 份脚本只服务于已移除的外部 SDK（直接 `LoadLibrary` 那个 DLL、读它的字符串池、读解密后的模型 bundle），属死代码，删了只影响 `docs/archive/` 里三份 Deprecated 文档的指针。
+- **标识符前缀已统一为 `Beauty`（1.3.6.0 同版，画面零变化）**：`NamaEngine` / `NamaSettings` / `NamaSelfTest` / `NamaVersion` / `nama_engine.h/.cpp` / `NAMA_*` 全部改为 `BeautyEngine` / `BeautyEngineSettings` / `BeautySelfTest` / `BeautyVersion` / `beauty_engine.*` / `BEAUTY_*`，DLL 导出名同步到探针与验收脚本。产物 md5 `c89e2daa…` → `8736d185…`（符号与字符串变长），基线 18/18、验收 28 项全过，连编两次 md5 恒定；同版本重出包 md5 `d3ab6f1d…`。**刻意不动**：插件注册标识 `com.nama.davinci.beauty`（改了宿主认不出已装实例的预置与工程）、旧文件名清理清单（`NamaBeauty.ofx`、`install.bat` 里的旧 DLL 名，删了升级清不掉残留）。**`NAMA_*` 环境变量不再识别，无兼容读取**。
+- **18 份死探针已删（2026-11-08）**：只服务已移除外部 SDK 的脚本（`LoadLibrary` 那个 DLL、扫它的字符串池、读解密后的模型 bundle、跑它的区域参数）全部移出仓库，删前整份备份在本地归档；`03_测试夹具` 跟踪文件 55 → 37。留下的是跑当前插件的：`mock_host`、`selftest_ofx`、`selftest_ui`、`probe_param_visibility`、基线/性能对照、并发复现等。
+- **三份旧引擎区域探测报告已移出仓库**：内容只对已下线的旧引擎有意义，后续开发不依赖；本地归档保留，归档表已标 Removed。
+- **解密模型目录已移出项目盘**：61.6 MB，移到 `C:\Users\Administrator\LocalArchive\DaVinciBeauty\`。仓库内已无任何脚本引用该路径（唯一提及是 `package.py` 里一句「为什么不哈希它」的注释）。
 - **四个「缺失版本」已核实，结论分三类**（2026-11-08，含一次更正）：`1.3.0.0` 确实没有这个号（无 commit、无安装包、装机目录也无备份）；`1.2.6.0` **有过构建但没进 git、没出包**——装机备份 `DaVinciBeauty.ofx.bak-1.2.6.0` 内嵌字符串 `1.2.6.0`；`1.3.2` / `1.3.3` 是工作标签，对应备份 DLL 内嵌的仍是 `1.3.1.0`（同类的还有 `1.2.4.0`，内嵌 `1.2.3.0`）。所以没有补录条目，改为在 `CHANGELOG.md` 的「编号跳号与工作标签」一节交代证据与规则。

@@ -27,7 +27,7 @@ from ctypes import c_char_p, c_int, c_void_p, POINTER
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, "01_ofx插件源码", "out")
-DLL = os.environ.get("NAMA_OFX_DLL") or os.path.join(OUT, "DaVinciBeauty.ofx")
+DLL = os.environ.get("BEAUTY_OFX_DLL") or os.path.join(OUT, "DaVinciBeauty.ofx")
 LOG = os.path.join(HERE, "bug4_diag.log")
 
 W, H = 640, 394
@@ -35,8 +35,8 @@ SENTINEL = b"\x5a"
 K = 4
 
 # 插件每次写日志都会读这个环境变量：必须在 LoadLibrary 之前设好。
-os.environ["NAMA_OFX_LOG"] = LOG
-os.environ["NAMA_OFX_DLL"] = DLL
+os.environ["BEAUTY_OFX_LOG"] = LOG
+os.environ["BEAUTY_OFX_DLL"] = DLL
 
 sys.path.insert(0, HERE)
 import mock_host as M  # noqa: E402

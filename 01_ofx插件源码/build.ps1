@@ -108,8 +108,8 @@ if (-not (Test-Path (Join-Path $ortInclude 'onnxruntime_c_api.h'))) {
 # Plain if/else on purpose: the `$x = if (...) {...} else {...}` form silently
 # yielded an empty string here even though $Sandbox was True.
 $sandboxDefine = ''
-if ($Sandbox) { $sandboxDefine = '/DNAMA_SANDBOX_BUILD' }
-if ($env:NAMA_SANDBOX -eq '1') { $sandboxDefine = '/DNAMA_SANDBOX_BUILD' }
+if ($Sandbox) { $sandboxDefine = '/DBEAUTY_SANDBOX_BUILD' }
+if ($env:BEAUTY_SANDBOX -eq '1') { $sandboxDefine = '/DBEAUTY_SANDBOX_BUILD' }
 
 $sources = Get-ChildItem (Join-Path $root 'src') -Filter *.cpp | Sort-Object Name | ForEach-Object { $_.FullName }
 if (-not $sources) { throw 'No .cpp sources under src\' }
@@ -122,7 +122,7 @@ $clArgs = @(
     '/Brepro',
     "/Fo$obj\", "/Fe$(Join-Path $out 'DaVinciBeauty.ofx')", '/LD',
     '/DUNICODE', '/D_UNICODE', '/D_CRT_SECURE_NO_WARNINGS',
-    # Sandbox build (-Sandbox / NAMA_SANDBOX=1): distinct plugin id + label so the
+    # Sandbox build (-Sandbox / BEAUTY_SANDBOX=1): distinct plugin id + label so the
     # sandbox bundle cannot shadow the real one. Empty on normal builds and
     # filtered out before invoking cl.
     $sandboxDefine,
@@ -145,9 +145,9 @@ $clArgs = @(
 )
 
 $clArgs = $clArgs | Where-Object { $_ -ne '' -and $null -ne $_ }
-if ($env:NAMA_BUILD_LOG) {
-    "[def=$sandboxDefine sw=$Sandbox env=$env:NAMA_SANDBOX] " + ($clArgs -join ' ') |
-        Out-File -FilePath $env:NAMA_BUILD_LOG -Encoding utf8 -Append
+if ($env:BEAUTY_BUILD_LOG) {
+    "[def=$sandboxDefine sw=$Sandbox env=$env:BEAUTY_SANDBOX] " + ($clArgs -join ' ') |
+        Out-File -FilePath $env:BEAUTY_BUILD_LOG -Encoding utf8 -Append
 }
 Write-Host "[BUILD] MSVC $($msvc.Name) + SDK $sdkVer"
 Write-Host "[BUILD] engine: $engine"
@@ -208,7 +208,7 @@ Write-Host ("[OK] out\DaVinciBeauty.ofx  {0:N0} bytes  md5={1}" -f $size, (Get-F
 
 # Stage the engine runtime next to the plugin binary. CoreEngine resolves
 # onnxruntime.dll and yunet.onnx from the *plugin's own directory*
-# (beauty_core.cpp: selfDir()), not from the NAMA_ENGINE_DIR argument, so a clean
+# (beauty_core.cpp: selfDir()), not from the BEAUTY_ENGINE_DIR argument, so a clean
 # build without this copy silently degrades to "no face detected" and the
 # baseline/mock-host self-tests fail with 0/18 on a fresh checkout.
 foreach ($asset in @('onnxruntime.dll', 'yunet.onnx')) {

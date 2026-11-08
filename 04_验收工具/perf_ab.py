@@ -31,7 +31,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENGINE = os.environ.get(
-    "NAMA_ENGINE_DIR",
+    "BEAUTY_ENGINE_DIR",
     r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64")
 SRC = os.path.join(HERE, "input_face.png")
 
@@ -67,7 +67,7 @@ def main():
     import numpy as np
     from PIL import Image
 
-    # 中文路径中转：NamaSelfTest 的入参是窄字符 const char*，本仓库在
+    # 中文路径中转：BeautySelfTest 的入参是窄字符 const char*，本仓库在
     # D:\插件\ 下，直接传会在部分系统码页 fopen 失败。
     stage = tempfile.mkdtemp(prefix="nama_perf_")
     try:
@@ -80,11 +80,11 @@ def main():
             f.write(rgba.tobytes())
 
         # 全开档：磨皮62 / 美白30 / 锐化50 / 美型三项
-        os.environ["NAMA_ST_SHARPEN"] = "50"
-        os.environ["NAMA_ST_CHEEK"] = "60"
-        os.environ["NAMA_ST_EYE"] = "40"
-        os.environ["NAMA_ST_CHIN"] = "30"
-        os.environ["NAMA_ENGINE_ASSET_DIR"] = ENGINE
+        os.environ["BEAUTY_ST_SHARPEN"] = "50"
+        os.environ["BEAUTY_ST_CHEEK"] = "60"
+        os.environ["BEAUTY_ST_EYE"] = "40"
+        os.environ["BEAUTY_ST_CHIN"] = "30"
+        os.environ["BEAUTY_ENGINE_ASSET_DIR"] = ENGINE
 
         print("# res=%s %dx%d frames=%d" % (res, W, H, nframe))
         for dll in args:
@@ -92,16 +92,16 @@ def main():
                 print("%-28s (文件不存在)" % dll)
                 continue
             lib = ctypes.WinDLL(dll)
-            lib.NamaSelfTest.argtypes = [ctypes.c_char_p, ctypes.c_char_p,
+            lib.BeautySelfTest.argtypes = [ctypes.c_char_p, ctypes.c_char_p,
                                          ctypes.c_char_p, ctypes.c_int,
                                          ctypes.c_int, ctypes.c_double,
                                          ctypes.c_double, ctypes.c_char_p,
                                          ctypes.c_int]
-            lib.NamaSelfTest.restype = ctypes.c_int
+            lib.BeautySelfTest.restype = ctypes.c_int
             buf = ctypes.create_string_buffer(4096)
             proc, sdk = [], []
             for i in range(nframe + 2):     # 前 2 帧预热丢弃
-                lib.NamaSelfTest(ENGINE.encode(), ip.encode(), op.encode(),
+                lib.BeautySelfTest(ENGINE.encode(), ip.encode(), op.encode(),
                                  W, H, 62.0, 30.0, buf, 4096)
                 msg = buf.value.decode("utf-8", "ignore")
                 m = re.search(r"process=([\d.]+)ms", msg)

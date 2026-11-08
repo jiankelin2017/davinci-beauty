@@ -11,8 +11,8 @@
 
 **一句话**：`cd 05_安装包 && python build_nsis.py`，版本号自动取自源码宏，产物在 `build\` 下。
 
-1. **版本号只有一个来源** —— `01_ofx插件源码\src\nama_engine.h` 的 `NAMA_BUILD_STR`。构建器自己读，不需要也不该手动传 `--version`；传了反而会造出「文件名与源码不符」的包。
-2. **当前产物**：`build\DaVinciBeauty_Setup_v1.3.6.0.exe`，4,856,294 字节（4.63 MB），md5 `50436e915a79759c91dc99e4441eb8b1`。
+1. **版本号只有一个来源** —— `01_ofx插件源码\src\beauty_engine.h` 的 `BEAUTY_BUILD_STR`。构建器自己读，不需要也不该手动传 `--version`；传了反而会造出「文件名与源码不符」的包。
+2. **当前产物**：`build\DaVinciBeauty_Setup_v1.3.6.0.exe`，4,857,026 字节（4.63 MB），md5 `d3ab6f1da4fa52c58173dfe5779304a8`（同版本内因标识符改名重出，旧哈希 `50436e91…` 作废）。
 3. **"包"有两种，别混**：安装包（NSIS 出 exe，给用户装）与整合包（`04_验收工具\package.py` 出源码目录+zip，给开发/交接）。本文前半讲前者，§8 讲后者。
 4. **改资产清单要同步四处**，`acceptance.py` 只硬查其中三处 —— 第四处漏了不会报错，只会在用户机器上崩。
 5. **沙箱是两个独立开关**：`build.bat -Sandbox` 换插件标识，`build_nsis.py --sandbox` 换安装位置。要真正隔离，两个都得开。
@@ -121,7 +121,7 @@ C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\
 
 | 开关 | 改什么 | 产物 | 用途 |
 |---|---|---|---|
-| `build.bat -Sandbox`（或 `NAMA_SANDBOX=1`） | 插件标识换成 `com.nama.davinci.beauty.sandbox`（`ofx_plugin.cpp:7`） | 仍写 `out\DaVinciBeauty.ofx` | 验证「插件本身」在宿主里的行为，不遮蔽正式插件 |
+| `build.bat -Sandbox`（或 `BEAUTY_SANDBOX=1`） | 插件标识换成 `com.nama.davinci.beauty.sandbox`（`ofx_plugin.cpp:7`） | 仍写 `out\DaVinciBeauty.ofx` | 验证「插件本身」在宿主里的行为，不遮蔽正式插件 |
 | `build_nsis.py --sandbox` | APPID → `DaVinciBeauty.SandboxTest`，bundle → `DaVinciBeautySandbox.ofx.bundle` | `build\..._sandbox.exe` | 验证「安装/卸载逻辑」，不碰正式装机 |
 
 **完整的隔离验证要两步都做：**
@@ -159,7 +159,7 @@ python build_nsis.py --sandbox --ofx ..\01_ofx插件源码\out\DaVinciBeauty_san
                    ③ 01_ofx插件源码\bundle\...\Contents\Win64（中间产物，可能被清理）
                    ④ 已装 bundle 的 Win64
 --ofx <path>       插件二进制（默认 01_ofx插件源码\out\DaVinciBeauty.ofx）
---version <str>    一般不要传。默认读 nama_engine.h 的 NAMA_BUILD_STR
+--version <str>    一般不要传。默认读 beauty_engine.h 的 BEAUTY_BUILD_STR
 --out <path>       指定输出路径
 --sandbox          隔离 APPID 与 bundle 名，见 §5
 ```
@@ -206,7 +206,7 @@ python package.py --no-engine      :: 不带引擎资产，出轻包
 | `--force` / `--update` | 目标已存在：覆盖 / 原地同步 |
 | `--zip` / `--zip-only` | 额外压缩 / 只压缩不铺目录 |
 
-包内会生成 `MANIFEST.txt`（每个文件一行 sha256）和 `stage_engine.bat`（把自带引擎放回 `install.bat` 认的位置）。版本号同样取自 `nama_engine.h`。
+包内会生成 `MANIFEST.txt`（每个文件一行 sha256）和 `stage_engine.bat`（把自带引擎放回 `install.bat` 认的位置）。版本号同样取自 `beauty_engine.h`。
 
 `--update` 而不是 `--force` 的场合：已经发出去的整合包要跟着改几处、不想整目录重建时用它，避免大批量删除又重建。
 

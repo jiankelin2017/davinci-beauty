@@ -1,4 +1,4 @@
-// nama_engine.cpp —— DaVinciBeauty 引擎适配层（v3.0.0）
+// beauty_engine.cpp —— DaVinciBeauty 引擎适配层（v3.0.0）
 //
 // 本层不再加载旧版引擎。它把 ofx_plugin.cpp 的全部请求转给自研的
 // 纯 CPU 美颜引擎（CoreEngine，对应上一代引擎 3.1.39），人脸检测（YuNet / ONNX）在引擎内部
@@ -7,7 +7,7 @@
 //
 // 公开接口与旧版（旧版引擎）完全一致，ofx_plugin.cpp 一行都不用改。
 
-#include "nama_engine.h"
+#include "beauty_engine.h"
 #include "core_glue.h"
 
 #include <windows.h>
@@ -27,7 +27,7 @@ static_assert(P_COUNT == 14, "core_glue.h / coreBeautyProcess 固定 14 项，�
 
 std::mutex g_mux;   // 保护 ensureReady / preheat 的「只初始化一次」语义
 
-// UTF-8 窄字符 → 宽字符。NamaSelfTest 的路径参数是 UTF-8（探针脚本用 Python
+// UTF-8 窄字符 → 宽字符。BeautySelfTest 的路径参数是 UTF-8（探针脚本用 Python
 // 的 .encode("utf-8") 传），而 _wfopen 要宽字符。以前这里直接当 ANSI 用，
 // 路径含中文时打不开文件。
 std::wstring utf8ToWide(const char* s) {
@@ -55,18 +55,18 @@ const char* keys[P_COUNT] = {
 // ---------------------------------------------------------------------------
 // 单例
 // ---------------------------------------------------------------------------
-NamaEngine& NamaEngine::inst() {
-    static NamaEngine s;
+BeautyEngine& BeautyEngine::inst() {
+    static BeautyEngine s;
     return s;
 }
 
-NamaEngine::NamaEngine() {}
-// 析构函数为头文件内联（~NamaEngine() {}），此处不再定义。
+BeautyEngine::BeautyEngine() {}
+// 析构函数为头文件内联（~BeautyEngine() {}），此处不再定义。
 
 // ---------------------------------------------------------------------------
 // 初始化
 // ---------------------------------------------------------------------------
-bool NamaEngine::ensureReady(std::string& err) {
+bool BeautyEngine::ensureReady(std::string& err) {
     std::lock_guard<std::mutex> lk(g_mux);
     if (ready_) return true;
     char buf[512];
@@ -84,7 +84,7 @@ bool NamaEngine::ensureReady(std::string& err) {
     return ok;
 }
 
-bool NamaEngine::preheat(std::string& err, bool& didInit) {
+bool BeautyEngine::preheat(std::string& err, bool& didInit) {
     std::lock_guard<std::mutex> lk(g_mux);
     didInit = false;
     if (ready_) return true;
@@ -107,7 +107,7 @@ bool NamaEngine::preheat(std::string& err, bool& didInit) {
 
 // ready()/poisoned()/failCount()/ownerThread()/regionActive() 为头文件内联方法。
 
-void NamaEngine::release() {
+void BeautyEngine::release() {
     coreBeautyRelease();
     ready_ = false;
 }
@@ -115,7 +115,7 @@ void NamaEngine::release() {
 // ---------------------------------------------------------------------------
 // 每实例一个槽位
 // ---------------------------------------------------------------------------
-int NamaEngine::acquireSlot(std::string& err) {
+int BeautyEngine::acquireSlot(std::string& err) {
     char buf[512];
     int s = coreBeautyAcquireSlot(buf, (int)sizeof(buf));
     if (s < 0) {
@@ -125,19 +125,19 @@ int NamaEngine::acquireSlot(std::string& err) {
     return s;
 }
 
-void NamaEngine::releaseSlot(int slot) {
+void BeautyEngine::releaseSlot(int slot) {
     coreBeautyReleaseSlot(slot);
 }
 
-void NamaEngine::setDetectOptions(int rotate, int landmarkQuality, int maxFaces) {
+void BeautyEngine::setDetectOptions(int rotate, int landmarkQuality, int maxFaces) {
     coreBeautySetDetectOptions(rotate, landmarkQuality, maxFaces);
 }
 
 // ---------------------------------------------------------------------------
 // 逐帧处理
 // ---------------------------------------------------------------------------
-bool NamaEngine::process(const unsigned char* src, unsigned char* dst,
-                        int w, int h, const NamaSettings& s) {
+bool BeautyEngine::process(const unsigned char* src, unsigned char* dst,
+                        int w, int h, const BeautyEngineSettings& s) {
     char buf[512];
     int slot = coreBeautyAcquireSlot(buf, (int)sizeof(buf));
     if (slot < 0) {
@@ -149,13 +149,13 @@ bool NamaEngine::process(const unsigned char* src, unsigned char* dst,
     return ok;
 }
 
-bool NamaEngine::process(int slot, const unsigned char* src, unsigned char* dst,
-                         int w, int h, const NamaSettings& s, bool advanceFrame) {
+bool BeautyEngine::process(int slot, const unsigned char* src, unsigned char* dst,
+                         int w, int h, const BeautyEngineSettings& s, bool advanceFrame) {
     if (!ready_) {
         std::string e;
         if (!ensureReady(e)) return false;
     }
-    // NamaSettings 与 BeautySettings 的内存布局逐字段相同：
+    // BeautyEngineSettings 与 BeautySettings 的内存布局逐字段相同：
     //   double panel[14] + int blur_type + int skin_detect + int smooth_mode
     // 美型三项下标（11/12/13 = 瘦脸/大眼/下巴）在两边含义一致，可直接直通。
     double panel[14];
@@ -173,9 +173,9 @@ bool NamaEngine::process(int slot, const unsigned char* src, unsigned char* dst,
 // ---------------------------------------------------------------------------
 // 只读诊断（供日志 / UI 使用）
 // ---------------------------------------------------------------------------
-int NamaEngine::itemId() const    { return coreBeautyItemId(); }
+int BeautyEngine::itemId() const    { return coreBeautyItemId(); }
 
-const char* NamaEngine::version() const {
+const char* BeautyEngine::version() const {
     // 只在不一致时改写。调用方常见写法是 `version() ? version() : "?"` ——
     // 两次调用之间若发生重新赋值，第一个指针就可能悬空（UB）。内容在引擎
     // 初始化后不再变化，因此这里实际上只写一次。
@@ -187,24 +187,24 @@ const char* NamaEngine::version() const {
     return v.c_str();
 }
 
-int   NamaEngine::regionFaces() const     { return coreBeautyLastFaces(); }
-double NamaEngine::regionCoverage() const { return 0.0; }   // CoreEngine 不暴露该统计
-double NamaEngine::regionInferMs() const  { return 0.0; }    // CoreEngine 不暴露该统计
-long   NamaEngine::regionInferCount() const { return 0; }    // CoreEngine 不暴露该统计
-const char* NamaEngine::regionErr() const {
+int   BeautyEngine::regionFaces() const     { return coreBeautyLastFaces(); }
+double BeautyEngine::regionCoverage() const { return 0.0; }   // CoreEngine 不暴露该统计
+double BeautyEngine::regionInferMs() const  { return 0.0; }    // CoreEngine 不暴露该统计
+long   BeautyEngine::regionInferCount() const { return 0; }    // CoreEngine 不暴露该统计
+const char* BeautyEngine::regionErr() const {
     return regionErr_.empty() ? "" : regionErr_.c_str();
 }
 
 // 诊断（BUG4）：本帧是否发生「整帧换帧」。见 beauty_core.cpp 的
 // g_beautyDiagFrameSubst 注释与 PROGRESS「BUG4 多实例串台」第 7 节。
-bool NamaEngine::frameSubstituted() const { return coreBeautyDiagFrameSubst() != 0; }
+bool BeautyEngine::frameSubstituted() const { return coreBeautyDiagFrameSubst() != 0; }
 
 // ---------------------------------------------------------------------------
 // 自测入口（C ABI，供 blur_test 探针 / acceptance 调用）
 // ---------------------------------------------------------------------------
 extern "C" {
 
-int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
+int __stdcall BeautySelfTest(const char* engineDir, const char* rawRgbaIn,
                            const char* rawRgbaOut, int width, int height,
                            double blur, double whiten, char* msgBuf, int msgCap) {
     char buf[512];
@@ -253,11 +253,11 @@ int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
     // 这里关掉异步，让检测在调用线程上同步完成。生产路径（OFX render）不受影响。
     coreBeautySetAsyncDetect(0);
 
-    NamaSettings s;                 // 默认构造 = 全 0
+    BeautyEngineSettings s;                 // 默认构造 = 全 0
     s.panel[P_BLUR]   = blur;       // P_BLUR / P_WHITEN 来自本文件头部枚举，与引擎下标一致
     s.panel[P_WHITEN] = whiten;
 
-    // v3.0.4：恢复 NAMA_ST_* 自测钩子（v2.x 有，v3.0 重写时丢了）。
+    // v3.0.4：恢复 BEAUTY_ST_* 自测钩子（v2.x 有，v3.0 重写时丢了）。
     //
     // 为什么必须有：04_验收工具/baseline.py 的 15 个逐字节用例里，有 8 个靠这些
     // 变量切换清晰/锐化/全局锐化/美型/磨皮模式。钩子丢掉之后，那 8 个用例的
@@ -270,22 +270,22 @@ int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
             const char* v = getenv(name);
             if (v && *v) dst = atof(v);
         };
-        stv("NAMA_ST_CLARITY", s.panel[P_CLARITY]);
-        stv("NAMA_ST_SHARPEN", s.panel[P_SHARPEN]);
-        stv("NAMA_ST_GSHARP",  s.panel[P_GLOBAL_SHARP]);
-        stv("NAMA_ST_CHEEK",   s.panel[P_THIN_FACE]);
-        stv("NAMA_ST_EYE",     s.panel[P_BIG_EYE]);
-        stv("NAMA_ST_CHIN",    s.panel[P_CHIN]);
-        stv("NAMA_ST_DELSPOT", s.panel[P_DELSPOT]);
-        stv("NAMA_ST_NASO",    s.panel[P_NASOLABIAL]);
+        stv("BEAUTY_ST_CLARITY", s.panel[P_CLARITY]);
+        stv("BEAUTY_ST_SHARPEN", s.panel[P_SHARPEN]);
+        stv("BEAUTY_ST_GSHARP",  s.panel[P_GLOBAL_SHARP]);
+        stv("BEAUTY_ST_CHEEK",   s.panel[P_THIN_FACE]);
+        stv("BEAUTY_ST_EYE",     s.panel[P_BIG_EYE]);
+        stv("BEAUTY_ST_CHIN",    s.panel[P_CHIN]);
+        stv("BEAUTY_ST_DELSPOT", s.panel[P_DELSPOT]);
+        stv("BEAUTY_ST_NASO",    s.panel[P_NASOLABIAL]);
         double sm = (double)s.smooth_mode;
-        stv("NAMA_ST_SMOOTH", sm);
+        stv("BEAUTY_ST_SMOOTH", sm);
         s.smooth_mode = (int)sm;
         // v3.0.5：磨皮算法三档（0 双边 / 1 高斯 / 2 弱磨皮）。基线要能覆盖
-        // 「换了算法档」的输出差异，否则接线断了也测不出来 —— 与 NAMA_ST_*
+        // 「换了算法档」的输出差异，否则接线断了也测不出来 —— 与 BEAUTY_ST_*
         // 其余钩子同一个理由。
         double alg = (double)s.blur_type;
-        stv("NAMA_ST_ALG", alg);
+        stv("BEAUTY_ST_ALG", alg);
         s.blur_type = (int)alg;
     }
 
@@ -330,14 +330,14 @@ int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
     return 0;       // 成功
 }
 
-unsigned long __stdcall NamaVersion(void) {
-    return ((unsigned long)NAMA_BUILD_MAJOR << 16) | (unsigned long)NAMA_BUILD_MINOR;
+unsigned long __stdcall BeautyVersion(void) {
+    return ((unsigned long)BEAUTY_BUILD_MAJOR << 16) | (unsigned long)BEAUTY_BUILD_MINOR;
 }
 
 // beauty_build.h 的实现：版本串的唯一出口。数值只由上面的宏决定，
 // 这里不写任何字面量副本（写死过一次 "1.4.0"，日志里就和 build= 打架）。
-const char* namaBuildStr(void) {
-    return NAMA_BUILD_STR;
+const char* beautyBuildStr(void) {
+    return BEAUTY_BUILD_STR;
 }
 
 }  // extern "C"

@@ -1,23 +1,23 @@
-# 不打开 Resolve，直接 LoadLibrary 调 OFX DLL 里的 NamaSelfTest，
+# 不打开 Resolve，直接 LoadLibrary 调 OFX DLL 里的 BeautySelfTest，
 # 验证「加载 SDK -> 初始化 GL -> 渲染 -> 落盘」这条链路在插件二进制里是通的。
 import ctypes, os, shutil, sys, tempfile
 
 # 用脚本自身所在目录定位素材，别再硬编码旧工作区的绝对路径
 # （换个机器/换个工作区就会 FileNotFoundError）。可用环境变量覆盖：
-#   NAMA_PROBE_ROOT    素材目录（默认脚本所在目录）
-#   NAMA_SELFTEST_IN / NAMA_SELFTEST_OUT   单独指定输入 / 输出文件
-ROOT = os.environ.get("NAMA_PROBE_ROOT") or os.path.dirname(os.path.abspath(__file__))
+#   BEAUTY_PROBE_ROOT    素材目录（默认脚本所在目录）
+#   BEAUTY_SELFTEST_IN / BEAUTY_SELFTEST_OUT   单独指定输入 / 输出文件
+ROOT = os.environ.get("BEAUTY_PROBE_ROOT") or os.path.dirname(os.path.abspath(__file__))
 DLL = os.environ.get(
-    "NAMA_OFX_DLL",
+    "BEAUTY_OFX_DLL",
     r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
-# 引擎资源目录：可被 NAMA_ENGINE_DIR 覆盖；默认取插件 bundle 自带的引擎，
+# 引擎资源目录：可被 BEAUTY_ENGINE_DIR 覆盖；默认取插件 bundle 自带的引擎，
 # 与插件运行时的定位方式一致。
-ENGINE = os.environ.get("NAMA_ENGINE_DIR", os.path.dirname(DLL))
-W = int(os.environ.get("NAMA_SELFTEST_W") or 640)
-H = int(os.environ.get("NAMA_SELFTEST_H") or 394)
+ENGINE = os.environ.get("BEAUTY_ENGINE_DIR", os.path.dirname(DLL))
+W = int(os.environ.get("BEAUTY_SELFTEST_W") or 640)
+H = int(os.environ.get("BEAUTY_SELFTEST_H") or 394)
 
-IN = os.environ.get("NAMA_SELFTEST_IN") or os.path.join(ROOT, "probe_in.raw")
-OUT = os.environ.get("NAMA_SELFTEST_OUT") or os.path.join(ROOT, "probe_out.raw")
+IN = os.environ.get("BEAUTY_SELFTEST_IN") or os.path.join(ROOT, "probe_in.raw")
+OUT = os.environ.get("BEAUTY_SELFTEST_OUT") or os.path.join(ROOT, "probe_out.raw")
 
 # 素材缺失时自造一帧确定性纹理（与 mock_host.py 的做法一致）。
 # 以前这里直接 open(IN)，仓库里没有 probe_in.raw 时整个自测第一步就 FileNotFound，
@@ -40,7 +40,7 @@ if not os.path.isfile(IN):
         _f.write(_buf)
     print("WARN 未找到 probe_in.raw，改用合成纹理帧（无人脸，美白不会生效）")
 
-# NamaSelfTest 的路径参数是窄字符（const char* + fopen），路径里含非 ASCII 时
+# BeautySelfTest 的路径参数是窄字符（const char* + fopen），路径里含非 ASCII 时
 # 在部分系统码页下会打不开文件。把非 ASCII 的输入/输出先中转到一个纯 ASCII 的
 # 临时目录，跑完再搬回来，这样脚本放在中文目录下也能用。
 _STAGE = None
@@ -78,14 +78,14 @@ if not h:
 print("插件 DLL 加载成功: 0x%x" % h)
 
 lib = ctypes.WinDLL(DLL, handle=h)
-lib.NamaSelfTest.restype = ctypes.c_int
-lib.NamaSelfTest.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+lib.BeautySelfTest.restype = ctypes.c_int
+lib.BeautySelfTest.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
                              ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_double,
                              ctypes.c_char_p, ctypes.c_int]
-lib.NamaVersion.restype = ctypes.c_ulong
-lib.NamaVersion.argtypes = []
+lib.BeautyVersion.restype = ctypes.c_ulong
+lib.BeautyVersion.argtypes = []
 
-print("NamaVersion() = %d" % lib.NamaVersion())
+print("BeautyVersion() = %d" % lib.BeautyVersion())
 
 src = open(IN, "rb").read()
 if len(src) != W * H * 4:
@@ -100,13 +100,13 @@ IN_USE = _stage_ascii(IN, True)
 OUT_USE = _stage_ascii(OUT, False)
 
 msg = ctypes.create_string_buffer(1024)
-rc = lib.NamaSelfTest(ENGINE.encode("utf-8"),
+rc = lib.BeautySelfTest(ENGINE.encode("utf-8"),
                       IN_USE.encode("utf-8"),
                       OUT_USE.encode("utf-8"),
                       W, H,
                       BLUR, WHITEN,
                       msg, 1024)
-print("NamaSelfTest rc=%d" % rc)
+print("BeautySelfTest rc=%d" % rc)
 print("msg=%s" % msg.value.decode("utf-8", "replace"))
 
 if rc != 0 or not os.path.isfile(OUT_USE):

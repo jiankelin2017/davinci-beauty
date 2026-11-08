@@ -1,11 +1,11 @@
 #pragma once
-// NamaEngine —— DaVinci Resolve OFX 美颜插件的引擎适配层。
+// BeautyEngine —— DaVinci Resolve OFX 美颜插件的引擎适配层。
 //
 // v3.0.0 起：本层不再加载旧版引擎，而是把请求转给自研的纯 CPU
 // 美颜引擎（beauty_core 里的 CoreEngine，对应旧宿主 3.1.39）。人脸检测用 ONNX 人脸检测模型，
 // 在引擎内部**自动检测 GPU**（仅 Windows DirectML）：只要把 onnxruntime.dll 换成
 // onnxruntime-directml 构建版，人脸推理就自动走 GPU；否则自动退回 CPU。本文件
-// 只做「NamaSettings → 原始参数 → 转调 CoreEngine」（经 core_glue 桥接层），
+// 只做「BeautyEngineSettings → 原始参数 → 转调 CoreEngine」（经 core_glue 桥接层），
 // 不持有任何渲染资源、不依赖任何闭源 DLL。
 //
 // 公开接口（ofx_plugin.cpp 依赖）完全保留，宿主一行都不用改。
@@ -36,21 +36,21 @@
 // 一次改动跨多档时取最高那档，低位归零，不叠加。
 //
 // 消费方：
-//   · NAMA_BUILD_STR  → 日志、面板「版本」参数（四段全显示）
+//   · BEAUTY_BUILD_STR  → 日志、面板「版本」参数（四段全显示）
 //   · MAJOR/MINOR     → OfxPlugin 结构体的 versionMajor/versionMinor
 //                        **OFX 结构体只有两段**，宿主列表里永远显示 "1.0"，
 //                        后两位只在日志与面板里可见。这是规范限制，不是 bug。
-//   · MAJOR/MINOR     → NamaVersion() 的 ABI 编码
+//   · MAJOR/MINOR     → BeautyVersion() 的 ABI 编码
 // ---------------------------------------------------------------------------
-#define NAMA_BUILD_MAJOR 1
-#define NAMA_BUILD_MINOR 3
-#define NAMA_BUILD_PATCH 6
-#define NAMA_BUILD_REV   0
-#define NAMA_BUILD_STR "1.3.6.0"
+#define BEAUTY_BUILD_MAJOR 1
+#define BEAUTY_BUILD_MINOR 3
+#define BEAUTY_BUILD_PATCH 6
+#define BEAUTY_BUILD_REV   0
+#define BEAUTY_BUILD_STR "1.3.6.0"
 
 // 面板参数顺序（滤镜属性页滑块的顺序）见 beauty_params.h —— 本文件不再重复定义。
 
-struct NamaSettings {
+struct BeautyEngineSettings {
     double panel[P_COUNT];   // 面板刻度 0..100
     // 磨皮算法。顺序必须与 ofx_plugin.cpp 的 kBlurTypeChoices 一致：
     //   0 双边滤波（= 保边表面模糊，v3.0.5 起的默认档，也是历史行为）
@@ -67,7 +67,7 @@ struct NamaSettings {
     //   3 轻磨皮   = 降低磨皮强度（整体最轻）
     int smooth_mode;
 
-    NamaSettings() : blur_type(0), skin_detect(1), smooth_mode(0) {
+    BeautyEngineSettings() : blur_type(0), skin_detect(1), smooth_mode(0) {
         // paramGetValue 失败时的兜底默认：磨皮 50 / 美白 30 / 红润 30，其余十一项 0。
         // 必须与 ofx_plugin.cpp 的 kParams[].dflt 保持一致（那边是宿主真正下发的值）。
         // 62 的来历见 kParams 上方的标定说明：本版磨皮是线性曲线，20 档的实际强度
@@ -92,9 +92,9 @@ struct NamaSettings {
     }
 };
 
-class NamaEngine {
+class BeautyEngine {
 public:
-    static NamaEngine& inst();
+    static BeautyEngine& inst();
 
     // 资源目录（旧宿主的插件资源目录）里必须含自研 CPU 引擎
     // 的运行时资产：onnxruntime.dll（ONNX Runtime，普通 CPU 版即可；如需 GPU
@@ -115,7 +115,7 @@ public:
 
     // 逐帧处理。src / dst 都是 RGBA8，长度 w*h*4。允许 src == dst。
     bool process(const unsigned char* src, unsigned char* dst,
-                 int w, int h, const NamaSettings& s);
+                 int w, int h, const BeautyEngineSettings& s);
 
     // ---- 槽位 API（保留给未来按实例隔离用）----
     //
@@ -134,14 +134,14 @@ public:
     // advanceFrame 目前被 CoreEngine 忽略（帧序总是自增）—— 保留参数是为了让
     // 宿主侧「非顺序渲染」的意图留在签名里，将来引擎实现按实例时序时直接接上。
     bool process(int slot, const unsigned char* src, unsigned char* dst,
-                 int w, int h, const NamaSettings& s, bool advanceFrame = true);
+                 int w, int h, const BeautyEngineSettings& s, bool advanceFrame = true);
 
     int lastFaces() const { return faces_; }
     // v3.0.1：本帧人脸检测的最高候选置信度（不受阈值影响），供日志判断
     // 「模型没看出脸」还是「看出了没到阈值」。
     double lastFaceScore() const { return faceScore_; }
-    int itemId() const;     // 实现见 nama_engine.cpp（经 coreBeauty 桥接）
-    const char* version() const;  // 实现见 nama_engine.cpp（含 GPU provider）
+    int itemId() const;     // 实现见 beauty_engine.cpp（经 coreBeauty 桥接）
+    const char* version() const;  // 实现见 beauty_engine.cpp（含 GPU provider）
     // 上一次失败的原因（成功时为空串）。供插件层把原因报给宿主。
     const char* lastErr() const { return failReason_.c_str(); }
     // 上一次 process 内 SDK 自身的耗时（毫秒，不含调用方的像素格式转换）
@@ -164,10 +164,10 @@ public:
     void release();
 
 private:
-    NamaEngine();
-    ~NamaEngine() {}
-    NamaEngine(const NamaEngine&) = delete;
-    NamaEngine& operator=(const NamaEngine&) = delete;
+    BeautyEngine();
+    ~BeautyEngine() {}
+    BeautyEngine(const BeautyEngine&) = delete;
+    BeautyEngine& operator=(const BeautyEngine&) = delete;
 
     // v3.0.8：删掉 v2.x（旧版引擎）遗留的整组成员与方法声明 —— GL 隐藏窗口、
     // SDK 道具池 Slot、渲染临时缓冲、语义区域映射表。v3.0.0 起这些全部由
@@ -196,13 +196,13 @@ private:
 #ifdef __cplusplus
 extern "C" {
 #endif
-__declspec(dllexport) int __stdcall NamaSelfTest(const char* engineDir,
+__declspec(dllexport) int __stdcall BeautySelfTest(const char* engineDir,
                                                  const char* rawRgbaIn,
                                                  const char* rawRgbaOut,
                                                  int width, int height,
                                                  double blur, double whiten,
                                                  char* msgBuf, int msgCap);
-__declspec(dllexport) unsigned long __stdcall NamaVersion(void);
+__declspec(dllexport) unsigned long __stdcall BeautyVersion(void);
 #ifdef __cplusplus
 }
 #endif

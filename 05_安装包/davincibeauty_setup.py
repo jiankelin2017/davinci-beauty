@@ -81,7 +81,7 @@ def _enable_ansi():
 
 
 def _no_color():
-    return bool(os.environ.get("NO_COLOR")) or bool(os.environ.get("NAMA_SETUP_NO_COLOR"))
+    return bool(os.environ.get("NO_COLOR")) or bool(os.environ.get("BEAUTY_SETUP_NO_COLOR"))
 
 
 def c(text, color):

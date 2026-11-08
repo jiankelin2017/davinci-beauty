@@ -16,9 +16,9 @@
 用法：
     py probe_whiten_scope.py <照片> [裁剪x,y,w,h]
 环境变量：
-    NAMA_OFX_DLL            选插件二进制（默认装好的那个）
-    NAMA_ENGINE_DIR         引擎目录
-    NAMA_EXTRA_PARAMS_FILE  诊断参数文件（每帧重新读，便于扫组合）
+    BEAUTY_OFX_DLL            选插件二进制（默认装好的那个）
+    BEAUTY_ENGINE_DIR         引擎目录
+    BEAUTY_EXTRA_PARAMS_FILE  诊断参数文件（每帧重新读，便于扫组合）
 """
 import ctypes
 import json
@@ -153,7 +153,7 @@ def main():
     if len(sys.argv) > 2:
         crop = tuple(int(v) for v in sys.argv[2].split(","))
     dll = os.environ.get(
-        "NAMA_OFX_DLL",
+        "BEAUTY_OFX_DLL",
         r"C:\Program Files\Common Files\OFX\Plugins\DaVinciBeauty.ofx.bundle\Contents\Win64\DaVinciBeauty.ofx")
     src = load_frame(photo, crop)
     drv = Driver(dll)

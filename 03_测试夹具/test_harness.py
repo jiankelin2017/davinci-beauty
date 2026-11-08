@@ -9,9 +9,9 @@ import types
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 测试素材用脚本自身目录定位，别再硬编码旧工作区绝对路径。
 SRC = os.path.join(HERE, "test_src.mp4")
-# 被测脚本路径：可被 NAMA_RESOLVE_SCRIPT 覆盖（默认指向 Resolve 的 Utility 脚本目录）。
+# 被测脚本路径：可被 BEAUTY_RESOLVE_SCRIPT 覆盖（默认指向 Resolve 的 Utility 脚本目录）。
 SCRIPT = os.environ.get(
-    "NAMA_RESOLVE_SCRIPT",
+    "BEAUTY_RESOLVE_SCRIPT",
     r"C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\Scripts\Utility\NamaBeauty_美颜.py")
 
 
