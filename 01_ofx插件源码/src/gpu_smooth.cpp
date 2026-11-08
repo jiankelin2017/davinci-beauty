@@ -45,6 +45,8 @@ namespace {
 // 「拷贝+回读」分开。提交侧已经量过是 0.50 ms，剩下 5.66 ms 到底花在执行还是
 // 拷贝上，决定下一步是合并 pass 还是砍拷贝量 —— 两者改法完全不同。
 static const bool   g_gpuProf = (getenv("BEAUTY_GPU_PROFILE") != nullptr);
+// 1.3.3：H+V 合并成一趟（6 次 dispatch → 3 次）。默认关，A/B 用 BEAUTY_GPU_BOX2D=1。
+static const bool   g_box2D = (getenv("BEAUTY_GPU_BOX2D") != nullptr);
 static ID3D11Query* g_evt = nullptr;
 static double       g_evtT0 = 0.0;
 
@@ -196,6 +198,65 @@ void CSBoxV(uint3 id : SV_DispatchThreadID)
         sg = sg + (va.y - vr.y);
         sb = sb + (va.z - vr.z);
         sa = sa + (va.w - vr.w);
+    }
+}
+
+// ---------------------------------------------------------------- H+V 合并
+// 1.3.3：一个 group 吃 32x32 的输出块，先算 (32+2r) 行的水平盒式存 groupshared，
+// 再对每列做垂直窗口和。flush 语义与 CSBoxH/CSBoxV 完全一致（每 32 像素/行重算），
+// 所以结果与两次 dispatch 逐值相同，只差浮点累加顺序。
+#define BOX2D_T 32
+groupshared float4 gsBox2D[(BOX2D_T + 12) * BOX2D_T];   // r<=6 → 44 行
+
+[numthreads(32, 8, 1)]
+void CSBox2D(uint3 gid : SV_GroupID, uint3 tid : SV_GroupThreadID)
+{
+    const int R = g_r;
+    const int x0 = (int)gid.x * BOX2D_T;
+    const int y0 = (int)gid.y * BOX2D_T;
+    const int rows = BOX2D_T + 2 * R;
+
+    // 阶段 A：rows 行 × 32 列的水平盒式
+    for (int ry = (int)tid.y; ry < rows; ry += 8)
+    {
+        const int yy = clamp(y0 - R + ry, 0, g_ph - 1);
+        precise float4 s = 0.0f;
+        for (int k = -R; k <= R; ++k)
+        {
+            const int xx = clamp(x0 + k, 0, g_pw - 1);
+            s += g_pA.Load(int3(xx, yy, 0));
+        }
+        gsBox2D[ry * BOX2D_T + 0] = s * g_inv;
+        for (int i = 1; i < BOX2D_T; ++i)
+        {
+            const int xa = clamp(x0 + i + R, 0, g_pw - 1);
+            const int xr = clamp(x0 + i - 1 - R, 0, g_pw - 1);
+            s += g_pA.Load(int3(xa, yy, 0));
+            s -= g_pA.Load(int3(xr, yy, 0));
+            gsBox2D[ry * BOX2D_T + i] = s * g_inv;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    // 阶段 B：**一列一个线程，用滑动窗**（不是每输出点重算 2R+1 次）。
+    // 第一版按「每线程 4 行、每行重算 13 个 tap」写，结果比两次 dispatch 还慢
+    // （执行 4.46 → 5.97 ms）—— 说明瓶颈是 tap 数不是 dispatch 数。
+    // 改成滑动窗后每输出点只多 2 次 shared 读。
+    if (tid.y != 0) return;
+    const int c = (int)tid.x;
+    if (x0 + c >= g_pw) return;
+    precise float4 s = 0.0f;
+    for (int k = 0; k <= 2 * R; ++k) s += gsBox2D[k * BOX2D_T + c];
+    for (int j = 0; j < BOX2D_T; ++j)
+    {
+        const int y = y0 + j;
+        if (y < g_ph) g_planeOut[int2(x0 + c, y)] = s * g_inv;
+        const int add = j + 2 * R + 1;
+        if (add < BOX2D_T + 2 * R)
+        {
+            s += gsBox2D[add * BOX2D_T + c];
+            s -= gsBox2D[j * BOX2D_T + c];
+        }
     }
 }
 
@@ -351,8 +412,8 @@ void CSCompose(uint3 id : SV_DispatchThreadID)
 // 状态
 // ---------------------------------------------------------------------------
 
-enum { K_DOWN = 0, K_BOXH, K_BOXV, K_AMP, K_COMPOSE, K_COUNT };
-static const char* kEntry[K_COUNT] = { "CSDown", "CSBoxH", "CSBoxV", "CSAmp", "CSCompose" };
+enum { K_DOWN = 0, K_BOXH, K_BOXV, K_AMP, K_COMPOSE, K_BOX2D, K_COUNT };
+static const char* kEntry[K_COUNT] = { "CSDown", "CSBoxH", "CSBoxV", "CSAmp", "CSCompose", "CSBox2D" };
 
 enum { PL_C = 0, PL_B1, PL_B2, PL_AMP, PL_TMP, PL_COUNT };
 
@@ -869,6 +930,25 @@ void runBox(int inIdx, int outIdx, int r, int pw, int ph) {
                 (UINT)((pw + 7) / 8), (UINT)((chunks + 7) / 8));
 }
 
+// 1.3.3：合并版盒式。一次 dispatch 完成 H+V，读写不同平面。
+void runBox2D(int inIdx, int outIdx, int r, int pw, int ph) {
+    Cb cb{};
+    cb.pw = pw; cb.ph = ph; cb.r = r;
+    cb.inv = 1.0f / (float)(2 * r + 1);
+    setConst(cb);
+    ID3D11ShaderResourceView* s[6] = { nullptr, nullptr, nullptr, g_planeSrv[inIdx], nullptr, nullptr };
+    dispatchOne(K_BOX2D, s, 4, g_planeUav[outIdx], nullptr,
+                (UINT)((pw + 31) / 32), (UINT)((ph + 31) / 32));
+}
+
+// 连跑 passes 趟，结果一定落回 a（趟数为奇数时补一次 GPU 内 CopyResource，
+// 比多一次 dispatch 便宜得多）。
+void runBoxN2D(int a, int b, int r, int pw, int ph, int passes) {
+    int cur = a, oth = b;
+    for (int i = 0; i < passes; ++i) { runBox2D(cur, oth, r, pw, ph); int t2 = cur; cur = oth; oth = t2; }
+    if (cur != a && g_plane[a] && g_plane[cur]) g_ctx->CopyResource(g_plane[a], g_plane[cur]);
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- 公开接口
@@ -1337,8 +1417,10 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
         // runBox 本身 = 一趟 H+V（结果回到起点纹理），所以一个 i 就是一趟。
         // 早期写成每轮调两次，等于把 passes=3 跑成 6 趟 —— 模糊半径翻倍，
         // 画面差异到 9~14 灰阶。这个错在离线台上一次就对出来了。
-        for (int i = 0; i < passes; ++i) runBox(PL_B1, PL_TMP, r1, pw, ph);
-        for (int i = 0; i < passes; ++i) runBox(PL_B2, PL_TMP, r2, pw, ph);
+        if (g_box2D) runBoxN2D(PL_B1, PL_TMP, r1, pw, ph, passes);
+        else for (int i = 0; i < passes; ++i) runBox(PL_B1, PL_TMP, r1, pw, ph);
+        if (g_box2D) runBoxN2D(PL_B2, PL_TMP, r2, pw, ph, passes);
+        else for (int i = 0; i < passes; ++i) runBox(PL_B2, PL_TMP, r2, pw, ph);
 
         // amp = |C.g − B2.g|（t3 = C，t4 = B2）
         // 注意 runBox 里 setConst 只填了 box 需要的字段，这里要重新填全量。
@@ -1349,7 +1431,8 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
             dispatchOne(K_AMP, s, 5, g_planeUav[PL_AMP], nullptr,
                         (UINT)((pw + 7) / 8), (UINT)((ph + 7) / 8));
         }
-        for (int i = 0; i < passes; ++i) runBox(PL_AMP, PL_TMP, ra, pw, ph);
+        if (g_box2D) runBoxN2D(PL_AMP, PL_TMP, ra, pw, ph, passes);
+        else for (int i = 0; i < passes; ++i) runBox(PL_AMP, PL_TMP, ra, pw, ph);
 
         // 合成：t0 src / t1 mp / t3 B1 / t4 B2 / t5 amp
         setConst(cb);
