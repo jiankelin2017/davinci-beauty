@@ -4,7 +4,7 @@
 
 ## 一句话摘要
 
-原来的 14 份 `.txt` 全部是 **UTF-16 控制台重定向输出**（BOM `ÿþ`，中文在 GBK/UTF-8 混读下是乱码 `@b(WMOn Lˆ`）。其中 **11 份只有 DIAG 行、没有任何结论**；**2 份是 mock host 的通过清单**（唯一有留存价值的部分，已抄在下面）；**1 份是旧的 DLL 导出表**（对象已随闭源 SDK 移除）。原始文件已删除，本文件保留了它们唯一可复用的数据。
+原来的 14 份 `.txt` 全部是 **UTF-16 控制台重定向输出**（BOM `ÿþ`，中文在 GBK/UTF-8 混读下是乱码 `@b(WMOn Lˆ`）。其中 **11 份只有 DIAG 行、没有任何结论**；**2 份是 mock host 的通过清单**（唯一有留存价值的部分，已抄在下面）；**1 份是旧的 DLL 导出表**（对象已随旧版引擎移除）。原始文件已删除，本文件保留了它们唯一可复用的数据。
 
 ## 二、mock host 通过清单（来自 `mock_run.txt` / `mock_run2.txt`，两次运行结论一致）
 
@@ -63,7 +63,7 @@ DestroyInstance -> 0      ActionUnload -> 0
 | `bug4_run_align0.txt` | 123 | `BEAUTY_MASK_ALIGN=0` | 无结论 |
 | `bug4_align0.txt` | 164 | 对齐关闭对照 | 无结论 |
 | `installed_check.txt` / `2` / `3` | 164 ×3 | 装机 DLL 的 DIAG 抓屏（三次几乎同形） | 无结论 |
-| `all_exports.txt` | 1 | `total exports: 582` 的旧 DLL 导出表 | 对象已随闭源 SDK 在引擎替换时移除 |
+| `all_exports.txt` | 1 | `total exports: 582` 的旧 DLL 导出表 | 对象已随旧版引擎在引擎替换时移除 |
 
 ## 四、怎么复现
 

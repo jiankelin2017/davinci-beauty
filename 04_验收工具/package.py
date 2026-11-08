@@ -135,7 +135,7 @@ def main():
     dest = os.path.join(dest_parent, name or ("DaVinciBeauty_v%s_整合包" % ver))
     # ★ 2026-10-31 整合后：本仓库自己就叫「DaVinciBeauty_整合_20261031」，
     #   工作区与交付包已经合一。若目标目录 == 源仓库，MANIFEST 的 os.walk 会把
-    #   .git（约 148MB）、_dbgtest、05_解密模型数据（62MB）全哈希进清单，
+    #   .git（约 148MB）、_dbgtest、本地归档目录全哈希进清单，
     #   而 --force 更会把仓库整个删掉重来。两种都不允许，直接拒绝。
     if os.path.abspath(dest) == os.path.abspath(REPO):
         print("目标目录就是源仓库本身（工作区与交付包已合一），拒绝原地打包。")

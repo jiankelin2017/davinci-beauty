@@ -116,7 +116,7 @@ def ensure_utf8_bom(path):
 # ---------------------------------------------------------------------------
 PAYLOAD_PLAN = [
     ("DaVinciBeauty.ofx", None),
-    # 自研引擎（上一代宿主 CoreEngine + ONNX 人脸检测模型）的全部运行时资产：
+    # 自研引擎（旧版 CoreEngine + ONNX 人脸检测模型）的全部运行时资产：
     # ONNX Runtime 的 CPU 构建版 DLL，以及本地人脸检测模型。不再依赖任何闭源 SDK。
     ("onnxruntime.dll", None),
     ("yunet.onnx", None),

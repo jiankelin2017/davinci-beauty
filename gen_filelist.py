@@ -37,7 +37,7 @@ OUT = os.path.join(HERE, "FILELIST.txt")
 # bundle/ 是 install.bat 的打包中间产物（含引擎 DLL 副本），与 out/ obj/ 同类，
 # 不该进清单。_locked残留备份* 是删 .locked-* 前的临时备份（约 139 MB）。
 EXCLUDE_DIR_NAMES = {"out", "obj", "bundle", ".git", "__pycache__", ".vs", "_archive"}
-# 历史遗留目录（脚本版 / Lua 版 / 解密模型数据）现已归入 _archive/ 内，已被
+# 历史遗留目录（脚本版 / Lua 版 / 旧模型数据）现已归入 _archive/ 内，已被
 # EXCLUDE_DIR_NAMES 整体排除，无需再用 03_/04_/05_ 前缀排除——否则会误伤重命名后的
 # 活动目录 03_测试夹具 / 04_验收工具 / 05_安装包。_dbgtest 是调试产物目录。清单只描述
 # 「会被交付的东西」。
