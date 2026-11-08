@@ -1,4 +1,4 @@
-// beauty_core.cpp —— 引擎抽象层 + 三个实现的容器
+﻿// beauty_core.cpp —— 引擎抽象层 + 三个实现的容器
 //
 //   1) PassthroughEngine：直通，用来证明「开关真的生效」；
 //   2) CoreEngine：自研引擎，3.1.7 起是唯一的实现；
@@ -2820,6 +2820,15 @@ private:
                        std::vector<beautycore::FaceBox>& fboxOut,
                        MaskStat& stOut, int& facesOut, std::string& msgOut,
                        bool flipY) {
+        // 1.2.8：掩码内部打点。BEAUTY_MASK_PROFILE=1 才启用，默认零开销
+        // （只有 4 次 nowMsCore，不进任何像素循环）。日志一行：
+        //   掩码分解 检测=.. memset=.. 肤色=.. 脸框+脖=.. 保护=.. 合计=..
+        // 目的：1.2.7 时「掩码 11 ms 里绘制只占 2~3、检测约 2」，剩下 ~7 ms
+        // 找不到出处，只能靠打点而不是继续猜。
+        static const bool prof = (getenv("BEAUTY_MASK_PROFILE") != nullptr);
+        const double tp0 = prof ? nowMsCore() : 0.0;
+        double tpDet = 0, tpMem = 0, tpSkin = 0, tpFace = 0, tpProt = 0;
+
         if (maskOut.size() != (size_t)w * h) maskOut.assign((size_t)w * h, 0);
         if (protectOut.size() != (size_t)w * h) protectOut.assign((size_t)w * h, 0);
 
@@ -2842,10 +2851,12 @@ private:
         // 关键点要留给后续的「五官局部」五项用（亮眼/去黑眼圈/法令纹…都要位置）。
         // 在这里一次性交出去，而不是让那几项自己去调检测 —— 一帧只跑一次推理。
         fboxOut = faces;
+        tpDet = prof ? nowMsCore() : 0.0;
 
         unsigned char* mask = &maskOut[0];
         unsigned char* protect = &protectOut[0];
         memset(mask, 0, (size_t)w * h);
+        tpMem = prof ? nowMsCore() : 0.0;
 
         // 肤色椭圆中心自适应（C20）：先按本帧画面估计一次，再画掩码。
         //
@@ -2870,6 +2881,8 @@ private:
             }
             // 估计失败（脸太小 / 被遮挡 / 极暗）时保持上一帧中心，不重置
         }
+
+        tpSkin = prof ? nowMsCore() : 0.0;
 
         // 掩码像素数与包围盒在写入时顺带统计，不再单独扫两遍全帧。
         // 1080p 下那两遍各是 200 万次内存访问，纯属为诊断付的代价。
@@ -3359,6 +3372,16 @@ private:
             const float ex = f.w * 0.12f, ey = f.h * 0.075f;
             paintProtectEllipse(protect, w, h, f.kps[0], f.kps[1], ex, ey);
             paintProtectEllipse(protect, w, h, f.kps[2], f.kps[3], ex, ey);
+        }
+        tpProt = prof ? nowMsCore() : 0.0;
+        if (prof) {
+            const double tEnd = nowMsCore();
+            char pb[256];
+            snprintf(pb, sizeof(pb),
+                     "掩码分解 检测=%.2f memset=%.2f 肤色=%.2f 脸框+脖=%.2f 保护=%.2f 合计=%.2f",
+                     tpDet - tp0, tpMem - tpDet, tpSkin - tpMem,
+                     tpProt - tpSkin, tEnd - tpProt, tEnd - tp0);
+            beauty_logv(BEAUTY_LOG_INFO, "%s", pb);
         }
 
         // 诊断：脸框并集面积。取**并集**而不是求和 —— 两张脸重叠时求和自己就把
