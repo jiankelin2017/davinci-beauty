@@ -40,9 +40,9 @@
 // ---------------------------------------------------------------------------
 #define NAMA_BUILD_MAJOR 1
 #define NAMA_BUILD_MINOR 3
-#define NAMA_BUILD_PATCH 1
+#define NAMA_BUILD_PATCH 4
 #define NAMA_BUILD_REV   0
-#define NAMA_BUILD_STR "1.3.1.0"
+#define NAMA_BUILD_STR "1.3.4.0"
 
 // 面板参数顺序（滤镜属性页滑块的顺序）
 enum {

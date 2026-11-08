@@ -1,4 +1,4 @@
-# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.3.1.0）
+# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.3.4.0）
 
 > **1.2.5.0（2026-11-08）**：美白横向台阶定案并修掉（色调权重长斜坡 + 内外门控 + 边缘门控 + ±0.5 级抖动）；锁骨白条取证为素材自带条带。详见根目录 `说明.txt`。
 

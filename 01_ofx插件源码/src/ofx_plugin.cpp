@@ -1013,6 +1013,18 @@ static OfxStatus createInstance(OfxImageEffectHandle instance) {
     std::string err;
     bool didInit = false;
     double t0 = (double)GetTickCount64();
+
+    // 1.3.4：GPU 那套（D3D11 设备 + 着色器编译 + 全局纹理）也在这里预热。
+    // 原来它懒加载在**首帧**，真机实测首帧磨皮 173~235 ms（稳态只要 4~5 ms）——
+    // 导出/起播时片头会明显顿一下。createInstance 是宿主加效果/载入工程时调的，
+    // 一次性付掉这笔最划算；失败也不影响，首帧还会再试一次。
+    {
+        const double tg0 = (double)GetTickCount64();
+        const bool gpuOk = gpuSmoothInit();
+        const double gms = (double)GetTickCount64() - tg0;
+        if (gms > 5.0)
+            ofxLog("createInstance 预热 GPU %s 耗时=%.0fms", gpuOk ? "成功" : "失败", gms);
+    }
     bool ok = engine.preheat(err, didInit);
     double ms = (double)GetTickCount64() - t0;
 
