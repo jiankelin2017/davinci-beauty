@@ -41,6 +41,13 @@
 
 namespace {
 
+// 1.3.2 诊断（BEAUTY_GPU_PROFILE=1）：用 D3D11_QUERY_EVENT 把「GPU 执行完」和
+// 「拷贝+回读」分开。提交侧已经量过是 0.50 ms，剩下 5.66 ms 到底花在执行还是
+// 拷贝上，决定下一步是合并 pass 还是砍拷贝量 —— 两者改法完全不同。
+static const bool   g_gpuProf = (getenv("BEAUTY_GPU_PROFILE") != nullptr);
+static ID3D11Query* g_evt = nullptr;
+static double       g_evtT0 = 0.0;
+
 // ---------------------------------------------------------------------------
 // HLSL
 // ---------------------------------------------------------------------------
@@ -1025,9 +1032,24 @@ bool blitStageToDst(int slot, int ox0, int oy0, int ox1, int oy1,
 
     // ---- b. 等 GPU + 读 staging ----
     D3D11_MAPPED_SUBRESOURCE m{};
+    double execMs = -1.0;
+    if (g_gpuProf && g_evt) {
+        const double t0 = nowMsQpc();
+        for (;;) {
+            const HRESULT q = g_ctx->GetData(g_evt, nullptr, 0, 0);
+            if (q == S_OK) { execMs = nowMsQpc() - g_evtT0; break; }
+            if (q != S_FALSE) { execMs = -1.0; break; }        // 设备错误
+            if (nowMsQpc() - t0 > 200.0) { execMs = -2.0; break; }
+            _mm_pause();
+        }
+    }
     const double tm0 = nowMsQpc();
     const HRESULT hrMap = g_ctx->Map(g_stage[slot], 0, D3D11_MAP_READ, 0, &m);
     *waitOut = nowMsQpc() - tm0;
+    if (g_gpuProf && execMs >= 0.0) {
+        std::fprintf(stderr, "[beauty] GPU 提交分解 执行=%.2f 拷贝+回读=%.2f\n",
+                     execMs, *waitOut);
+    }
     if (FAILED(hrMap)) {
         // 带 HRESULT 与资源尺寸：只写「Map(stage) 失败」的话，
         // 分不清是设备丢了、资源尺寸不对、还是上一次没 Unmap。
@@ -1340,6 +1362,19 @@ bool gpuSmoothRgbBand(const unsigned char* src, unsigned char* dst,             
     }
     unbindAll();
     g_ctx->Flush();
+    // 1.3.2 诊断：用 D3D11_QUERY_EVENT 把「GPU 执行完」和「拷贝回读」分开。
+    // 背景：真机 steady state 是 算=0.50 ms、等GPU=5.66 ms，提交侧已经排除，
+    // 但「5.66 是执行慢还是拷贝慢」一直分不清 —— 这两条对应的改法完全不同
+    // （合并 pass vs 砍拷贝量）。BEAUTY_GPU_PROFILE=1 时每帧打一行。
+    const bool gpuProf = g_gpuProf;
+    if (gpuProf) {
+        if (!g_evt) {
+            D3D11_QUERY_DESC qd{};
+            qd.Query = D3D11_QUERY_EVENT;
+            if (FAILED(g_dev->CreateQuery(&qd, &g_evt))) g_evt = nullptr;
+        }
+        if (g_evt) { g_ctx->End(g_evt); g_evtT0 = nowMsQpc(); }
+    }
     const double t2 = nowMsQpc();
 
     // ---- 3. 提交读回（只提交，不当场取）----
