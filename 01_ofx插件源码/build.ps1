@@ -147,6 +147,49 @@ Write-Host "[BUILD] $($sources.Count) sources -> out\DaVinciBeauty.ofx"
 if ($LASTEXITCODE -ne 0) { throw "[FAILED] cl.exe exited $LASTEXITCODE" }
 
 $dll = Join-Path $out 'DaVinciBeauty.ofx'
+
+# ---- Normalize PE timestamps (see PROGRESS/perf doc, section 17) ------------
+# /Brepro does not work on this toolchain (neither on cl nor on link): two builds
+# from identical sources differ by exactly two dwords -- COFF TimeDateStamp and
+# IMAGE_DEBUG_DIRECTORY.TimeDateStamp. Zero both here so builds are reproducible.
+# This file must stay PURE ASCII: PowerShell decodes script bytes with the active
+# code page, and non-ASCII comments break parsing under the UTF-8/GBK mismatch.
+function Reset-PeTimestamp([string]$Path) {
+    $b = [IO.File]::ReadAllBytes($Path)
+    $lf = [BitConverter]::ToInt32($b, 0x3C)
+    if ([Text.Encoding]::ASCII.GetString($b, $lf, 4) -ne "PE`0`0") { return $false }
+    $coff = $lf + 4
+    [Array]::Clear($b, $coff + 4, 4)
+    $nsec  = [BitConverter]::ToUInt16($b, $coff + 2)
+    $szOpt = [BitConverter]::ToUInt16($b, $coff + 16)
+    $opt   = $lf + 24
+    $magic = [BitConverter]::ToUInt16($b, $opt)
+    $dd    = $opt + $(if ($magic -eq 0x20B) { 112 } else { 96 })
+    $dbgRva  = [BitConverter]::ToUInt32($b, $dd + 6 * 8)
+    $dbgSize = [BitConverter]::ToUInt32($b, $dd + 6 * 8 + 4)
+    if ($dbgRva -ne 0 -and $dbgSize -ge 28) {
+        $sec = $opt + $szOpt
+        for ($i = 0; $i -lt $nsec; $i++) {
+            $s   = $sec + $i * 40
+            $vsz = [BitConverter]::ToUInt32($b, $s + 8)
+            $va  = [BitConverter]::ToUInt32($b, $s + 12)
+            $rsz = [BitConverter]::ToUInt32($b, $s + 16)
+            $raw = [BitConverter]::ToUInt32($b, $s + 20)
+            $span = if ($vsz -gt $rsz) { $vsz } else { $rsz }
+            if ($dbgRva -ge $va -and $dbgRva -lt ($va + $span)) {
+                $fo = $raw + ($dbgRva - $va)
+                for ($k = 0; $k -lt [int]($dbgSize / 28); $k++) {
+                    [Array]::Clear($b, $fo + $k * 28 + 4, 4)
+                }
+                break
+            }
+        }
+    }
+    [IO.File]::WriteAllBytes($Path, $b)
+    return $true
+}
+if (-not (Reset-PeTimestamp $dll)) { Write-Host '[WARN] PE timestamp normalization failed' }
+
 $size = (Get-Item $dll).Length
 Write-Host ("[OK] out\DaVinciBeauty.ofx  {0:N0} bytes  md5={1}" -f $size, (Get-FileHash $dll -Algorithm MD5).Hash.ToLower())
 
