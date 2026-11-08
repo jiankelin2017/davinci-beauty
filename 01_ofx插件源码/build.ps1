@@ -111,6 +111,11 @@ if (-not $sources) { throw 'No .cpp sources under src\' }
 
 $clArgs = @(
     '/nologo', '/O2', '/EHsc', '/MD', '/W3', '/utf-8', '/arch:AVX2', '/std:c++17',
+    # 注意：给 cl 也加 /Brepro **并没有**让构建变可复现（2026-11-08 实测）。
+    # 同一份源码连编两次仍差 2 个字节，位置固定：PE 头 0xF8 与调试目录 0x4AB44
+    # 的 TimeDateStamp（相差 = 两次构建的秒数）。链接器侧的 /Brepro 也没消掉。
+    # 待办见 01_ofx插件源码/性能方案.md 第十七节：构建后把这两个 dword 归零。
+    '/Brepro',
     "/Fo$obj\", "/Fe$(Join-Path $out 'DaVinciBeauty.ofx')", '/LD',
     '/DUNICODE', '/D_UNICODE', '/D_CRT_SECURE_NO_WARNINGS',
     # 沙箱构建（$env:NAMA_SANDBOX=1）：换插件标识与标签，避免与正式版撞标识。
