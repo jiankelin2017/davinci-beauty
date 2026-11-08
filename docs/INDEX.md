@@ -87,8 +87,8 @@ docs/
 | 文档 | 体积 | 搬迁 | 重写 | 备注 |
 |---|---|---|---|---|
 | `reference/reference-architecture.md` | 341 行 | ✅ | ✅ 2026-11-08 | 拆除 50 行调参流水；补 §1.2 两条 GPU 通路、§5.1 `beauty.ini` 9 键、§9 排错决策表、§10 作废说法 |
-| `reference/reference-performance.md` | 21 KB | ✅ | ⬜ 待定 | 1–15 节有效，需补 1.3.5.0 结论 |
-| `design/design-gpu-smooth.md` | 32 KB | ✅ | ⬜ 待定 | 施工记录，宜按「决策 / 验证数据 / 未决项」重排 |
+| `reference/reference-performance.md` | 15 KB | ✅ | ✅ 2026-11-08 | 由「按版本流水」改为「按段归因」；补口径 A/B 声明（10.61 vs 24 ms 的矛盾）、§7 作废说法；构建/沙箱两节移出正文 |
+| `design/design-gpu-smooth.md` | 20 KB | ✅ | ✅ 2026-11-08 | 由「施工流水（548 行）」改为「决策 / 验证数据 / 未决项」；时间线、冻结过程、BUG3/BUG4 移入附录指针；补 1.1.2.0 的「夹具假象」二次踩坑 |
 | `guides/guide-acceptance.md` | 14 KB | ✅ | ⬜ 待定 | 已修「硬判据」表述，正文仍混旧项数 |
 | `guides/guide-package.md` | 9 KB | ✅ | ⬜ 待定 | 已修版本引用，正文含旧编号历史段待清 |
 
