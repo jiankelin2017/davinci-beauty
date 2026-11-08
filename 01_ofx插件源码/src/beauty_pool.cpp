@@ -74,7 +74,14 @@ public:
             y1_ = y1;
             cursor_ = y0;
             chunk_ = (rows + nt - 1) / nt;
-            busy_.store(nt, std::memory_order_relaxed);
+            // busy_ 记的必须是「真实块数」，不是 nt —— 这是 2026-11-08 修的死锁。
+            // 块数 = ceil(rows / chunk_) 在某些 (rows, nt) 组合下**小于** nt
+            // （例：rows=65、nt=16 → chunk=5 → 只有 13 块）。记成 nt 时 busy_ 永远
+            // 减不到 0，cvDone_ 不返回，调用线程挂死；而它此刻还持有引擎的全局
+            // 递归锁（beauty_core.cpp 的 slotStateMx），整个插件（含其它实例）
+            // 一起卡住。调用方各自钳制线程数只能减少这类组合，不能替代这里的守恒。
+            const int blocks = (rows + chunk_ - 1) / chunk_;
+            busy_.store(blocks, std::memory_order_relaxed);
             ++gen_;
         }
         cvJob_.notify_all();

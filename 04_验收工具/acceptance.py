@@ -16,6 +16,7 @@
     版本    源码宏 / 二进制内嵌串 / NamaVersion / 装机产物是否同源
     参数    三张表对齐、默认值、隐藏项
     回归    15 个用例逐字节比对黄金基线
+    并发    parallelRows 分块守恒（线程池死锁回归，独立进程 + 看门狗）
     接口    mock host（19 项 OFX 宿主契约）+ 自测链路
     装机    bundle 完整性、残留文件
 """
@@ -276,7 +277,48 @@ def check_regression():
 
 
 # --------------------------------------------------------------------------
-# D. 接口
+# D. 并发
+# --------------------------------------------------------------------------
+# 2026-11-08：beauty_pool.cpp 的 run() 曾把 busy_ 记成「线程数 nt」而不是
+# 「真实块数 ceil(rows/chunk)」。某些 (rows, nt) 组合下块数更少（rows=65、nt=16
+# → chunk=5 → 只有 13 块），busy_ 永远减不到 0，调用线程永久等待；而它此刻还
+# 持有引擎的全局递归锁，整个插件（含其它实例）一起卡死。
+# 这个检查独立进程跑，测试自带看门狗，所以「挂死」表现为 FAIL 而不是把验收卡住。
+def check_pool():
+    print("\n[并发]")
+
+    ps = os.path.join(HERE, "pool_regress.ps1")
+    if not os.path.isfile(ps):
+        rec("并发", "分块守恒台架存在", False, ps)
+        return
+
+    t0 = time.time()
+    try:
+        p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                            "-File", ps],
+                           cwd=HERE, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=420)
+    except subprocess.TimeoutExpired:
+        rec("并发", "parallelRows 分块守恒", False,
+            "超过 420s 未返回（疑似死锁）  (%.1fs)" % (time.time() - t0))
+        return
+
+    out = (p.stdout or "") + (p.stderr or "")
+    m = re.search(r"CASES\s+(\d+)\s+OK", out)
+    if p.returncode == 9:
+        rec("并发", "parallelRows 分块守恒", False,
+            "跳过：本机找不到 MSVC/SDK（不是回归失败）", warn=True)
+        return
+    ok = (p.returncode == 0) and bool(m)
+    detail = ("%s 组用例  (%.1fs)" % (m.group(1), time.time() - t0)) if m else (
+        "死锁或异常退出 rc=%d" % p.returncode)
+    rec("并发", "parallelRows 分块守恒", ok, detail)
+    if not ok:
+        print(out[-1200:])
+
+
+# --------------------------------------------------------------------------
+# E. 接口
 # --------------------------------------------------------------------------
 def check_interface():
     print("\n[接口]")
@@ -315,7 +357,7 @@ def check_interface():
 
 
 # --------------------------------------------------------------------------
-# E. 装机
+# F. 装机
 # --------------------------------------------------------------------------
 def check_bundle():
     print("\n[装机]")
@@ -335,7 +377,7 @@ def check_bundle():
 
 
 # --------------------------------------------------------------------------
-# F. 工程一致性（都是事后才被发现的成本，能静态判的就别靠人记）
+# G. 工程一致性（都是事后才被发现的成本，能静态判的就别靠人记）
 # --------------------------------------------------------------------------
 # v2.3.1 踩的坑：install.bat 从来没拷过 ai_face_processor_pc_plain.bundle，
 # 旧 bundle 里那份是手工放的。全新装机就缺资产，NamaSelfTest 直接崩（rc=0xC0000005）。
@@ -540,6 +582,7 @@ def main():
         ("版本", check_version),
         ("参数", check_params),
         ("回归", check_regression),
+        ("并发", check_pool),
         ("接口", check_interface),
         ("装机", check_bundle),
         ("工程", check_project),

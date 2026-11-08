@@ -1,6 +1,7 @@
 # 构建产物（可重建，不进版本库；也不进 FILELIST.txt）
 01_ofx插件源码/out/
 01_ofx插件源码/obj/
+04_验收工具/obj/
 01_ofx插件源码/bundle/
 05_安装包/build/
 **/__pycache__/
