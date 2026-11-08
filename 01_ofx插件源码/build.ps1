@@ -105,7 +105,12 @@ if (-not (Test-Path (Join-Path $ortInclude 'onnxruntime_c_api.h'))) {
 
 # 沙箱构建：换插件标识/标签（见 src/ofx_plugin.cpp 顶部）。用 -Sandbox 开关，
 # 不再依赖环境变量 —— 环境变量在跨进程调用时不可靠，踩过一次。
-$sandboxDefine = if ($Sandbox -or $env:NAMA_SANDBOX -eq '1') { '/DNAMA_SANDBOX_BUILD' } else { '' }
+# Plain if/else on purpose: the `$x = if (...) {...} else {...}` form silently
+# yielded an empty string here even though $Sandbox was True.
+$sandboxDefine = ''
+if ($Sandbox) { $sandboxDefine = '/DNAMA_SANDBOX_BUILD' }
+if ($env:NAMA_SANDBOX -eq '1') { $sandboxDefine = '/DNAMA_SANDBOX_BUILD' }
+
 $sources = Get-ChildItem (Join-Path $root 'src') -Filter *.cpp | Sort-Object Name | ForEach-Object { $_.FullName }
 if (-not $sources) { throw 'No .cpp sources under src\' }
 
@@ -140,6 +145,10 @@ $clArgs = @(
 )
 
 $clArgs = $clArgs | Where-Object { $_ -ne '' -and $null -ne $_ }
+if ($env:NAMA_BUILD_LOG) {
+    "[def=$sandboxDefine sw=$Sandbox env=$env:NAMA_SANDBOX] " + ($clArgs -join ' ') |
+        Out-File -FilePath $env:NAMA_BUILD_LOG -Encoding utf8 -Append
+}
 Write-Host "[BUILD] MSVC $($msvc.Name) + SDK $sdkVer"
 Write-Host "[BUILD] engine: $engine"
 Write-Host "[BUILD] $($sources.Count) sources -> out\DaVinciBeauty.ofx"
