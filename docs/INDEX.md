@@ -43,7 +43,7 @@ docs/
 | GPU 磨皮模块 | `docs/design/design-gpu-smooth.md` | design | Active（已完成施工，留决策） | 1.3.5.0 | 未登记 | 2026-11-08 | — |
 | 锐化为何无效 | `docs/adr/adr-0001-sharpen-inert.md` | adr | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
 | 过程记录（1.0.x–1.3.x） | `docs/history/history-progress-1x.md` | history | Active（只读归档） | 1.0.0.0–1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 旧 SDK 区域探测 PHASE0 | `docs/archive/archive-phase0-sdk-region.md` | archive | Deprecated | 闭源 SDK 时代 | 未登记 | 2026-11-08 | 对象已移除（引擎 v3.0.0 换自研） |
+| 旧 SDK 区域探测 PHASE0 | `docs/archive/archive-phase0-sdk-region.md` | archive | Deprecated | 闭源 SDK 时代 | 未登记 | 2026-11-08 | 对象已移除（引擎替换为自研） |
 | 区域精准化 PHASE1 | `docs/archive/archive-phase1-region.md` | archive | Deprecated | 同上 | 未登记 | 2026-11-08 | 同上 |
 | 语义区域 PHASE2 | `docs/archive/archive-phase2-semantic-region.md` | archive | Deprecated | 同上 | 未登记 | 2026-11-08 | 同上 |
 | 旧开发 README（121 KB） | `docs/archive/archive-dev-readme-20261108.md` | archive | Deprecated | ≤1.1.7.0 | 未登记 | 2026-11-08 | 已并入 `docs/CHANGELOG.md` |
@@ -80,8 +80,21 @@ docs/
 3. **改代码必动 CHANGELOG**：一次提交里如果改了 `src/*.cpp` 或参数表，同一提交必须带一条 `docs/CHANGELOG.md` 记录；只有内部改动（打点、日志、诊断开关）可以合并成一行，但仍要有行。
 4. **巡检**：每次发版前跑一遍 `python acceptance.py`，另外人工过一眼 —— ① INDEX 里状态为 Active 的文档是否都还成立；② 有没有两份讲同一主题；③ archive 里有没有被重新引用的（说明归档错了）。
 
-## 六、待人工确认
+## 六、逐篇改写进度
+
+治理分两步：先搬迁归位（结构对），再逐篇把「过程叙事混结论」改成「结论先行」。第一步已全部完成，第二步按下表推进（每篇改完把状态改为「已重写」，并在 CHANGELOG 不记——这属于可读性改造，不改行为）。
+
+| 文档 | 体积 | 搬迁 | 重写 | 备注 |
+|---|---|---|---|---|
+| `reference/reference-architecture.md` | 341 行 | ✅ | ✅ 2026-11-08 | 拆除 50 行调参流水；补 §1.2 两条 GPU 通路、§5.1 `beauty.ini` 9 键、§9 排错决策表、§10 作废说法 |
+| `reference/reference-performance.md` | 21 KB | ✅ | ⬜ 待定 | 1–15 节有效，需补 1.3.5.0 结论 |
+| `design/design-gpu-smooth.md` | 32 KB | ✅ | ⬜ 待定 | 施工记录，宜按「决策 / 验证数据 / 未决项」重排 |
+| `guides/guide-acceptance.md` | 14 KB | ✅ | ⬜ 待定 | 已修「硬判据」表述，正文仍混旧项数 |
+| `guides/guide-package.md` | 9 KB | ✅ | ⬜ 待定 | 已修版本引用，正文含旧编号历史段待清 |
+
+## 七、待人工确认
 
 - `04_验收工具/baseline_manifest.txt` 头注释仍写 `plugin_version: 1.2.5`；重生成会改变黄金值，需在确认「当前画面即基线」后跑 `baseline.py update`。
-- `README.md` 内仍有一段「v1.4 验收摘要（2026-10-21）」，属 2026-10 的历史快照，已标为历史；是否删除待定。
 - 各文档「维护人」字段统一填「未登记」，需要真实责任人时请补。
+- **代码里还有三处旧编号残留**（不影响行为，但会误导排错）：① `beauty_hwprobe.cpp:67` 的 ini 模板头写「DaVinci Beauty 运行配置 v3.3.0」；② `beauty_core.cpp:1338` 的 `CoreEngine::version()` 硬编码 `"1.4.0"`，而它在启动日志里以 `ver=` 出现，容易被当成插件版本；③ `install.bat` 有 3 行 UTF-8 中文（`:24` echo、`:51-52` rem），936 代码页下 echo 会乱码。是否清掉待定。
+- `1.2.6.0`、`1.3.0.0`、`1.3.2`、`1.3.3` 在文档里没有独立变更条目（1.3.2/1.3.3 的结论已并入 1.3.4.0）。是否从 git 历史补录待定。
