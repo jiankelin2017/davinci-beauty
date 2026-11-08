@@ -1,7 +1,7 @@
 # 文件清单（SHA256）
-# 生成时间: 2026-11-08 19:22 CST
+# 生成时间: 2026-11-08 19:24 CST
 # 由 gen_filelist.py 生成；收录规则见脚本头部注释。
-# 文件数: 172  合计: 3606.0 KB
+# 文件数: 172  合计: 3605.9 KB
 
 8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992         9  .gitattributes
 867677244ae07ae391937829ff7887aaca2446b0d072f8e57ee648f3abfb32c0      3243  .gitignore
@@ -146,8 +146,8 @@ c52bd9aec3a02273158cf0cbecb8e048f12b8ceba189605cbc009f4d2ac86e6d      6302  _p1b
 08f702276b0dc113d53840d3f299adcad6f2287541047137418e673fd0080599      3895  _p1bench/启动Resolve_带GPU管道开关.bat
 5e76c7f49249b1c596b703ef0c109a7360237297768764f20b71d0d302d61fc1      3534  _p2bench/build.ps1
 b0f811130f943884fde11beddaf6ecbcf409de7586e8d7bbaea43909721d6ced     64127  _p2bench/gpu_smooth_test.cpp
-d3d58f37529d14b6d61aa93fb8a7dac38970ec794423d28e7d01fe29c113d2ac     19482  docs/CHANGELOG.md
-4ab09aff3b966990479f456873a74300a0f7845abd22dcbd584ca190ec56db5f     13780  docs/INDEX.md
+24d41f8d1101e1d44f5aac5b0b61a10de91ffe8bbce38818be6eba3d7aff9434     19207  docs/CHANGELOG.md
+5adc51812a733759ac04848b477fa3f98557c7644433441180d29f94523cc36f     14026  docs/INDEX.md
 52b989569d6ae935d32ece6986016c1bc2a30cc3b8dc929de9f94e2bbb57e151      5387  docs/adr/adr-0001-sharpen-inert.md
 aa598b5192820b716cc2b9968e6725f4af6546080b8cd73eabdf944f458e797d    121212  docs/archive/archive-dev-readme-20261108.md
 3db731e0eefd1c0eb4caa73311d6bdee488658373e78503ae12bb3b4bc429522     13810  docs/archive/archive-manifest-v308.txt
