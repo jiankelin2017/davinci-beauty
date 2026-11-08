@@ -5,6 +5,7 @@
 // bundle 声明同一标识，通常只认先扫到的那个 —— 「装沙箱包去试」实际跑的还是正式
 // 那份，等于没测。所以沙箱构建换标识 + 换标签。
 #ifdef NAMA_SANDBOX_BUILD
+#pragma message("SANDBOX BUILD ACTIVE")
 #define NAMA_PLUGIN_ID    "com.nama.davinci.beauty.sandbox"
 #define NAMA_PLUGIN_LABEL "DaVinci Beauty 美颜（沙箱）"
 #else

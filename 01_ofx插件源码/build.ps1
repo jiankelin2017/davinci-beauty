@@ -116,15 +116,15 @@ if (-not $sources) { throw 'No .cpp sources under src\' }
 
 $clArgs = @(
     '/nologo', '/O2', '/EHsc', '/MD', '/W3', '/utf-8', '/arch:AVX2', '/std:c++17',
-    # 注意：给 cl 也加 /Brepro **并没有**让构建变可复现（2026-11-08 实测）。
-    # 同一份源码连编两次仍差 2 个字节，位置固定：PE 头 0xF8 与调试目录 0x4AB44
-    # 的 TimeDateStamp（相差 = 两次构建的秒数）。链接器侧的 /Brepro 也没消掉。
-    # 待办见 01_ofx插件源码/性能方案.md 第十七节：构建后把这两个 dword 归零。
+    # NOTE: /Brepro on cl does NOT make builds reproducible on this toolchain.
+    # See PROGRESS/perf doc section 17. The two TimeDateStamp dwords are zeroed
+    # after linking instead (see Reset-PeTimestamp below).
     '/Brepro',
     "/Fo$obj\", "/Fe$(Join-Path $out 'DaVinciBeauty.ofx')", '/LD',
     '/DUNICODE', '/D_UNICODE', '/D_CRT_SECURE_NO_WARNINGS',
-    # 沙箱构建（$env:NAMA_SANDBOX=1）：换插件标识与标签，避免与正式版撞标识。
-    # 正式构建时这里是空串，下面 & $cl 之前会被过滤掉（不能传空参数）。
+    # Sandbox build (-Sandbox / NAMA_SANDBOX=1): distinct plugin id + label so the
+    # sandbox bundle cannot shadow the real one. Empty on normal builds and
+    # filtered out before invoking cl.
     $sandboxDefine,
     '/I', (Join-Path $root 'sdk\include'),
     '/I', $ortInclude
@@ -134,10 +134,10 @@ $clArgs = @(
     # behaviour-only check and keeps stale md5s in the docs. With it, rebuilds are
     # byte-identical and acceptance can compare bytes honestly.
     #
-    # d3d11/dxgi/d3dcompiler: beauty_hwprobe.cpp 探测 GPU 能力并跑带宽校准。
-    # advapi32: 读注册表拿 CPU 基准频率（仅诊断用途，失败不影响功能）。
-    # opengl32/gdi32 是早期 GL 后端残留，代码里已无 wgl/glCreate 调用，保留只为
-    # 不改动既有链接行为；确认无隐式依赖后可删。
+    # d3d11/dxgi/d3dcompiler: GPU capability probe + bandwidth calibration.
+    # advapi32: registry read for CPU base clock (diagnostics only).
+    # opengl32/gdi32: legacy GL backend leftovers; no wgl/glCreate calls remain.
+    # Kept only to avoid changing existing link behaviour.
     '/link', '/Brepro',
     'd3d11.lib', 'dxgi.lib', 'd3dcompiler.lib', 'advapi32.lib',
     'opengl32.lib', 'gdi32.lib', 'user32.lib',
@@ -152,7 +152,11 @@ if ($env:NAMA_BUILD_LOG) {
 Write-Host "[BUILD] MSVC $($msvc.Name) + SDK $sdkVer"
 Write-Host "[BUILD] engine: $engine"
 Write-Host "[BUILD] $($sources.Count) sources -> out\DaVinciBeauty.ofx"
-& $cl @clArgs
+# Response file instead of splatting: @clArgs silently dropped elements here
+# (a /D define never reached the compiler although it was in the array).
+$rsp = Join-Path $obj 'cl.rsp'
+Set-Content -Path $rsp -Value ($clArgs -join ' ') -Encoding Default
+& $cl "@$rsp"
 if ($LASTEXITCODE -ne 0) { throw "[FAILED] cl.exe exited $LASTEXITCODE" }
 
 $dll = Join-Path $out 'DaVinciBeauty.ofx'

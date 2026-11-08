@@ -264,8 +264,12 @@ def check_regression():
     m = re.search(r"逐字节一致:\s*(\d+)/(\d+)", out)
     if m:
         a, b = int(m.group(1)), int(m.group(2))
-        rec("回归", "逐字节一致", a == b and p.returncode == 0,
-            "%d/%d  (%.1fs)" % (a, b, time.time() - t0))
+        # baseline.py 自己已经做了"失配复跑一次"的抖动判定：复跑一致就退出码 0，
+        # 并在汇总行标注「其中 N 个抖动」。所以这里以退出码为准 —— 再拿 a == b
+        # 卡一遍会把"抖动"重新判成失败（2026-11-08 实测过一次）。
+        flake = ("抖动" in out)
+        rec("回归", "逐字节一致", p.returncode == 0,
+            "%d/%d%s  (%.1fs)" % (a, b, "（含抖动）" if flake else "", time.time() - t0))
     else:
         rec("回归", "逐字节一致", False, "没能解析结果 rc=%d" % p.returncode)
         print(out[-800:])
