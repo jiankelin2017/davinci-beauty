@@ -1,6 +1,6 @@
 # DaVinci Beauty —— DaVinci Resolve 美颜滤镜（OFX）
 
-> 当前构建：**1.3.5.0（2026-11-08）** ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：未登记
+> 当前构建：**1.3.5.0（2026-11-08）** ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian
 > 文档总表：`docs/INDEX.md` ｜ 版本变化：`docs/CHANGELOG.md`
 
 达芬奇 Resolve 的 OFX 美颜插件。**自研纯 CPU 美颜引擎**（移植自上一代宿主 3.1.x）+ **ONNX 人脸检测**；人脸推理有 GPU 时自动加速，无 GPU 时自动退回 CPU，效果一致。插件 ID：`com.nama.davinci.beauty`（不要改，改了历史工程里已挂的效果会失效）。

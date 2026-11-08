@@ -1,6 +1,6 @@
 # 文档总表（INDEX）
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：未登记
+> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian
 > 本表是文档体系的唯一索引。任何新增/移动/废弃文档，先改这张表，再动文件。
 
 ## 一、规则（四条，违反即视为文档缺陷）
@@ -30,29 +30,29 @@ docs/
 
 | 主题 | 路径 | 类型 | 状态 | 适用版本 | 维护人 | 最后核对 | 替代 / 归档去向 |
 |---|---|---|---|---|---|---|---|
-| 交付概览 | `README.md` | README | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 使用入口卡 | `说明.txt` | 入口卡 | Active | 1.3.5.0 | 未登记 | 2026-11-08 | 详版见 `docs/guides/guide-install.md` |
-| 总索引 | `docs/INDEX.md` | reference | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 变更史 | `docs/CHANGELOG.md` | CHANGELOG | Active | 1.3.5.0 | 未登记 | 2026-11-08 | 原始过程见 `docs/history/history-progress-1x.md` |
-| 安装 / 升级 / 回滚 | `docs/guides/guide-install.md` | guide | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 开发工作流 | `docs/guides/guide-dev-workflow.md` | guide | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 验收 | `docs/guides/guide-acceptance.md` | guide | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 出包 | `docs/guides/guide-package.md` | guide | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 架构与关键技术事实 | `docs/reference/reference-architecture.md` | reference | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 性能 | `docs/reference/reference-performance.md` | reference | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| GPU 磨皮模块 | `docs/design/design-gpu-smooth.md` | design | Active（已完成施工，留决策） | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 锐化为何无效 | `docs/adr/adr-0001-sharpen-inert.md` | adr | Active | 1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 过程记录（1.0.x–1.3.x） | `docs/history/history-progress-1x.md` | history | Active（只读归档） | 1.0.0.0–1.3.5.0 | 未登记 | 2026-11-08 | — |
-| 旧 SDK 区域探测 PHASE0 | `docs/archive/archive-phase0-sdk-region.md` | archive | Deprecated | 闭源 SDK 时代 | 未登记 | 2026-11-08 | 对象已移除（引擎替换为自研） |
-| 区域精准化 PHASE1 | `docs/archive/archive-phase1-region.md` | archive | Deprecated | 同上 | 未登记 | 2026-11-08 | 同上 |
-| 语义区域 PHASE2 | `docs/archive/archive-phase2-semantic-region.md` | archive | Deprecated | 同上 | 未登记 | 2026-11-08 | 同上 |
-| 旧开发 README（121 KB） | `docs/archive/archive-dev-readme-20261108.md` | archive | Deprecated | ≤1.1.7.0 | 未登记 | 2026-11-08 | 已并入 `docs/CHANGELOG.md` |
-| 历史验收输出（1.0.7.0） | `docs/archive/archive-verification-1.0.7.0.txt` | archive | Deprecated | 1.0.7.0 | 未登记 | 2026-11-08 | 每次验收重新生成，不存当前版 |
-| 旧包 sha256 清单 | `docs/archive/archive-manifest-v308.txt` | archive | Deprecated | 旧编号时代 | 未登记 | 2026-11-08 | 现由 `package.py` 在包内生成 `MANIFEST.txt` |
-| 夹具运行记录 | `03_测试夹具/RUNS.md` | reference | Active | 1.3.5.0 | 未登记 | 2026-11-08 | 替代原 14 份 `.txt` 抓屏 |
-| 合规声明 | `THIRD-PARTY-NOTICES.md` | 合规 | Active | — | 未登记 | 2026-11-08 | bundle 内另有副本（构建产出） |
-| 文件清单 | `FILELIST.txt` | 生成物 | Active | 1.3.5.0 | 未登记 | 2026-11-08 | `gen_filelist.py` 生成，勿手改 |
-| 基线数据 | `04_验收工具/baseline_manifest.txt` | data | Active | 1.2.5.0（头注释待重生成） | 未登记 | 2026-11-08 | — |
+| 交付概览 | `README.md` | README | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 使用入口卡 | `说明.txt` | 入口卡 | Active | 1.3.5.0 | Jian | 2026-11-08 | 详版见 `docs/guides/guide-install.md` |
+| 总索引 | `docs/INDEX.md` | reference | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 变更史 | `docs/CHANGELOG.md` | CHANGELOG | Active | 1.3.5.0 | Jian | 2026-11-08 | 原始过程见 `docs/history/history-progress-1x.md` |
+| 安装 / 升级 / 回滚 | `docs/guides/guide-install.md` | guide | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 开发工作流 | `docs/guides/guide-dev-workflow.md` | guide | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 验收 | `docs/guides/guide-acceptance.md` | guide | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 出包 | `docs/guides/guide-package.md` | guide | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 架构与关键技术事实 | `docs/reference/reference-architecture.md` | reference | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 性能 | `docs/reference/reference-performance.md` | reference | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| GPU 磨皮模块 | `docs/design/design-gpu-smooth.md` | design | Active（已完成施工，留决策） | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 锐化为何无效 | `docs/adr/adr-0001-sharpen-inert.md` | adr | Active | 1.3.5.0 | Jian | 2026-11-08 | — |
+| 过程记录（1.0.x–1.3.x） | `docs/history/history-progress-1x.md` | history | Active（只读归档） | 1.0.0.0–1.3.5.0 | Jian | 2026-11-08 | — |
+| 旧 SDK 区域探测 PHASE0 | `docs/archive/archive-phase0-sdk-region.md` | archive | Deprecated | 闭源 SDK 时代 | Jian | 2026-11-08 | 对象已移除（引擎替换为自研） |
+| 区域精准化 PHASE1 | `docs/archive/archive-phase1-region.md` | archive | Deprecated | 同上 | Jian | 2026-11-08 | 同上 |
+| 语义区域 PHASE2 | `docs/archive/archive-phase2-semantic-region.md` | archive | Deprecated | 同上 | Jian | 2026-11-08 | 同上 |
+| 旧开发 README（121 KB） | `docs/archive/archive-dev-readme-20261108.md` | archive | Deprecated | ≤1.1.7.0 | Jian | 2026-11-08 | 已并入 `docs/CHANGELOG.md` |
+| 历史验收输出（1.0.7.0） | `docs/archive/archive-verification-1.0.7.0.txt` | archive | Deprecated | 1.0.7.0 | Jian | 2026-11-08 | 每次验收重新生成，不存当前版 |
+| 旧包 sha256 清单 | `docs/archive/archive-manifest-v308.txt` | archive | Deprecated | 旧编号时代 | Jian | 2026-11-08 | 现由 `package.py` 在包内生成 `MANIFEST.txt` |
+| 夹具运行记录 | `03_测试夹具/RUNS.md` | reference | Active | 1.3.5.0 | Jian | 2026-11-08 | 替代原 14 份 `.txt` 抓屏 |
+| 合规声明 | `THIRD-PARTY-NOTICES.md` | 合规 | Active | — | Jian | 2026-11-08 | bundle 内另有副本（构建产出） |
+| 文件清单 | `FILELIST.txt` | 生成物 | Active | 1.3.5.0 | Jian | 2026-11-08 | `gen_filelist.py` 生成，勿手改 |
+| 基线数据 | `04_验收工具/baseline_manifest.txt` | data | Active | 1.3.5 | Jian | 2026-11-08 | 18 个 md5 自 1.2.5 起未变，仅头注释随版本重生成 |
 
 ## 四、已清理的内容（本轮，2026-11-08）
 
@@ -94,7 +94,6 @@ docs/
 
 ## 七、待人工确认
 
-- `04_验收工具/baseline_manifest.txt` 头注释仍写 `plugin_version: 1.2.5`；重生成会改变黄金值，需在确认「当前画面即基线」后跑 `baseline.py update`。
-- 各文档「维护人」字段统一填「未登记」，需要真实责任人时请补。
+- **回归抖动的机制仍未定论**（`baseline.py update` 曾因此拒绝写入）。已测到的事实：默认推理线程数下，顺序跑 18 个用例 ×2 遍会有一个用例首跑失配、复跑一致，且失配用例不固定（先后见到 `cl50`、`sh50_cl100`、`blur62_wh100`）；把 `BEAUTY_INFER_THREADS=1` 固定为单线程后，同样跑两遍 36/36 全绿。`BEAUTY_GPU_SMOOTH` 强制开/关的 md5 完全相同，所以先前「GPU 争用」的解释与这批数据不符。是 ORT 内部并行归约顺序，还是纯粹窗口变窄，尚无证据，未下结论。当前处理：`update` 一律加 `BEAUTY_INFER_THREADS=1` 跑，见 `reference-performance.md` §5.4。
 - **代码里还有三处旧编号残留**（不影响行为，但会误导排错）：① `beauty_hwprobe.cpp:67` 的 ini 模板头写「DaVinci Beauty 运行配置 v3.3.0」；② `beauty_core.cpp:1338` 的 `CoreEngine::version()` 硬编码 `"1.4.0"`，而它在启动日志里以 `ver=` 出现，容易被当成插件版本；③ `install.bat` 有 3 行 UTF-8 中文（`:24` echo、`:51-52` rem），936 代码页下 echo 会乱码。是否清掉待定。
 - `1.2.6.0`、`1.3.0.0`、`1.3.2`、`1.3.3` 在文档里没有独立变更条目（1.3.2/1.3.3 的结论已并入 1.3.4.0）。是否从 git 历史补录待定。

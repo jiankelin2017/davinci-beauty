@@ -4,7 +4,7 @@
 # 输入帧由 04_验收工具/input_face.png 缩放到 1074x604 后转 RGBA 生成，其 md5 记录如下；输入变了这里会失配，属预期。
 #
 # input_md5: 948bbeea98a307f6cc3b467f7d52c0fc
-# plugin_version: 1.2.5
+# plugin_version: 1.3.5
 # generated_by: DaVinciBeauty.ofx
 #
 blur00         1968ff34d68e6510435b5ae6f8a5d380

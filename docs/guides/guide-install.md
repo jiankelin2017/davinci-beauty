@@ -1,6 +1,6 @@
 # 安装 / 升级 / 回滚
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：未登记 ｜ 替代文档：`安装说明.txt`（v1.0.7.0 时代，已删除）
+> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：`安装说明.txt`（v1.0.7.0 时代，已删除）
 
 **一句话**：先彻底退出 Resolve，再跑 `01_ofx插件源码\install.bat`；或者双击 `05_安装包\build\DaVinciBeauty_Setup_v1.3.5.0.exe`。装完重启 Resolve，效果面板在 `Effects Library > OpenFX > DaVinci Beauty`。
 

@@ -1,6 +1,6 @@
 # CHANGELOG —— DaVinci Beauty OFX
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：未登记 ｜ 替代文档：`docs/history/history-progress-1x.md`（过程记录，非结论）
+> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：`docs/history/history-progress-1x.md`（过程记录，非结论）
 
 **怎么读这份文件**：只记「用户能看出来的变化」和「画面是否改变」。调参、打点、诊断开关这类内部改动合并成一行。想要当时的原始过程、报错、逐帧数据，去 `docs/history/history-progress-1x.md`（按时间倒序，4600+ 行）。
 

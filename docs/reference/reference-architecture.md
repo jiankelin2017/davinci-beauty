@@ -1,6 +1,6 @@
 # DaVinciBeauty 架构与关键事实
 
-> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：未登记 ｜ 替代文档：原根目录 `开发文档.md`
+> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian ｜ 替代文档：原根目录 `开发文档.md`
 
 **这份文档管**：分层结构、改代码会踩的硬约束、日志怎么读、配置项在哪、参数为什么这么定。
 **不在这里管**：安装看 `docs/guides/guide-install.md`，出包看 `guide-package.md`，验收看 `guide-acceptance.md`，历史过程看 `docs/history/history-progress-1x.md`。
