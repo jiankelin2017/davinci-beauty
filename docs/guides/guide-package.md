@@ -12,7 +12,7 @@
 **一句话**：`cd 05_安装包 && python build_nsis.py`，版本号自动取自源码宏，产物在 `build\` 下。
 
 1. **版本号只有一个来源** —— `01_ofx插件源码\src\beauty_engine.h` 的 `BEAUTY_BUILD_STR`。构建器自己读，不需要也不该手动传 `--version`；传了反而会造出「文件名与源码不符」的包。
-2. **当前产物**：`build\DaVinciBeauty_Setup_v1.3.6.0.exe`，4,858,896 字节（4.63 MB），md5 `e15aaf96fd53c03670ed623f4863f6cc`（同版本内重出两次：标识符改名 → 补 `COPYRIGHT`，旧哈希 `50436e91…`、`d3ab6f1d…` 作废）。
+2. **当前产物**：`build\DaVinciBeauty_Setup_v1.3.6.0.exe`，4,858,896 字节（4.63 MB），md5 `e15aaf96fd53c03670ed623f4863f6cc`（同版本内重出两次：标识符改名 → 补 `COPYRIGHT`，旧哈希 `50436e91…`、`d3ab6f1d…` 作废）。出包后要 `copy` 一份到 `dist\` 并更新 `dist\SHA256SUMS.txt` —— 那是入库并可下载的副本，`build\` 不入库。
 3. **"包"有两种，别混**：安装包（NSIS 出 exe，给用户装）与整合包（`04_验收工具\package.py` 出源码目录+zip，给开发/交接）。本文前半讲前者，§8 讲后者。
 4. **改资产清单要同步四处**，`acceptance.py` 只硬查其中三处 —— 第四处漏了不会报错，只会在用户机器上崩。
 5. **沙箱是两个独立开关**：`build.bat -Sandbox` 换插件标识，`build_nsis.py --sandbox` 换安装位置。要真正隔离，两个都得开。

@@ -9,7 +9,7 @@ DaVinci Resolve 的 OFX 美颜插件。纯 CPU 自研引擎 + ONNX 人脸检测�
 【三步装好】
   1. 完全退出 DaVinci Resolve（不退出会留下 .locked-* 垃圾文件）
   2. 双击 01_ofx插件源码\install.bat；或双击
-     05_安装包\build\DaVinciBeauty_Setup_v1.3.6.0.exe（静默装加 /S）
+     dist\DaVinciBeauty_Setup_v1.3.6.0.exe（静默装加 /S）
   3. 重启 Resolve：Effects Library > OpenFX > DaVinci Beauty
 
 【装完请先自检】

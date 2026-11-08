@@ -12,12 +12,14 @@
 ```
 1. 完全退出 DaVinci Resolve
 2. 01_ofx插件源码\install.bat
-   （或用安装包：05_安装包\build\DaVinciBeauty_Setup_v1.3.6.0.exe）
+   （或用安装包：dist\DaVinciBeauty_Setup_v1.3.6.0.exe，校验值见 dist\SHA256SUMS.txt）
 3. 重启 Resolve → Effects Library > OpenFX > DaVinci Beauty
 ```
 
 装完自检：`04_验收工具\verify.bat`，期望 `PASS 28 / FAIL 0`。
 安装 / 升级 / 回滚 / 配置开关 / 常见问题：`docs/guides/guide-install.md`。
+
+**从 GitHub 获取**：仓库地址 <https://github.com/jiankelin2017/davinci-beauty>。安装包在仓库 `dist\` 目录，同时挂在 [Releases](https://github.com/jiankelin2017/davinci-beauty/releases) 页可直接下载（不用 clone）。
 
 ## 文档在哪
 
@@ -41,18 +43,19 @@
 03_测试夹具\      mock host、自测链路、探针脚本（运行记录见 RUNS.md）
 04_验收工具\      acceptance.py / baseline.py / verify.bat / package.py
 05_安装包\        NSIS 构建脚本（build_nsis.py）
+dist\             发布产物：当前版本安装包 + SHA256SUMS.txt（唯一入库的 exe）
 docs\             文档体系（总表见 docs/INDEX.md）
-LICENSE / THIRD-PARTY-NOTICES.md   许可与第三方声明
+LICENSE / COPYRIGHT / THIRD-PARTY-NOTICES.md   许可、版权与第三方声明
 FILELIST.txt      已跟踪文件的 sha256 清单（gen_filelist.py 生成）
 ```
 
 `安装说明.txt` 由 `package.py` 在**包内**生成，仓库里不留副本 —— 留一份就一定会过期。
-**仓库里没有**：推理运行时与模型的入库副本、构建产物（`out/ obj/ bundle/`）、安装包 exe、本地归档 `_archive/`。
+**仓库里没有**：推理运行时与模型副本、构建中间产物（`out/ obj/ bundle/ 05_安装包/build/`）、本地归档 `_archive/`。`dist\` 只放**当前版本**的发布安装包，历史版本走 Releases；`.gitignore` 对此开了白名单（`!dist/*.exe`），别把它当构建输出目录用。
 `package.py` 有防呆：目标目录 == 本仓库时直接拒绝，避免把 `.git` 哈希进清单或 `--force` 删库重来。
 
 ## 引擎与硬件
 
-引擎已从早期闭源商业 SDK 整体替换为自研 CoreEngine，公开接口不变，宿主层（`ofx_plugin.cpp`）无需改动。GPU 只用于**人脸推理**（把 `onnxruntime.dll` 换成带 GPU 支持的构建版即自动启用）；磨皮自身的 GPU 路径是另一套 D3D11 compute 管线，见 `docs/design/design-gpu-smooth.md`。
+引擎已从早期外部引擎整体替换为自研 CoreEngine，公开接口不变，宿主层（`ofx_plugin.cpp`）无需改动。GPU 只用于**人脸推理**（把 `onnxruntime.dll` 换成带 GPU 支持的构建版即自动启用）；磨皮自身的 GPU 路径是另一套 D3D11 compute 管线，见 `docs/design/design-gpu-smooth.md`。
 
 ## 恢复方法
 

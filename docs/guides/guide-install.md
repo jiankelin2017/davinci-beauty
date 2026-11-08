@@ -24,7 +24,7 @@
 | 卸载（图形） | 「应用和功能」→「DaVinci Beauty 美颜」，或运行 `…\DaVinciBeauty.ofx.bundle\Uninstall_DaVinciBeauty.exe /S` |
 
 安装包会顺带装上 `LICENSE`（GPL-2.0-only）与 `THIRD-PARTY-NOTICES.md`，随分发一起保留。
-当前包：4,858,896 字节（4.63 MB），`build\DaVinciBeauty_Setup_v1.3.6.0.exe`，md5 `e15aaf96fd53c03670ed623f4863f6cc`。同版本内重出过两次（标识符改名 → 补 `COPYRIGHT`），旧哈希 `50436e91…`、`d3ab6f1d…` 均已作废；重出包见 `docs/guides/guide-package.md`。
+当前包：4,858,896 字节（4.63 MB），`05_安装包\build\DaVinciBeauty_Setup_v1.3.6.0.exe`，md5 `e15aaf96fd53c03670ed623f4863f6cc`。**发布副本在仓库 `dist\`**（同字节，已入库并挂在 GitHub Releases，用户下载用这份，`build\` 不入库）。同版本内重出过两次（标识符改名 → 补 `COPYRIGHT`），旧哈希 `50436e91…`、`d3ab6f1d…` 均已作废；重出包见 `docs/guides/guide-package.md`。
 
 ## 三、升级与回滚
 
