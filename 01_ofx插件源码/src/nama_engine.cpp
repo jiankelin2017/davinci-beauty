@@ -273,8 +273,8 @@ int __stdcall NamaSelfTest(const char* engineDir, const char* rawRgbaIn,
         stv("NAMA_ST_CLARITY", s.panel[P_CLARITY]);
         stv("NAMA_ST_SHARPEN", s.panel[P_SHARPEN]);
         stv("NAMA_ST_GSHARP",  s.panel[P_GLOBAL_SHARP]);
-        stv("NAMA_ST_CHEEK",   s.panel[P_CHEEK]);
-        stv("NAMA_ST_EYE",     s.panel[P_EYE]);
+        stv("NAMA_ST_CHEEK",   s.panel[P_THIN_FACE]);
+        stv("NAMA_ST_EYE",     s.panel[P_BIG_EYE]);
         stv("NAMA_ST_CHIN",    s.panel[P_CHIN]);
         stv("NAMA_ST_DELSPOT", s.panel[P_DELSPOT]);
         stv("NAMA_ST_NASO",    s.panel[P_NASOLABIAL]);

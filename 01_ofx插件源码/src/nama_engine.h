@@ -10,11 +10,15 @@
 //
 // 公开接口（ofx_plugin.cpp 依赖）完全保留，宿主一行都不用改。
 //
-// 面板参数枚举（P_*）沿用本文件下方定义，与 CoreEngine 的 BeautySettings::panel[]
-// 下标逐位一致（美型三项索引 11/12/13 在两边含义相同：瘦脸 / 大眼 / 下巴），
-// 因此参数可逐字段直通，无需任何映射表。
+// 面板参数枚举（P_*）来自 beauty_params.h（**唯一出处**），与 CoreEngine 的
+// BeautySettings::panel[] 下标逐位一致（美型三项索引 11/12/13 在两边含义相同：
+// 瘦脸 / 大眼 / 下巴），因此参数可逐字段直通，无需任何映射表。
+// 1.3.6.0 之前这里另写了一份同名不同名的枚举，与 beauty_params.h 同时包含会报
+// C2365；现已合并，本文件只是 `#include` 它。
 
 #include <string>
+
+#include "beauty_params.h"
 
 // ---------------------------------------------------------------------------
 // 构建版本号 —— 唯一出处
@@ -44,41 +48,7 @@
 #define NAMA_BUILD_REV   0
 #define NAMA_BUILD_STR "1.3.6.0"
 
-// 面板参数顺序（滤镜属性页滑块的顺序）
-enum {
-    P_BLUR = 0,      // blur_level              磨皮   sdk_max 6.0
-    P_CLARITY,       // clarity                 清晰   sdk_max 1.0
-    P_WHITEN,        // color_level             美白   sdk_max 2.0
-    P_RED,           // red_level               红润   sdk_max 1.0
-    P_SHARPEN,       // sharpen                 锐化   sdk_max 1.0
-                     //   底层接线保留：磨皮=0 时它确实有效，旧工程的非零值不能丢。
-    P_GLOBAL_SHARP,  // 无 SDK 项                 全局锐化 —— 把与「锐化」同一条
-                     //   曲线的细节回填扩展到皮肤掩码**之外**。0 = 脸外逐字节
-                     //   不变（默认，保持原「只动脸」硬指标）。
-    P_THREED,        // face_threed             五官立体 sdk_max 1.0
-    P_EYEBRIGHT,     // eye_bright              亮眼   sdk_max 1.0
-    P_POUCH,         // remove_pouch_strength   去黑眼圈 sdk_max 1.0
-    P_NASOLABIAL,    // remove_nasolabial_folds_strength 去法令纹 sdk_max 1.0
-    P_DELSPOT,       // delspot_level           祛斑痘 sdk_max 1.0
-                     //   3.0.16 新增。实测 SDK 侧确实生效（脸内效果量 +9.4%），
-                     //   但帧间闪动也会上升约 56%（1.626 -> 2.533），所以默认 0
-                     //   由用户按机器性能与观感自行决定开多大。
-                     //   （secret，面板不显示。）
-    // ---- 2.1.0 新增：美型三项（几何形变，SDK 侧）----------------------------
-    // 只挑「正交维度」的三项：脸宽 / 眼睛大小 / 下庭长度。刻意不接同一族里的
-    // cheek_narrow / cheek_v / cheek_small / cheek_short —— 它们和 cheek_thinning
-    // 抢同一块像素，同时推会互相打架（对方插件只暴露「瘦脸/大眼」两项也是这个原因）。
-    // 形变是像素位移，与掩码类效果有两条额外的约束，见 render() 里的 shapeOn 分支。
-    //
-    // ⚠️ v2.2.3 起这三项在面板里**沉底**（kParams 数组同样换序，两者必须逐一
-    // 对应 —— readParams 按下标写 panel[]）。原因：Resolve 的 OFX 面板不支持
-    // 任何折叠分组（Page / 页内 Group / root Group 三种均实测无效），折叠走不通，
-    // 退而求其次把低频项排到列表最末，常用项保持在顶部。
-    P_CHEEK,         // cheek_thinning          瘦脸   sdk_max 1.0
-    P_EYE,           // eye_enlarging           大眼   sdk_max 1.0
-    P_CHIN,          // intensity_chin          下巴   sdk_max 1.0
-    P_COUNT
-};
+// 面板参数顺序（滤镜属性页滑块的顺序）见 beauty_params.h —— 本文件不再重复定义。
 
 struct NamaSettings {
     double panel[P_COUNT];   // 面板刻度 0..100

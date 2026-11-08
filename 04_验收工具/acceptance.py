@@ -190,7 +190,10 @@ def check_version():
 # B. 参数表
 # --------------------------------------------------------------------------
 def parse_enum():
-    txt = strip_comments(open(os.path.join(SRC, "nama_engine.h"), "r",
+    # 1.3.6.0：P_* 枚举已合并到 beauty_params.h（唯一出处），nama_engine.h 只
+    # `#include` 它。这里跟着改读点 —— 若将来再搬家，本函数会因解析不到而 FAIL，
+    # 不会静默通过。
+    txt = strip_comments(open(os.path.join(SRC, "beauty_params.h"), "r",
                               encoding="utf-8").read())
     body = block_after(txt, "enum {")
     if body is None:

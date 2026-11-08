@@ -32,6 +32,16 @@
 
 验证：编译 0 error 0 warning、连编两次 md5 恒为 `c89e2daa…`；`baseline.py update` 一次通过（**不再需要** `BEAUTY_INFER_THREADS=1` 这个临时绕法）；`check` 连跑两次 18/18；`acceptance.py` 全量 PASS 28。
 
+### 同版顺带：`P_*` 枚举合并成一份（零字节变化）
+
+面板枚举原来有**两份**：`beauty_params.h`（标注「唯一出处」，被 `beauty_core.h` 引用）与 `nama_engine.h`（下标逐位一致，但两个名字不同：`P_THIN_FACE/P_BIG_EYE` vs `P_CHEEK/P_EYE`）。两份同时包含会报 13 条 `C2365 重定义`，这也是上一版不得不加 `beauty_build.h` 转出版本串的原因。
+
+现在 `nama_engine.h` 只 `#include "beauty_params.h"`，`nama_engine.cpp` 的两处引用改成新名。`beauty_params.h` 里补上了原来只在 `nama_engine.h` 才有两条警告（美型三项面板沉底、`kParams` 换序必须逐位对应；为何只接三项不接 `cheek_narrow` 一族）。
+
+顺带发现 `beauty_params.h` 还留着一组 3.x 死常量（`BEAUTY_BUILD_STR "3.1.39"`，全仓库无人读取），已在原处标注「已作废，勿引用」，**没有删**（连同它上方 240 行 3.x 面板考古是否清理由你定）。
+
+**证据是编译产物 md5 不变**：`c89e2daa…` 与合并前逐字节相同；验收 `枚举14 面板14 keys14` 对齐，28 项全过。验收脚本的 `parse_enum()` 同步改读 `beauty_params.h` —— 若枚举再搬家，它会 FAIL 而不是静默通过。
+
 ## 1.3.5.0（2026-11-08）
 
 三处**失败路径**的缺陷修复，正常渲染路径一行未动，**画面逐字节不变**（基线 18/18、验收 28 项全过）。
@@ -54,7 +64,7 @@
 | `beauty_core.cpp` 的 `CoreEngine::version()` | 硬编码 `"1.4.0"`，启动日志里以 `ver=` 出现 | 同上，与 `build=` 同源 |
 | `install.bat` | 3 行中文（`echo` / `rem`） | 纯 ASCII，规避 936 代码页下的乱码风险 |
 
-做法上没有再写第二份字面量：新增 `beauty_build.h` 只声明 `namaBuildStr()`，实现在 `nama_engine.cpp` 里 `return NAMA_BUILD_STR`。原因是 `beauty_core.cpp` 不能直接包含 `nama_engine.h`——那边的 `P_*` 枚举与 `beauty_params.h` 的同名（见该头注释）。
+做法上没有再写第二份字面量：新增 `beauty_build.h` 只声明 `namaBuildStr()`，实现在 `nama_engine.cpp` 里 `return NAMA_BUILD_STR`。原因是 `beauty_core.cpp` 不能直接包含 `nama_engine.h`——那边的 `P_*` 枚举与 `beauty_params.h` 的同名（1.3.6.0 已合并，见该版条目；本头保留下来当最小依赖）。
 
 验证：重编两次 md5 一致（`5655699…`）；基线 **18/18 逐字节不变**（这三处都是字符串，不碰像素，所以不需要重标基线）；`acceptance.py` **PASS 28 / FAIL 0**。
 

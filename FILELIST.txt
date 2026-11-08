@@ -1,7 +1,7 @@
 # 文件清单（SHA256）
-# 生成时间: 2026-11-08 18:59 CST
+# 生成时间: 2026-11-08 19:07 CST
 # 由 gen_filelist.py 生成；收录规则见脚本头部注释。
-# 文件数: 172  合计: 3622.3 KB
+# 文件数: 172  合计: 3623.8 KB
 
 8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992         9  .gitattributes
 867677244ae07ae391937829ff7887aaca2446b0d072f8e57ee648f3abfb32c0      3243  .gitignore
@@ -28,13 +28,13 @@ b86e4256d2392394f977c570e6ce14d0f836840ecab4c0cca98a1553cd9dde5b      1356  01_o
 2d57ce3a4201add43d8dbbd9a926d95bd0fa3839e5357927e1b01831c81f4c22      6553  01_ofx插件源码/sdk/include/ofxProgress.h
 b3340b71499571ff55ec05260209dab3311b30b4adc7a04e82df9f2c913e0929     11110  01_ofx插件源码/sdk/include/ofxProperty.h
 c36cded0c96c26797092e1574808806af4428b3560b589e6edc54eae2562182a      2802  01_ofx插件源码/sdk/include/ofxTimeLine.h
-da44cfd70516e2d5305d5f716dc236e0033d15d371778f1e6529368f0a18a37f      1134  01_ofx插件源码/src/beauty_build.h
+787cc56f7760070c4c4ea32f62bbc588bdcae1f073d8d96e74d63d765485b816      1154  01_ofx插件源码/src/beauty_build.h
 a2ad98af85634ac193b560352462f67f035e3251295e16be499d09ef7d936f18    272980  01_ofx插件源码/src/beauty_core.cpp
 770bc95c21d1baf7d40ebaaa1e00895990315102b4f68bc8864a0edf3aacfb05     11752  01_ofx插件源码/src/beauty_core.h
 dc5888235ce564b3191f2190eddc0c9919040aefc0099259569aeb781741a19c      3522  01_ofx插件源码/src/beauty_engine_glue.cpp
 c3547573bc5a7d4eb52e001f70cbb3b8604e76b0e86391388bcf18192e5d7ce8     17673  01_ofx插件源码/src/beauty_face.cpp
 6ce0fd173b8493f2e7eb9f7594028140c49d70b55a1d666da22cc70e31331f58      5755  01_ofx插件源码/src/beauty_face.h
-acf09ff682290c0417de63bc2373e50ff9090eb480e2a9054e8734be91efe07b     40967  01_ofx插件源码/src/beauty_freq.cpp
+167792fc2422670f44d0ef5c5709fb3b9b92e4ba2282782d72556df4ea162050     40967  01_ofx插件源码/src/beauty_freq.cpp
 0ecd8abe2e143596afa11c5c2a289a3eee772103ea8430cbde40aa74d654580c      8169  01_ofx插件源码/src/beauty_freq.h
 264141b204f91a1fd5d41c128de9a0b473520a5b247ebd17e136824961f9fb9f      7782  01_ofx插件源码/src/beauty_guide.cpp
 ef5e2c46703b6bab4e59488f6564a183f3d4b0ec52aff03b6010fbdc4d11e046      1843  01_ofx插件源码/src/beauty_guide.h
@@ -44,7 +44,7 @@ ef5e2c46703b6bab4e59488f6564a183f3d4b0ec52aff03b6010fbdc4d11e046      1843  01_o
 8ad5311da9ba261f0cfb81c944432543969155d0c809d8edd1d17af0737412db      1171  01_ofx插件源码/src/beauty_log.h
 7e0afbcbeaa249adb5cc7fd63f32b3d37665faeb19f0619e9b28ba35ddd7c643     13719  01_ofx插件源码/src/beauty_onnx.cpp
 15cba48fe42247b4d271befebda7f6f436fe9d35b686b432d09e8c04f18a887a      3286  01_ofx插件源码/src/beauty_onnx.h
-b2b67e4728f570c5785db3ecb5f393af76fa7d367114286d753ef0906c68c50c     26844  01_ofx插件源码/src/beauty_params.h
+5df32a781668e750ba75315aeaa506f9d979208e7b50debbbd6e819d736d49e8     28165  01_ofx插件源码/src/beauty_params.h
 078a61783b0555d1ec8365b4f5f61754cac9dcfff3085793b9e016dde20b914e      7768  01_ofx插件源码/src/beauty_pool.cpp
 cf1cce0d3fea2006e50e65cfa5e46e601f3c1e106d8ba41cf2d50e5b3be49e70      2078  01_ofx插件源码/src/beauty_pool.h
 67649941a18d72ff23f5b81767abf2a40ed97db23fa6442482d91ebc72532daf     19571  01_ofx插件源码/src/beauty_region.cpp
@@ -58,8 +58,8 @@ f75d55ccf7ada9069aa7149baea7927395014bea3d1ae38116b2bd78d11d7fa0     13567  01_o
 e31c4e03617b91ae8e4435a284dfbc6d02814b09ae8633a2505e25a2b95b71cf      4466  01_ofx插件源码/src/gpu_beauty.h
 e6ab76c363b5e78fff088db31071d1b843947e50e4fc9b363a3ec6b20f00d271     79262  01_ofx插件源码/src/gpu_smooth.cpp
 96d8da8b8c2500c01d4cdd56c95010fd1fcafd42238c1b92f93b49fd2d80e0a2     10250  01_ofx插件源码/src/gpu_smooth.h
-628f591dc499cc761a18faf11ceb9f5334a7d3974f4c66b26baef2c442768771     14152  01_ofx插件源码/src/nama_engine.cpp
-4a23c6fca53e099793df3fd8245817ae71f5d549775268a8459b6b8ab4b3806f     14345  01_ofx插件源码/src/nama_engine.h
+e801b40d2e7ad6aa23a0c6b65c4226af33280b564b42ad1ab1ca49a0dc4f81df     14160  01_ofx插件源码/src/nama_engine.cpp
+5873ea539267cbe70e141e62969d432242fb45f5998a9150fc11e92be0a4da48     11995  01_ofx插件源码/src/nama_engine.h
 56e82faff51dcc403474cafc8f31673b169bfc1a6512d8b376d304c1d3e1ed53     96734  01_ofx插件源码/src/ofx_plugin.cpp
 465d8120263302bede94569b681a06efddbd01771b17dddbcf6553b353d271b7        48  01_ofx插件源码/以管理员身份运行
 bfc5c287da21d8c54b84f4b7f80798dbe5c0403f3d34d3d43efd363b44572a3a      1316  02_引擎资产/stage.bat
@@ -117,7 +117,7 @@ ccc9483f6392ed9a4037b00425c0cd8a8342ba9119d1ab40e4274c7368629994      5810  03_�
 edf82144f2750ab01e9bba6cf571c04269fdddd7e468d5e1b0d1e8c2ad863826     10591  03_测试夹具/sweep_v2.py
 4307b5b898808e2e73f9e8f8ba1c16bd2f476fb162a3998821d1c58bbaf6adc9     12425  03_测试夹具/sweep_whiten.py
 5742fceb9a4f8b09d0aa75c1cff137db5a689f59aab53a53478ffee936254bf1      2220  03_测试夹具/test_harness.py
-bc5bb2c7596a037b17083b2d10c79e3bce87d3f1083341e327a831f6c9bb1a98     29432  04_验收工具/acceptance.py
+0c3b14b6f6b0554901ea621ea87721371bd676ad37caa3d5eb3fd5cb582781f5     29667  04_验收工具/acceptance.py
 c0dae2703553f994eb373c1309f87df3f9d1aeaf9fad0be0f94a3aba6a8ed9be     17132  04_验收工具/baseline.py
 ed63b9403e0b7d8db173336c3a32b50bfaf27cdf82324877fc0247f707bc2236      1229  04_验收工具/baseline_manifest.txt
 ec9581d6dc98cb415f615e57dbf649478fe6c442ea901c1e635acc0769c12115      6308  04_验收工具/cleanup.py
@@ -146,8 +146,8 @@ c52bd9aec3a02273158cf0cbecb8e048f12b8ceba189605cbc009f4d2ac86e6d      6302  _p1b
 08f702276b0dc113d53840d3f299adcad6f2287541047137418e673fd0080599      3895  _p1bench/启动Resolve_带GPU管道开关.bat
 5e76c7f49249b1c596b703ef0c109a7360237297768764f20b71d0d302d61fc1      3534  _p2bench/build.ps1
 b0f811130f943884fde11beddaf6ecbcf409de7586e8d7bbaea43909721d6ced     64127  _p2bench/gpu_smooth_test.cpp
-1643b3f6fe43d6b600902a3b327276980188b4cbc5f01138c8128cdc9e51b655     15508  docs/CHANGELOG.md
-a85fbd33eaa470401d899569e63c5d04f0a02496654d8924e631a72489316c5f     12146  docs/INDEX.md
+19242cfd8cc51210394d8d1dc695221dc58df098fdd3c1e1cf33135c7409a02c     16825  docs/CHANGELOG.md
+e31eb93e219f8aa18e9448ff65d73a83a685957ff83e6fc77c433d56d3e3d7bf     12716  docs/INDEX.md
 52b989569d6ae935d32ece6986016c1bc2a30cc3b8dc929de9f94e2bbb57e151      5387  docs/adr/adr-0001-sharpen-inert.md
 aa598b5192820b716cc2b9968e6725f4af6546080b8cd73eabdf944f458e797d    121212  docs/archive/archive-dev-readme-20261108.md
 3db731e0eefd1c0eb4caa73311d6bdee488658373e78503ae12bb3b4bc429522     13810  docs/archive/archive-manifest-v308.txt
@@ -162,7 +162,7 @@ c8cd45dbff2eba65cd05a1a3fae4ef353af404d060c55c9b3695f1f6dd5e7de9     20309  docs
 47a3449c1f4be805fab57c0b88f38c51500668a5991642b262f41b1b062e0653     16022  docs/guides/guide-package.md
 acea59a94c17e467c1e53ffd4bc7c950fc880d75d4437bd29d5610f248cfa792    323091  docs/history/history-progress-1x.md
 415f3bc321aff3a8c92ea5ba50aee2ea215cfc7037845b5574aec9c453a533e9     26156  docs/reference/reference-architecture.md
-3370533f529e79ad38bb45251ea7c91e0d4fa439b967853335924c5f2603df83     18316  docs/reference/reference-performance.md
+44ad769c03915b3e7d6aa988f396d627fe755e1f73994f250f3ebea98343aabc     18713  docs/reference/reference-performance.md
 02b89affa9a3cf53ef9391ce122486bb21b4c9ab436815ed1a5c7b97a02c36b1      5737  gen_filelist.py
 b5c62088e23963ee83fe6bb763284a731afd1217725473b07138e0d4d95ad103      1733  诊断_全椭圆.bat
 737bd752755df35dfd88cce3d82e59366d2d959db4264cdee528b5b5430b8157      2012  诊断_关闭脖子通道.bat
