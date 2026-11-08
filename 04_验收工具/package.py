@@ -42,17 +42,15 @@ def resolve_engine_src():
     return None
 
 # 顶层单文件
-# ★ 2026-10-31 整合补漏：README/开发指南里指向的开发文档原先没进包，导致
-#   「下次继续开发先看 开发指南.md」在包里是断链；FILELIST.txt 也一直列着它们。
-#   2026-10-31：加入 开发指南.md / 开发文档.md / CODE_REVIEW.md / gen_filelist.py /
-#   诊断_抓真实帧.bat —— 前四个是文档与清单生成器，最后一个是一键抓真实帧的诊断入口。
+# ★ 2026-11-08 文档治理：开发指南/开发文档/PROGRESS 全部迁到 docs/，由 COPY_DIRS 整目录带走，
+#   这里不再逐个列。验收报告.txt 改为每次验收现场生成（不存当前版）；安装说明.txt 由本脚本
+#   在包内生成，仓库里不再留一份会过期的副本。
 TOP_FILES = ["README.md", "说明.txt", "FILELIST.txt", ".gitignore",
-             ".gitattributes", "验收报告.txt",
-             "开发指南.md", "开发文档.md", "gen_filelist.py",
+             ".gitattributes", "gen_filelist.py",
              "诊断_抓真实帧.bat"]
 
-# 要进包的目录（03/04/05 三个历史遗留目录不进包）
-COPY_DIRS = ["01_ofx插件源码", "03_测试夹具", "04_验收工具", "05_安装包"]
+# 要进包的目录
+COPY_DIRS = ["01_ofx插件源码", "docs", "03_测试夹具", "04_验收工具", "05_安装包"]
 
 # 按目录名排除（不管在哪一层）
 EXCLUDE_DIRS = {"__pycache__", ".git", ".vs", "out", "obj", "bundle",
@@ -252,22 +250,23 @@ def main():
         f.write("  需要 VS C++ 工具链 + Windows SDK；脚本自动探测，不写死路径\r\n\r\n")
         f.write("【验收】\r\n")
         f.write("  04_验收工具\\verify.bat   一键验收（编译/装机/回归/接口/工程一致性）\r\n")
-        f.write("  期望：25 PASS / 0 FAIL，逐字节回归 18/18、mock host 23 项\r\n")
+        f.write("  期望：28 PASS / 0 FAIL，逐字节回归 18/18、mock host 23 项\r\n")
         f.write("  本包自带 03_测试夹具\\probe_in.raw（1MB），装机前后都能自测\r\n\r\n")
         f.write("【目录】\r\n")
         f.write("  01_ofx插件源码\\   源码 + build.ps1 / build.bat / install.bat\r\n")
+        f.write("  docs\\             文档体系，先看 docs\\INDEX.md\r\n")
+        f.write("  docs\\guides\\      装了怎么用 / 怎么开发 / 怎么验收 / 怎么出包\r\n")
+        f.write("  docs\\reference\\   架构与关键技术事实、性能实测\r\n")
+        f.write("  docs\\CHANGELOG.md 每个版本用户能看出来的变化\r\n")
         f.write("  03_测试夹具\\   无宿主契约测试与自测链路\r\n")
         f.write("  04_验收工具\\      一键验收 + 回归基线 + 性能 AB + 打包工具\r\n")
         f.write("  05_安装包\\        NSIS 安装包构建脚本（需本机装 NSIS）\r\n")
         f.write("  02_引擎资产\\      %s\r\n" % ("整合包自带（build/install 直接用它）" if with_engine else "不在本包内"))
-        f.write("  MANIFEST.txt      包内每个文件的 sha256\r\n")
-        f.write("  验收报告.txt      本次交付的验收结论（逐条 PASS/FAIL）\r\n")
-        f.write("  开发指南.md       开发与维护入口（5 步工作流 / 目录地图 / 硬约束）\r\n")
-        f.write("  开发文档.md       架构 / 关键技术事实 / 调试排错（算法数值结论）\r\n\r\n")
+        f.write("  MANIFEST.txt      包内每个文件的 sha256\r\n\r\n")
         f.write("【注意】\r\n")
         f.write("  - 插件 ID com.nama.davinci.beauty 不要改：Resolve 按 ID 找效果，\r\n")
         f.write("    改了历史工程里已挂的效果会失效。\r\n")
-        f.write("  - 03/04/05 三个历史遗留目录未进本包（与当前插件主线无关）。\r\n")
+        f.write("  - 分发时 LICENSE 与 THIRD-PARTY-NOTICES.md 必须一起给出（GPL-2.0-only）。\r\n")
 
     # ---- 清单 ----
     lines = []

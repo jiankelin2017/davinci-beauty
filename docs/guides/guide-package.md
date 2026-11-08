@@ -1,8 +1,10 @@
 # DaVinci Beauty 一键安装包
 
+> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：未登记 ｜ 替代文档：原 `05_安装包/README.md`
+
 达芬奇 DaVinci Resolve 的 DaVinci Beauty 美颜 OpenFX 插件 —— 一键安装 / 一键卸载。
 
-> **插件当前构建：1.3.5.0（2026-11-08）**；当前正式安装包是 `build\DaVinciBeauty_Setup_v1.3.5.0.exe`（4.6 MB，md5 `500f7b1754977decbaa54aee61c04a82`，2026-11-08 出包，已静默装测通过：装后 DLL md5 `2299c3280ced27814016e26df3b35792`，17 个 `.bak-*` 未被覆盖）。`DaVinciBeauty_Setup_v1.1.1.4.exe` 及更早的是**历史产物**，不要用它们覆盖当前装机。要重出安装包请跑 `python build_nsis.py`（版本取自 `src\nama_engine.h` 的 `NAMA_BUILD_STR`）；沙箱包用 `--sandbox`（注意：沙箱包在 Resolve 上仍加载失败，见 `01_ofx插件源码/性能方案.md` 第十九节，暂不交付）。安装包内含 `LICENSE` 与 `THIRD-PARTY-NOTICES.md`。下文出现的 v3.0.9 等是旧口径（三段式）历史记录，四段式对照表见 `01_ofx插件源码/PROGRESS.md`。
+> **插件当前构建：1.3.5.0（2026-11-08）**；当前正式安装包是 `build\DaVinciBeauty_Setup_v1.3.5.0.exe`（4.6 MB，md5 `500f7b1754977decbaa54aee61c04a82`，2026-11-08 出包，已静默装测通过：装后 DLL md5 `2299c3280ced27814016e26df3b35792`，17 个 `.bak-*` 未被覆盖）。`DaVinciBeauty_Setup_v1.1.1.4.exe` 及更早的是**历史产物**，不要用它们覆盖当前装机。要重出安装包请跑 `python build_nsis.py`（版本取自 `src\nama_engine.h` 的 `NAMA_BUILD_STR`）；沙箱包用 `--sandbox`（注意：沙箱包在 Resolve 上仍加载失败，见 `docs/reference/reference-performance.md` 第十九节，暂不交付）。安装包内含 `LICENSE` 与 `THIRD-PARTY-NOTICES.md`。版本号口径只有一个（四段式），历史编号已退役，需要看演进见 `docs/CHANGELOG.md`。
 
 ## 交付物
 

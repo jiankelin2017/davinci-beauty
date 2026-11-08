@@ -1,5 +1,7 @@
 # DaVinci Beauty —— 性能方案与实测账
 
+> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：未登记 ｜ 替代文档：原 `01_ofx插件源码/性能方案.md`
+
 > 2026-11-08 建立。目的：把「一核渲染」这件事量化清楚，并记录优化项与验证判据。
 > 数据来源：`C:\ProgramData\DaVinciBeauty\logs\ofx.log`（582 帧真机）+ 离线 `NamaSelfTest` 连跑。
 
@@ -344,11 +346,12 @@ V 用滑动窗），`BEAUTY_GPU_BOX2D=1` 开关，默认关。
 - 再给 cl 也加 `/Brepro`（本次尝试）—— 两次构建仍差这 2 字节；
 - 编译器/链接器都没报 D9002 之类的"未知选项"。
 
-**结论**：这套工具链上 `/Brepro` 没有消除时间戳。影响是
-「装机产物 == 构建产物」的字节比对退化成告警（acceptance 里那条已经这么写了）。
+**结论**：这套工具链上 `/Brepro` 没有消除时间戳。
 
-**待办（15 行 PowerShell，可验证）**：构建后解析 PE，把 `e_lfanew+8` 与调试目录
-`IMAGE_DEBUG_DIRECTORY.TimeDateStamp` 两处归零写回；判据是「连续构建两次 md5 相同」。
+**后续（2026-11-08 已落地）**：文中那条「15 行 PowerShell」的待办已实装为 `build.ps1` 的 `Reset-PeTimestamp`
+—— 链接后直接解析 PE、把 COFF 与 `IMAGE_DEBUG_DIRECTORY` 两个 `TimeDateStamp` 清零。实测同源码重编两次
+md5 恒定（`2299c328…`）。因此「装机产物 == 构建产物」的字节比对**已从告警升级为硬判据**，
+acceptance 里那条现在会真红。别再引用本节旧结论说「只能判行为」。
 
 ## 十八、沙箱插件标识：查到最后一环，仍未解开
 

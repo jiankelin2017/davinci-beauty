@@ -25,7 +25,7 @@
     终端报告 + <目录>/analysis_<seq>.png（原图 + 掩码红叠 + 变化框）
               <目录>/analysis_<seq>_diff.png（变化幅度热图，8 倍增益）
 
-判读对照（配合 PROGRESS.md 1.1.2.1 节）：
+判读对照（配合 docs/history/history-progress-1x.md 的 1.1.2.1 节）：
     src 有饱和 + R>G>B  → 那块是真皮肤，修法是加长脖子带下缘羽化
     src 接近中性灰/米色 → 那块被误判成肤色，修法是把脖子从色调里剔除
 """

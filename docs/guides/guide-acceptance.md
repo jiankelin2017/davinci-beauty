@@ -1,5 +1,7 @@
 # 04_验收工具
 
+> 适用代码版本：1.3.5.0 ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：未登记 ｜ 替代文档：原 `04_验收工具/README.md`
+
 DaVinci Beauty 发版前的自动化验收。目标：**任何一次改动，能否发版由脚本说了算**，
 不靠"我记得跑过"。
 
@@ -22,7 +24,7 @@ python acceptance.py --report 验收报告.txt
 | 版本 | 二进制内嵌版本串 | `NamaVersion()` **只编码 MAJOR/MINOR，PATCH 位被有意丢弃**（保持对外 ABI），所以判断装的到底是哪个版本只能靠二进制里的字符串 |
 | 版本 | `NamaVersion() == (MAJOR<<16)\|MINOR` | 编码是两段各 16 位，不是每 8 位一段 |
 | 版本 | 装机产物**行为等价** | 让装机 DLL 跑同一组黄金用例，输出必须与编译 DLL 相同 |
-| 版本 | 装机产物字节比对（仅提示） | **v3.0.8 起作为硬判据**：`build.ps1` 链接加了 `/Brepro`，同源码重编逐字节相同（此前 MSVC 会写 PE 时间戳，md5 每次都变，只能判行为） |
+| 版本 | 装机产物字节比对（**硬判据**） | 构建可复现：`build.ps1` 的 `Reset-PeTimestamp` 把 COFF 与调试目录两个 `TimeDateStamp` 清零，同源码重编 md5 恒定（实测两次同为 `2299c328…`）。所以「装机的是不是刚构建的这一份」按字节判，不一致就是没跑 `install.bat`。注意 `/Brepro` 在本工具链上单独**不生效**，别把它当成可复现的原因 |
 | 参数 | 三张表长度一致 | `P_*` 枚举 / `kParams[]` / `keys[]` 三张表 |
 | 参数 | **面板名 ↔ SDK key 逐位对齐** | v2.2.3 踩过：换序时漏改 `keys[]`，后果是"拖 A 滑块、下发成 B 参数"，**编译期完全不报错**，只有回归用例的 md5 会变 |
 | 参数 | 默认档 磨皮50/美白30/红润30，其余 0 | v2.2.3 用户决策，不是默认值漂移 |
@@ -155,7 +157,7 @@ PPM/PGM 零依赖，行序已按 `imgBottomUp_` 翻正，三张同尺寸同朝�
 另出两张图：`analysis_N.png`（原图 + 掩码红叠 + 变化绿框）、
 `analysis_N_diff.png`（变化幅度热图，8 倍增益）。
 
-> 起因见 `01_ofx插件源码/PROGRESS.md` 的 1.1.2.1 节：脖子掩码改成「跟随肤色」后
+> 起因见 `docs/history/history-progress-1x.md` 的 1.1.2.1 节：脖子掩码改成「跟随肤色」后
 > 面积反而涨了 50%（`kNeckSkinMaxHalf=0.70` 比旧矩形 `0.45` 宽），且整行都判成肤色时
 > 探测顶到上限、边界退回直线。日志只有占比、没有像素，所以只能落盘看图。
 
@@ -212,10 +214,10 @@ python package.py --zip      # 额外打同名 .zip
 python package.py --no-engine  # 不带 130MB 引擎资产
 ```
 
-含源码 / 测试夹具 / 验收工具 / 05_安装包 / 引擎资产 + `安装说明.txt`
-+ `stage_engine.bat`（把引擎放回 install.bat 认的路径）+ `MANIFEST.txt`（sha256）。
+含源码 / 测试夹具 / 验收工具 / docs（文档体系）/ 05_安装包 / 引擎资产
++ `安装说明.txt`（脚本在包内生成，仓库里不留副本）+ `stage_engine.bat` + `MANIFEST.txt`（sha256）。
 
-**03/04/05 三个历史遗留目录不进包**（与当前插件主线无关）。
+**03/04/05 三个历史遗留目录与 `docs/` 都进包**；原先那句「03/04/05 不进包」与 `package.py` 的 `COPY_DIRS` 实际行为相反，2026-11-08 更正。
 
 ## 已知的噪声
 
@@ -231,6 +233,6 @@ python package.py --no-engine  # 不带 130MB 引擎资产
 3. `install.bat`
 4. `python acceptance.py --build --report 验收报告_vX.Y.Z.txt`
 5. 若有意改动了输出（不只是优化），`python baseline.py update` 重新标定，
-   并在 PROGRESS.md 写明改了什么、为什么
+   并在 docs/history/history-progress-1x.md 写明改了什么、为什么
 6. 打开 Resolve 实机确认 UI 与播放（**UI 类改动脚本测不出来，必须看截图**）
 7. 需要归档/分发：`python package.py --update --zip`
