@@ -13,11 +13,11 @@
 
 检查分组
 --------
-    版本    源码宏 / 二进制内嵌串 / NamaVersion / 装机产物是否同源
+    版本    源码宏 / 二进制内嵌串 / NamaVersion / 装机产物是否同源（字节比对为硬判据）
     参数    三张表对齐、默认值、隐藏项
-    回归    15 个用例逐字节比对黄金基线
+    回归    18 个用例逐字节比对黄金基线
     并发    parallelRows 分块守恒（线程池死锁回归，独立进程 + 看门狗）
-    接口    mock host（19 项 OFX 宿主契约）+ 自测链路
+    接口    mock host（23 项 OFX 宿主契约）+ 自测链路
     装机    bundle 完整性、残留文件
 """
 import ctypes
@@ -110,7 +110,7 @@ def read_version_macros():
         if not m:
             return None
         got[k] = int(m.group(1))
-    # REV 是可选的第四段。2026-11-06 起版本号改成四段式（见 PROGRESS.md
+    # REV 是可选的第四段。2026-11-06 起版本号改成四段式（见 docs/history/history-progress-1x.md
     # 「版本号规则 v2」）：纯文档 / 注释改动走 REV，其余三档不变。
     m = re.search(r"#define\s+NAMA_BUILD_REV\s+(\d+)", txt)
     got["REV"] = int(m.group(1)) if m else None
@@ -153,12 +153,22 @@ def check_version():
 
     if os.path.isfile(INSTALLED):
         a, b = md5file(BUILD_DLL), md5file(INSTALLED)
-        # 二进制 md5 只作信息展示，不作判据：MSVC 链接会在 PE 头写时间戳，
-        # 同一份源码重编一次 md5 就变（实测 50fea442 -> e3d64956），但输出
-        # 逐字节不变。真正该判的是「行为是否等价」，见下一项。
-        rec("版本", "装机产物字节比对", a == b,
-            "相同 %s" % a[:12] if a == b else "不同 out=%s 装机=%s（构建路径不同；/Brepro 已去掉时间戳，非缺陷）"
-            % (a[:12], b[:12]), warn=(a != b))
+        # 硬判据（2026-11-08 定）：构建可复现是成立的 —— build.ps1 的
+        # Reset-PeTimestamp 把 COFF 与 IMAGE_DEBUG_DIRECTORY 两个 TimeDateStamp
+        # 清零，实测同源码重编两次 md5 稳定为同一个值。既然能复现，
+        # 「装机的是不是刚构建出来的这一份」就该按字节判，不该只判行为。
+        #
+        # 历史上这里记 WARN，理由是「MSVC 会写链接时间戳，重编 md5 必变，
+        # 只能判行为等价」。那个理由在清零时间戳之后已不成立，属于遗留措辞。
+        # 注意：/Brepro 在本工具链上单独并不生效（见 build.ps1 注释），
+        # 别把它当成可复现的原因写在结论里。
+        if a == b:
+            detail = "相同 %s" % a[:12]
+        else:
+            detail = ("不同 out=%s 装机=%s —— 装机目录不是这次构建的产物，"
+                      "先跑 install.bat 再验收（同源码重编 md5 应恒定）"
+                      % (a[:12], b[:12]))
+        rec("版本", "装机产物字节比对", a == b, detail)
 
         # 行为等价：让装机 DLL 跑同一组黄金用例，与编译 DLL 得出相同输出。
         # 这才是「装的是不是这一版的效果」。
@@ -480,10 +490,13 @@ def check_project():
     if mv:
         ver = mv.group(1)
         # 05_安装包/ 的 README 也在内：它历史上长期停在 v1.4 无人发现。
+        # 2026-11-08 文档治理：清单随 docs/ 结构重建。原来是 5 份（含 01/README 与
+        # 01/PROGRESS，两者已分别归档、迁到 history/），现在改为「根入口 + docs 三个
+        # 当前版」——任何一份漏了版本串都说明发版时漏改文档。
         docs = [os.path.join(REPO, "README.md"), os.path.join(REPO, "说明.txt"),
-                os.path.join(REPO, "01_ofx插件源码", "README.md"),
-                os.path.join(REPO, "01_ofx插件源码", "PROGRESS.md"),
-                os.path.join(REPO, "05_安装包", "README.md")]
+                os.path.join(REPO, "docs", "INDEX.md"),
+                os.path.join(REPO, "docs", "CHANGELOG.md"),
+                os.path.join(REPO, "docs", "guides", "guide-package.md")]
         present = [d for d in docs if os.path.isfile(d)]
         stale = [os.path.basename(d) for d in present if ver not in readtext(d)]
         rec("工程", "文档版本号同步 v" + ver, not stale,

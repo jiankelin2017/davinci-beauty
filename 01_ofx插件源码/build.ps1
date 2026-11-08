@@ -103,8 +103,8 @@ if (-not (Test-Path (Join-Path $ortInclude 'onnxruntime_c_api.h'))) {
     throw "ONNX Runtime headers not found: $ortInclude"
 }
 
-# 沙箱构建：换插件标识/标签（见 src/ofx_plugin.cpp 顶部）。用 -Sandbox 开关，
-# 不再依赖环境变量 —— 环境变量在跨进程调用时不可靠，踩过一次。
+# Sandbox build: swap plugin identifier/label so the sandbox bundle cannot
+# shadow the real one (see the -Sandbox switch below).
 # Plain if/else on purpose: the `$x = if (...) {...} else {...}` form silently
 # yielded an empty string here even though $Sandbox was True.
 $sandboxDefine = ''
@@ -117,7 +117,7 @@ if (-not $sources) { throw 'No .cpp sources under src\' }
 $clArgs = @(
     '/nologo', '/O2', '/EHsc', '/MD', '/W3', '/utf-8', '/arch:AVX2', '/std:c++17',
     # NOTE: /Brepro on cl does NOT make builds reproducible on this toolchain.
-    # See PROGRESS/perf doc section 17. The two TimeDateStamp dwords are zeroed
+    # See docs/reference/reference-performance.md section 17. The two TimeDateStamp dwords are zeroed
     # after linking instead (see Reset-PeTimestamp below).
     '/Brepro',
     "/Fo$obj\", "/Fe$(Join-Path $out 'DaVinciBeauty.ofx')", '/LD',
@@ -129,10 +129,10 @@ $clArgs = @(
     '/I', (Join-Path $root 'sdk\include'),
     '/I', $ortInclude
 ) + $sources + @(
-    # /Brepro: reproducible PE (no link timestamp). Without it every rebuild gets a
-    # new md5 even from identical sources, which makes "installed == built" a
-    # behaviour-only check and keeps stale md5s in the docs. With it, rebuilds are
-    # byte-identical and acceptance can compare bytes honestly.
+    # /Brepro is NOT what makes builds reproducible here -- on this toolchain it
+    # alone still leaves two TimeDateStamp dwords differing between builds (see
+    # the note above and Reset-PeTimestamp below). Reproducibility comes from
+    # zeroing those dwords after linking. Kept for intent/consistency only.
     #
     # d3d11/dxgi/d3dcompiler: GPU capability probe + bandwidth calibration.
     # advapi32: registry read for CPU base clock (diagnostics only).
@@ -161,7 +161,7 @@ if ($LASTEXITCODE -ne 0) { throw "[FAILED] cl.exe exited $LASTEXITCODE" }
 
 $dll = Join-Path $out 'DaVinciBeauty.ofx'
 
-# ---- Normalize PE timestamps (see PROGRESS/perf doc, section 17) ------------
+# ---- Normalize PE timestamps (see docs/reference/reference-performance.md s17) ----
 # /Brepro does not work on this toolchain (neither on cl nor on link): two builds
 # from identical sources differ by exactly two dwords -- COFF TimeDateStamp and
 # IMAGE_DEBUG_DIRECTORY.TimeDateStamp. Zero both here so builds are reproducible.
