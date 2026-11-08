@@ -684,8 +684,51 @@ void toneColor(unsigned char* dst, int w, int h,
                 }
             }
         };
-        box2(kToneWeightRadius, &wbuf[0]);        // 长斜坡
-        box2(3, &wsmall[0]);                      // 内外门控
+        // 1.3.0：两遍盒式均值改成并行（按行切 H 遍、按列切 V 遍）。
+        // 实测 1080p 的 ROI 上这一段串行要 2~3 ms，占了色调段的一半以上。
+        {
+            int nth = (threads > 0) ? threads : (int)std::thread::hardware_concurrency();
+            if (nth > 16) nth = 16;
+            // wtmp 是 thread_local：**必须在本线程取好指针再并行**，
+            // 否则工作线程拿到的是各自那份未 resize 的副本（实测直接 AV 崩溃）。
+            unsigned char* const wtp = &wtmp[0];
+            auto box2p = [&](int R, unsigned char* out) {
+                // 横向：每行独立
+                auto hRow = [&](int yb, int ye) {
+                    for (int yy = yb; yy < ye; yy++) {
+                        const unsigned char* src = mask + (size_t)(roi.y0 + yy) * w + roi.x0;
+                        unsigned char* o = wtp + (size_t)yy * bw;
+                        int sum = 0, cnt = 0;
+                        for (int x = 0; x <= R && x < bw; x++) { sum += src[x]; cnt++; }
+                        for (int x = 0; x < bw; x++) {
+                            o[x] = (unsigned char)(sum / cnt);
+                            const int add = x + R + 1, sub = x - R;
+                            if (add < bw) { sum += src[add]; cnt++; }
+                            if (sub >= 0) { sum -= src[sub]; cnt--; }
+                        }
+                    }
+                };
+                if (nth > 1 && bh >= 64) beautycore::parallelRows(0, bh, nth, hRow);
+                else hRow(0, bh);
+                // 竖向：每列独立（把 x 当遍历轴交给池子）
+                auto vCol = [&](int xb, int xe) {
+                    for (int xx = xb; xx < xe; xx++) {
+                        int sum = 0, cnt = 0;
+                        for (int y = 0; y <= R && y < bh; y++) { sum += wtp[(size_t)y * bw + xx]; cnt++; }
+                        for (int y = 0; y < bh; y++) {
+                            out[(size_t)y * bw + xx] = (unsigned char)(sum / cnt);
+                            const int add = y + R + 1, sub = y - R;
+                            if (add < bh) { sum += wtp[(size_t)add * bw + xx]; cnt++; }
+                            if (sub >= 0) { sum -= wtp[(size_t)sub * bw + xx]; cnt--; }
+                        }
+                    }
+                };
+                if (nth > 1 && bw >= 64) beautycore::parallelRows(0, bw, nth, vCol);
+                else vCol(0, bw);
+            };
+            box2p(kToneWeightRadius, &wbuf[0]);
+            box2p(3, &wsmall[0]);
+        }
         for (size_t i = 0; i < n; i++) {
             int gate = (int)wsmall[i] * 4;        // 64 以上算「在皮肤里面」
             if (gate > 255) gate = 255;

@@ -2,7 +2,7 @@
 
 达芬奇 DaVinci Resolve 的 DaVinci Beauty 美颜 OpenFX 插件 —— 一键安装 / 一键卸载。
 
-> **插件当前构建：1.2.9.0（2026-11-08）**；`build\` 里的 `DaVinciBeauty_Setup_v1.1.1.4.exe` 是**历史产物**（4.6 MB）。1.1.2.0 起的各版都只替换 DLL 交付，未重打安装包，**不要用旧包覆盖当前装机**；要出当前版的安装包请跑 `python build_nsis.py`（版本取自 `src\nama_engine.h` 的 `NAMA_BUILD_STR`）。安装包内含 `LICENSE` 与 `THIRD-PARTY-NOTICES.md`。下文出现的 v3.0.9 等是旧口径（三段式）历史记录，四段式对照表见 `01_ofx插件源码/PROGRESS.md`。
+> **插件当前构建：1.3.1.0（2026-11-08）**；`build\` 里的 `DaVinciBeauty_Setup_v1.1.1.4.exe` 是**历史产物**（4.6 MB）。1.1.2.0 起的各版都只替换 DLL 交付，未重打安装包，**不要用旧包覆盖当前装机**；要出当前版的安装包请跑 `python build_nsis.py`（版本取自 `src\nama_engine.h` 的 `NAMA_BUILD_STR`）。安装包内含 `LICENSE` 与 `THIRD-PARTY-NOTICES.md`。下文出现的 v3.0.9 等是旧口径（三段式）历史记录，四段式对照表见 `01_ofx插件源码/PROGRESS.md`。
 
 ## 交付物
 
