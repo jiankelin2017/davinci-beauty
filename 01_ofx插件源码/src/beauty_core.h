@@ -2,18 +2,18 @@
 // ---------------------------------------------------------------------------
 // beauty_core —— 美颜引擎抽象层
 //
-// 目的：把「谁来做美颜」从 上一代宿主 胶水层里解耦出去。
+// 目的：把「谁来做美颜」从插件胶水层里解耦出去。
 //
-//   上一代宿主的插件实现 ──>  IBeautyEngine  ──>  CoreEngine        （默认：自研）
-//                                       └─>  LegacyAdapter       （回退：参考实现驱动，仅离线基准）
-//                                       └─>  PassthroughEngine （验证用直通）
+//   插件（OFX 层） ──>  IBeautyEngine ──>  CoreEngine         （默认：自研）
+//                                     ├─>  PassthroughEngine  （验证用直通）
+//                                     └─>  legacy 链路        （仅离线基准 DLL 编译）
 //
-// 接口严格按 LegacyEngine 的现有用法设计（RGBA 进 / RGBA 出 + BeautySettings +
-// 每实例 slot），所以替换实现时 上一代宿主 侧不需要懂任何引擎内部细节。
+// 接口按「RGBA 进 / RGBA 出 + BeautySettings + 每实例 slot」设计，所以替换实现时
+// 插件侧不需要懂任何引擎内部细节。
 //
 // 选择方式（进程内只解析一次）：
 //   * 不设 / 未知值 → CoreEngine（3.1.7 起的默认）
-//   * BEAUTY_ENGINE_IMPL=legacy       → LegacyAdapter（仅离线基准 DLL 编译）
+//   * BEAUTY_ENGINE_IMPL=legacy       → legacy 链路（仅离线基准 DLL 编译）
 //   * BEAUTY_ENGINE_IMPL=core         → CoreEngine（显式写出来，便于脚本自证）
 //   * BEAUTY_ENGINE_IMPL=passthrough  → 直通，用于验证开关与降级
 //
@@ -29,7 +29,7 @@
 // ---------------------------------------------------------------------------
 // 引擎接口
 //
-// 方法语义与 LegacyEngine 的同名方法一一对应，注释见 legacy_engine.h。
+// 方法语义与已移除的旧版引擎同名方法一一对应（旧版实现见 git 历史）。
 // 这里只说明接口层面的差异与约定：
 //   * process() 允许 src == dst；实现方必须自己准备输出暂存缓冲。
 //   * acquireSlot()/releaseSlot() 保持「每实例一个上下文」的模型。自研引擎
@@ -109,16 +109,17 @@ void beautyCoreSetSmoothParams(int radius, float sigmaSpace,
 void beautyCoreSetPerf(int threads, int useRoi);
 
 // Sobel 边缘门控灵敏度（仅供离线调参）。0 = 关闭。
-// 灵敏度系数取自 wuxiwuhen/obs-beauty-filter（MIT）的 PSComposite，原值 ×10.0。
+// 灵敏度口径来自一份 MIT 许可的公开实现（PSComposite），原值 ×10.0；
+// 出处与许可条款见 THIRD-PARTY-NOTICES.md 第 4 节。
 // 门控会在「亮度梯度大」的地方（眉毛、眼镜框、发际线）取消磨皮。
 void beautyCoreSetEdgeK(int k);
 
 // 五官保护强度 0..100（仅供离线调参）。0 = 关闭。
-// 眼睛和嘴巴上的磨皮会乘 (1 - protect × k/100)，做法同 lumina 的 uSmoothProtect。
+// 眼睛和嘴巴上的磨皮会乘 (1 - protect × k/100)，做法同该实现的 uSmoothProtect。
 void beautyCoreSetProtectK(int k);
 
 // 阈值软膝（立体感）0..255，0 = 关闭。|src-smoothed| 超过它会按比例减少磨皮，
-// 从而保住鼻梁侧、下颌线这类大幅度的明暗过渡。做法同 lumina 的 uSmoothThreshold。
+// 从而保住鼻梁侧、下颌线这类大幅度的明暗过渡。做法同该实现的 uSmoothThreshold。
 void beautyCoreSetLimitThr(int thr);
 
 // 磨皮算法切换（离线 A/B 用）：
@@ -163,8 +164,8 @@ int beautyCoreAlignStat(uint64_t* used, uint64_t* total);
 
 // 掩码导出（仅供离线对拍）
 //
-// 为什么要这个：自研引擎只磨「肤色 ∩ 人脸框」那 5% 左右，而 参考实现的改动区有
-// 13%（含脖子/肩）。拿参考实现改动区当分母去算细节保留率，会把「只磨了脸」读成
+// 为什么要这个：自研引擎只磨「肤色 ∩ 人脸框」那 5% 左右，而参考版的改动区有
+// 13%（含脖子/肩）。拿参考版改动区当分母去算细节保留率，会把「只磨了脸」读成
 // 「几乎没磨」（保留率 99%）。对拍的分母必须是**自研掩码本身**。
 //
 // src   RGBA8（w*h*4），会被强制重算一次掩码（不吃缓存）
@@ -190,7 +191,7 @@ bool beautyCoreSkinAnnounce();
 bool beautyCoreComputeMask(const unsigned char* src, int w, int h,
                            unsigned char* outMask);
 //
-//   legacy      LegacyAdapter（仅离线基准 DLL） —— 与本次改动前逐位相同的行为
+//   legacy      旧版适配层（仅离线基准 DLL） —— 与本次改动前逐位相同的行为
 //   passthrough          直通，用于验证开关与降级
 //   core                 自研引擎（T2 的落点，已实现磨皮）
 //

@@ -68,7 +68,7 @@ struct BeautyHwInfo {
     int  gpuFeatureLevel = 0;      // 0xB100 = FL11_1
     bool gpuIsDiscrete   = false;
     bool gpuCs50Ok       = false;  // CS 5.0 可创建
-    bool gpuTypedUav16F  = false;  // 16F 能否做 typed UAV **读**（OBS 踩坑点）
+    bool gpuTypedUav16F  = false;  // 16F 能否做 typed UAV **读**（同款卡的已知坑）
     bool gpuTypedUav32F  = false;
     bool gpuStagingOk    = false;  // STAGING + CPU_ACCESS_READ 可用
 

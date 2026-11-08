@@ -43,7 +43,7 @@ BUILD_DLL = os.environ.get("NAMA_OFX_DLL", BUILD)
 PY = sys.executable
 
 # 装机 bundle 里必须存在的引擎资产（缺一个插件就起不来）
-# 自研引擎（上一代宿主 CoreEngine + ONNX 人脸检测模型）只需要 ONNX Runtime 与本地人脸模型，
+# 自研引擎（CoreEngine + ONNX 人脸检测模型）只需要 ONNX Runtime 与本地人脸模型，
 # 不再依赖任何闭源 SDK。
 REQUIRED_ASSETS = [
     "onnxruntime.dll", "yunet.onnx",

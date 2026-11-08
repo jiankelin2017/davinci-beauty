@@ -110,7 +110,7 @@ public:
         for (size_t i = 0; i < th_.size(); i++)
             if (th_[i].joinable()) th_[i].join();
         th_.clear();
-        // quit_ 复位：池是进程级单例，插件被卸载再加载（上一代宿主 热重载场景）后
+        // quit_ 复位：池是进程级单例，插件被卸载再加载（旧宿主热重载场景）后
         // 还要能重新建线程。不清零的话新 worker 一进循环就看到 quit_，立刻退出，
         // 而 run() 又永远等不到块被执行 —— 死锁。
         std::lock_guard<std::mutex> lk(m_);

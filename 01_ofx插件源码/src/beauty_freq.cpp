@@ -162,7 +162,7 @@ void freqComposite(const unsigned char* src, const unsigned char* low,
                 int d1 = (int)src[o + 1] - (int)low[o + 1];
                 int d2 = (int)src[o + 2] - (int)low[o + 2];
 
-                // 颗粒回填（lumina 的 smoothGrain）。
+                // 颗粒回填（该实现的 smoothGrain）。
                 // 双边迭代会留下"阶梯感"——平坦区被压成平台，平台之间出现新台阶，
                 // 实测「小幅度高频」反而从 105% 涨到 113%。做法是把 4 邻域尺度的
                 // 极细颗粒从要磨掉的量里扣回来：(src-low) - (src-around)*grain。
@@ -370,7 +370,7 @@ void highLowSmooth(const unsigned char* src, unsigned char* dst,
     // 与上面两条路线的根本差别：低频层**不保边**。边缘处 (src − low) 幅度自然变大，
     // 由后面的幅度门控统一拦住；而痘印/鼻翼阴影/唇纹幅度中等，会被削掉。
     // 之前「双边保边 + 门控保边」两道叠在一起，等于把瑕疵也一起放过了 —— 实测
-    // 脸颊细纹理只削 14%，参考实现削 37%（C14）。
+    // 脸颊细纹理只削 14%，参考版削 37%（C14）。
     if (p.lowPath == 3) {
         BoxLowParams bp;
         bp.radius = (p.boxRadius > 0) ? p.boxRadius : 4;
@@ -462,10 +462,10 @@ void highLowSmooth(const unsigned char* src, unsigned char* dst,
 namespace beautycore {
 
 // ---------------------------------------------------------------------------
-// 清晰 / 美白 / 红润：照抄原生 参考实现的逐通道传递函数（2026-10-30）
+// 清晰 / 美白 / 红润：照抄原生参考版的逐通道传递函数（2026-10-30）
 // ---------------------------------------------------------------------------
 // 数据来源：06_离线验证\全项对齐_20261030\tone_curve.py
-//   把 panel 全置 0，用 BEAUTY_EXTRA_PARAMS_FILE 直接下发单个参考实现参数
+//   把 panel 全置 0，用 BEAUTY_EXTRA_PARAMS_FILE 直接下发单个参考版参数
 //   （绕开本工程 3.x 用 CPU 顶替的那几项），在 3 张真机帧的肤色掩码内
 //   按输入灰阶分箱统计输出。箱内 σ：clarity 0.08~0.27、color_level
 //   0.36~1.24、red_level 0.73 —— 只有零点几灰阶，说明它们是**纯颜色变换**。
@@ -798,7 +798,7 @@ void toneColor(unsigned char* dst, int w, int h,
                 float g = (float)dst[o + 1];
                 float b = (float)dst[o + 2];
 
-                // 顺序：清晰 → 美白 → 红润。参考实现侧没取到三段的确切顺序，
+                // 顺序：清晰 → 美白 → 红润。参考版侧没取到三段的确切顺序，
                 // 这个顺序保证「清晰抬对比不会把美白抬亮压平」（先结构后提亮）。
                 if (doClar) {
                     r += (lc.at(kClarityLut5, 0, r) - r) * sk;

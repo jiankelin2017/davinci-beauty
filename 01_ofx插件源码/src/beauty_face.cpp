@@ -30,7 +30,7 @@ namespace {
 const int kDefaultInputSize = 640;
 
 // 推理线程数。YuNet 640x640 单线程约 15 ms，是整条链最贵的一步；
-// 给 2 个线程就能砍掉近一半，且不会把 上一代宿主 的编码线程挤掉（编码通常占 4~6 核）。
+// 给 2 个线程就能砍掉近一半，且不会把旧宿主的编码线程挤掉（编码通常占 4~6 核）。
 const int kInferThreads = 2;
 const int kStrides[3] = {8, 16, 32};
 
@@ -82,7 +82,7 @@ bool dbgWrite(const char* name, const void* data, size_t bytes) {
 
 // 等比缩放 + 居中 letterbox 到 640x640。
 //
-// 为什么不用直接拉伸：上一代宿主 的视频帧多是 16:9，直接拉成正方形会把脸横向压扁
+// 为什么不用直接拉伸：旧宿主的视频帧多是 16:9，直接拉成正方形会把脸横向压扁
 // （变形 1.8 倍），YuNet 的长宽比先验会被破坏。letterbox 保持比例，代价是黑边，
 // 与 OpenCV FaceDetectorYN 的默认行为也一致，便于用 cv2 当真值校准。
 //

@@ -1,7 +1,7 @@
 # 文件清单（SHA256）
-# 生成时间: 2026-11-08 19:07 CST
+# 生成时间: 2026-11-08 19:22 CST
 # 由 gen_filelist.py 生成；收录规则见脚本头部注释。
-# 文件数: 172  合计: 3623.8 KB
+# 文件数: 172  合计: 3606.0 KB
 
 8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992         9  .gitattributes
 867677244ae07ae391937829ff7887aaca2446b0d072f8e57ee648f3abfb32c0      3243  .gitignore
@@ -29,38 +29,38 @@ b86e4256d2392394f977c570e6ce14d0f836840ecab4c0cca98a1553cd9dde5b      1356  01_o
 b3340b71499571ff55ec05260209dab3311b30b4adc7a04e82df9f2c913e0929     11110  01_ofx插件源码/sdk/include/ofxProperty.h
 c36cded0c96c26797092e1574808806af4428b3560b589e6edc54eae2562182a      2802  01_ofx插件源码/sdk/include/ofxTimeLine.h
 787cc56f7760070c4c4ea32f62bbc588bdcae1f073d8d96e74d63d765485b816      1154  01_ofx插件源码/src/beauty_build.h
-a2ad98af85634ac193b560352462f67f035e3251295e16be499d09ef7d936f18    272980  01_ofx插件源码/src/beauty_core.cpp
-770bc95c21d1baf7d40ebaaa1e00895990315102b4f68bc8864a0edf3aacfb05     11752  01_ofx插件源码/src/beauty_core.h
+9fd2609cb387b6b5c5276812febc744a72939f18e37b4efe465e93601548b41e    272845  01_ofx插件源码/src/beauty_core.cpp
+61f15f4601f9dce8b07e9b8bf6277cebb71b81529bd6c36ab36e7eb318300691     11733  01_ofx插件源码/src/beauty_core.h
 dc5888235ce564b3191f2190eddc0c9919040aefc0099259569aeb781741a19c      3522  01_ofx插件源码/src/beauty_engine_glue.cpp
-c3547573bc5a7d4eb52e001f70cbb3b8604e76b0e86391388bcf18192e5d7ce8     17673  01_ofx插件源码/src/beauty_face.cpp
-6ce0fd173b8493f2e7eb9f7594028140c49d70b55a1d666da22cc70e31331f58      5755  01_ofx插件源码/src/beauty_face.h
-167792fc2422670f44d0ef5c5709fb3b9b92e4ba2282782d72556df4ea162050     40967  01_ofx插件源码/src/beauty_freq.cpp
-0ecd8abe2e143596afa11c5c2a289a3eee772103ea8430cbde40aa74d654580c      8169  01_ofx插件源码/src/beauty_freq.h
+59469a502edf1bcdd8bc15d2e683f9f34b3024a84a494a83977c5f70d038962d     17658  01_ofx插件源码/src/beauty_face.cpp
+26c4b9c8b58e6c795407f8753e70e730877475353460483883e0afcd3178e5f4      5737  01_ofx插件源码/src/beauty_face.h
+fd4d4b13898a449dca4a25d420ff579fe63ce0cee18efe7971c006985cfeb69e     40956  01_ofx插件源码/src/beauty_freq.cpp
+46094dabdd16736460a12e9ae9f461b21a449d36fd80d866d1c3a990b550a353      8160  01_ofx插件源码/src/beauty_freq.h
 264141b204f91a1fd5d41c128de9a0b473520a5b247ebd17e136824961f9fb9f      7782  01_ofx插件源码/src/beauty_guide.cpp
 ef5e2c46703b6bab4e59488f6564a183f3d4b0ec52aff03b6010fbdc4d11e046      1843  01_ofx插件源码/src/beauty_guide.h
-55b9ea935a0e4607ae32f1fc22d73f112782304f86a8bfcfea1fe2e4a2d5b2eb     34819  01_ofx插件源码/src/beauty_hwprobe.cpp
-1ab62828d039bc4ad4859b6b2fe9d6689aa27b46c161dfda71eaad83188ecff8      6565  01_ofx插件源码/src/beauty_hwprobe.h
+a3c895c6ed70c5b98bb28ba915b259e98031b7035514c070584c2c0a19ec7c59     34830  01_ofx插件源码/src/beauty_hwprobe.cpp
+202e4681269eb54f43bb77d088d6d5398f61c961ccdf941e20fe914aedfe1160      6573  01_ofx插件源码/src/beauty_hwprobe.h
 675c4084818b44ae15dcb1e1a5a14617ce5aad0a632e21596da72e3d5500c3da       617  01_ofx插件源码/src/beauty_log.cpp
-8ad5311da9ba261f0cfb81c944432543969155d0c809d8edd1d17af0737412db      1171  01_ofx插件源码/src/beauty_log.h
-7e0afbcbeaa249adb5cc7fd63f32b3d37665faeb19f0619e9b28ba35ddd7c643     13719  01_ofx插件源码/src/beauty_onnx.cpp
+0ff474ffb9ed8e5de50ea1ec4dede1d6bd64362d74ad0b43add665c1eff0d955      1141  01_ofx插件源码/src/beauty_log.h
+b7dbc6d0400032d157a527a192bbb7ea481c38a5d75634adee7822273ac17c28     13713  01_ofx插件源码/src/beauty_onnx.cpp
 15cba48fe42247b4d271befebda7f6f436fe9d35b686b432d09e8c04f18a887a      3286  01_ofx插件源码/src/beauty_onnx.h
-5df32a781668e750ba75315aeaa506f9d979208e7b50debbbd6e819d736d49e8     28165  01_ofx插件源码/src/beauty_params.h
-078a61783b0555d1ec8365b4f5f61754cac9dcfff3085793b9e016dde20b914e      7768  01_ofx插件源码/src/beauty_pool.cpp
+8c27257061d4e855e96587099148949235c7ace9eca5a8a78cedc31f1a67be41      5427  01_ofx插件源码/src/beauty_params.h
+b59645492a5461ce8712f6d8eb597da8dea63aab2ff54b93b591c2c74def152c      7761  01_ofx插件源码/src/beauty_pool.cpp
 cf1cce0d3fea2006e50e65cfa5e46e601f3c1e106d8ba41cf2d50e5b3be49e70      2078  01_ofx插件源码/src/beauty_pool.h
-67649941a18d72ff23f5b81767abf2a40ed97db23fa6442482d91ebc72532daf     19571  01_ofx插件源码/src/beauty_region.cpp
-7fc4208dc2906ffa5789a3d808897a852438a57069f242c26de46b1c30c54ccd      6445  01_ofx插件源码/src/beauty_region.h
-92272dabce27b598fb9c248881ac75d7d4845c5e2c583d53873f9cb4c2a42ee8     78787  01_ofx插件源码/src/beauty_smooth.cpp
-b3121bd8531ddfe6010316385882a40c900ce889d847b1ec1b184faa676b72ac     23853  01_ofx插件源码/src/beauty_smooth.h
+60d59be9623e48f8ef7ebebff58fb3dd511ee21b24e3b2fa3003b45669f55af6     19561  01_ofx插件源码/src/beauty_region.cpp
+0328c7818364816b1cbb9c15f7828c2473493e34b33dcdd1dc9ba38c1d7f05fb      6442  01_ofx插件源码/src/beauty_region.h
+6fb373f8cf830c1805155712424c3ac1371ad0312eba41d54f2a860d1063465f     78760  01_ofx插件源码/src/beauty_smooth.cpp
+4b374d33f557e56767eef5740831859b29de3e134db610bdf08cd76d08839a3a     23827  01_ofx插件源码/src/beauty_smooth.h
 f75d55ccf7ada9069aa7149baea7927395014bea3d1ae38116b2bd78d11d7fa0     13567  01_ofx插件源码/src/beauty_warp.cpp
-59d7efaaabd2ef0cf38ed602557a7e0a009192ffa06d06273ef75b80bb44ca17      2860  01_ofx插件源码/src/beauty_warp.h
+453921585493330902c1c90d09ee525a5a24a5faf99dafb063ab1d5e78970248      2867  01_ofx插件源码/src/beauty_warp.h
 2b137a28b95dc371ba69db63efb65bf04e811d2f43221aa58a5f038b0ab9798b      2823  01_ofx插件源码/src/core_glue.h
-6e4d4d5b20dead8319b25a9939e68d7f7a7861f235bd4f280fbadfaaaa148099     19205  01_ofx插件源码/src/gpu_beauty.cpp
-e31c4e03617b91ae8e4435a284dfbc6d02814b09ae8633a2505e25a2b95b71cf      4466  01_ofx插件源码/src/gpu_beauty.h
+d0e0dbe24a82d5ce23beeb18dd794efa92a979538fdc77910d126d3c7f998bd9     19202  01_ofx插件源码/src/gpu_beauty.cpp
+8f6352cc9b394e9239c572a6911995789270fbb4278e7d73834d308c74c3a380      4468  01_ofx插件源码/src/gpu_beauty.h
 e6ab76c363b5e78fff088db31071d1b843947e50e4fc9b363a3ec6b20f00d271     79262  01_ofx插件源码/src/gpu_smooth.cpp
 96d8da8b8c2500c01d4cdd56c95010fd1fcafd42238c1b92f93b49fd2d80e0a2     10250  01_ofx插件源码/src/gpu_smooth.h
-e801b40d2e7ad6aa23a0c6b65c4226af33280b564b42ad1ab1ca49a0dc4f81df     14160  01_ofx插件源码/src/nama_engine.cpp
-5873ea539267cbe70e141e62969d432242fb45f5998a9150fc11e92be0a4da48     11995  01_ofx插件源码/src/nama_engine.h
-56e82faff51dcc403474cafc8f31673b169bfc1a6512d8b376d304c1d3e1ed53     96734  01_ofx插件源码/src/ofx_plugin.cpp
+740b48aed4331b4b647dce345f4ea9c889b67bd4bf3ead890131f0bc8e28b07e     14154  01_ofx插件源码/src/nama_engine.cpp
+9bae6f7d5844a32059d48f50c5d8704f7ec6c55db201fe75b4d4beba8495cb3a     11957  01_ofx插件源码/src/nama_engine.h
+97fb7040538b3810c7ad1f422c69a49ad2b30c3802f8df0acac58d01b1b9b4d6     96651  01_ofx插件源码/src/ofx_plugin.cpp
 465d8120263302bede94569b681a06efddbd01771b17dddbcf6553b353d271b7        48  01_ofx插件源码/以管理员身份运行
 bfc5c287da21d8c54b84f4b7f80798dbe5c0403f3d34d3d43efd363b44572a3a      1316  02_引擎资产/stage.bat
 54d7d1d5935d6d54ee5b6dc2c1a17574ebcbb63d283075c202785a7719ef9e05      4544  03_测试夹具/RUNS.md
@@ -86,7 +86,7 @@ ffe6418c11d6c45c3817b8f0bd6c615bcc20b853cfc2b1e3fbbe8bea482b2f1b     40447  03_�
 a098ebe7a1259ef9a670bd81e5d325769162399d96b76324caa00e48d02acea8       283  03_测试夹具/job_cn.json
 1d70a26191ab85375c6a78910e4e203a7c7056bdf2aa6e833cb197f537fa2584       288  03_测试夹具/luacheck.lua
 2d4d564810f9269edf1d45a19cc8c2bc636d9f74c5d82e89c054ed434d93905f      1814  03_测试夹具/make_probe_frame.py
-438cd8058d1970387a264bc1121f3d0251c5cb2d82dd5dd4e19748219d23bf4d     83799  03_测试夹具/mock_host.py
+d497e1490e5f8045389c3b5a9370241ac5773d944454e353fd1410c3986dfdaa     83799  03_测试夹具/mock_host.py
 219953a19e420f741676e635676c64a2c963d2c4fc5d3af84d49e77743e25778      6486  03_测试夹具/probe_ab.py
 4177ad64c30577d669b070275a1947c117581ddfa3b7c5a5015cea6b0f3209b3     13300  03_测试夹具/probe_blur_region.py
 ed589be1d42dcc435e9d700da94a74625563ec002929110aba7daef306de28a2      2392  03_测试夹具/probe_bundle_strings.py
@@ -117,7 +117,7 @@ ccc9483f6392ed9a4037b00425c0cd8a8342ba9119d1ab40e4274c7368629994      5810  03_�
 edf82144f2750ab01e9bba6cf571c04269fdddd7e468d5e1b0d1e8c2ad863826     10591  03_测试夹具/sweep_v2.py
 4307b5b898808e2e73f9e8f8ba1c16bd2f476fb162a3998821d1c58bbaf6adc9     12425  03_测试夹具/sweep_whiten.py
 5742fceb9a4f8b09d0aa75c1cff137db5a689f59aab53a53478ffee936254bf1      2220  03_测试夹具/test_harness.py
-0c3b14b6f6b0554901ea621ea87721371bd676ad37caa3d5eb3fd5cb582781f5     29667  04_验收工具/acceptance.py
+13f2cd89d463f259e04c662bdc69bd609165e9ab18755c1d6f081391115407d3     29651  04_验收工具/acceptance.py
 c0dae2703553f994eb373c1309f87df3f9d1aeaf9fad0be0f94a3aba6a8ed9be     17132  04_验收工具/baseline.py
 ed63b9403e0b7d8db173336c3a32b50bfaf27cdf82324877fc0247f707bc2236      1229  04_验收工具/baseline_manifest.txt
 ec9581d6dc98cb415f615e57dbf649478fe6c442ea901c1e635acc0769c12115      6308  04_验收工具/cleanup.py
@@ -137,7 +137,7 @@ c79eccc876507b5a36b7387f080626d253a9de85cf36a54ab3a9b8682ccae92b      5790  04_�
 2b8ff574943ea54b78b05aa842b1abfcf890184c59e74bc4646798602bf3998b      5387  05_安装包/验证沙箱安装.bat
 edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6     17984  LICENSE
 65475509be633207c714dfba210e60e39c2663a03eb7e562ad6c5d7ebc1424ad      4670  README.md
-862cbbef5ba3d983f2081d8349f72615e569138b9efa1c58197a8b8b9276542d      7972  THIRD-PARTY-NOTICES.md
+da95802a8250da23de10108cab224aacdb3b00d811ce82a981e446a34e337e17      9127  THIRD-PARTY-NOTICES.md
 ea63268e48a5a5d4b1bbeafba772a340c6f56a717d6cc625aebd19dc6d09232f     15564  _p1bench/d3d11_transfer_bench.cpp
 84411e30ad790d061b73b1b38eba65a79ba1b00f529d955065905d9e5f316715      4326  _p1bench/gpu_pipe_test.cpp
 ac92a9d8d02fc055a04e7b27cce2c0a8ae0a24569f8d2232e1ce7f7242f829d9      1671  _p1bench/hwprobe_test.cpp
@@ -146,8 +146,8 @@ c52bd9aec3a02273158cf0cbecb8e048f12b8ceba189605cbc009f4d2ac86e6d      6302  _p1b
 08f702276b0dc113d53840d3f299adcad6f2287541047137418e673fd0080599      3895  _p1bench/启动Resolve_带GPU管道开关.bat
 5e76c7f49249b1c596b703ef0c109a7360237297768764f20b71d0d302d61fc1      3534  _p2bench/build.ps1
 b0f811130f943884fde11beddaf6ecbcf409de7586e8d7bbaea43909721d6ced     64127  _p2bench/gpu_smooth_test.cpp
-19242cfd8cc51210394d8d1dc695221dc58df098fdd3c1e1cf33135c7409a02c     16825  docs/CHANGELOG.md
-e31eb93e219f8aa18e9448ff65d73a83a685957ff83e6fc77c433d56d3e3d7bf     12716  docs/INDEX.md
+d3d58f37529d14b6d61aa93fb8a7dac38970ec794423d28e7d01fe29c113d2ac     19482  docs/CHANGELOG.md
+4ab09aff3b966990479f456873a74300a0f7845abd22dcbd584ca190ec56db5f     13780  docs/INDEX.md
 52b989569d6ae935d32ece6986016c1bc2a30cc3b8dc929de9f94e2bbb57e151      5387  docs/adr/adr-0001-sharpen-inert.md
 aa598b5192820b716cc2b9968e6725f4af6546080b8cd73eabdf944f458e797d    121212  docs/archive/archive-dev-readme-20261108.md
 3db731e0eefd1c0eb4caa73311d6bdee488658373e78503ae12bb3b4bc429522     13810  docs/archive/archive-manifest-v308.txt

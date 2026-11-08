@@ -283,7 +283,7 @@ bool ensureTextures(int w, int h) {
 }
 
 // ROI 向外对齐到偶数：P2 的磨皮第一趟是 2×2 整数抽样下采样，
-// 奇数宽高会让半分辨率层的边界与 CPU 参考实现对不上。
+// 奇数宽高会让半分辨率层的边界与 CPU 参考版对不上。
 GpuBeautyRoi alignRoi(GpuBeautyRoi r, int w, int h) {
     if (r.x0 < 0) r.x0 = 0;
     if (r.y0 < 0) r.y0 = 0;

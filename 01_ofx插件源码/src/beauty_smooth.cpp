@@ -1,4 +1,4 @@
-// beauty_smooth.cpp —— 自研保边平滑核实现（纯 C++，无参考实现依赖）
+// beauty_smooth.cpp —— 自研保边平滑核实现（纯 C++，无参考版依赖）
 //
 // 实现要点（都是为性能服务的）：
 //   1) 两张查找表：空间权重 (2r+1)² 项，颜色权重 768 项（三通道 L1 距离 0..765）。
@@ -743,7 +743,7 @@ void surface3Rgb(const unsigned char* src, unsigned char* dst, int w, int h,
                     //      even = mix(C.rgb, even, skin_mask);
                     // 3.1.14 之前缺这一行，只在 0<skin<1 的羽化带/掩码边缘起作用，
                     // 表现为 b2 的贡献被高估（even 没有先被 skin 拉回 c）。
-                    // 顺带落实 参考实现的 nonskin_blur_scale=0：skin→0 时 even→c、
+                    // 顺带落实参考版的 nonskin_blur_scale=0：skin→0 时 even→c、
                     // res→c，非肤区还原原色（m==0 的硬直通在上面已经拦掉了）。
                     even = c + (even - c) * skin;
                     even += (v2 - even) * se;          // ② mix(even, b2, skin·e)
@@ -1016,19 +1016,19 @@ void surface3Rgb25(const unsigned char* src, unsigned char* dst, int w, int h,
 // ---------------------------------------------------------------------------
 //
 // 为什么换掉 25 tap —— 三条实测证据，不是"觉得它不好"：
-//   §10.4 频响：25 tap 是**双凹陷**（8–13 与 32–60，中间反弹），参考实现是单凹陷
+//   §10.4 频响：25 tap 是**双凹陷**（8–13 与 32–60，中间反弹），参考版是单凹陷
 //          （13–20）。稀疏环形核（8 向 × 3 环）的径向频响是若干贝塞尔函数叠加，
 //          旁瓣是结构性的，调 yFactor 消不掉。
-//   §11.4 振幅：参考实现在 P=8 处 A=2→A=16 增益 0.289→0.579（翻倍，强纹理自动
+//   §11.4 振幅：参考版在 P=8 处 A=2→A=16 增益 0.289→0.579（翻倍，强纹理自动
 //          放过），25 tap 是 0.396→0.415（1.05 倍，强弱一视同仁）→ 边缘被磨。
 //   §11.5 根因：`even = C − B1 + B2` 是带通，去掉的频段由 B1/B2 的**空间尺度差**
 //          决定。25 tap 的 B1/B2 用同一个核、只有 yFactor 不同 → 尺度差为 0，
-//          带通中心只能靠值域门控挪，落在 12 px 而不是 参考实现的 24 px。
+//          带通中心只能靠值域门控挪，落在 12 px 而不是参考版的 24 px。
 //
 // 所以 B1、B2 必须是两个不同尺度的模糊。这一版用 3 次盒式近似高斯（O(1)/像素，
 // 积分窗滑动），比 25 tap 的 24 次双线性采样便宜一个数量级。
 //
-// 全部常数都是【拟合·传递函数】—— 目标是对上 参考实现的**光栅表**，不是金标 RMSE。
+// 全部常数都是【拟合·传递函数】—— 目标是对上参考版的**光栅表**，不是基准输出 RMSE。
 // 详见 C23 §12，那里有扫描表和对不上的那一格（判据 2）的说明。
 
 // 盒宽：按处理宽度的比例换算成奇数。UV 固定（C23 §3.2），所以随画幅缩放。
@@ -1462,7 +1462,7 @@ void detailRefill(const unsigned char* src, unsigned char* dst, int w, int h,
         for (int y = yBegin; y < yEnd; y++) {
             // 亮度平面从 **src（原图）** 取，不是从 dst。这是整段的命门：
             // 磨皮已经把 dst 的高频抹平，从 dst 取高通等于没有输入可放大，
-            // 正是参考实现 2.1.0 那版「锐化推满只能拉回 +0.46」的原因。
+            // 正是参考版 2.1.0 那版「锐化推满只能拉回 +0.46」的原因。
             const unsigned char* row = src + (size_t)(by0 + y) * w * 4;
             float* o = lum + (size_t)y * bw;
             const unsigned char* q = row + (size_t)bx0 * 4;
@@ -1477,7 +1477,7 @@ void detailRefill(const unsigned char* src, unsigned char* dst, int w, int h,
     // 相关，EMA 稳态收敛到自身，纹理 100% 保留。若改成对输出做 EMA，则磨皮
     // 的结果也被一起平滑，头一停就出现「由糊转清」的拖影。
     //
-    // 与参考实现 3.0.1/3.0.2 同一套做法（legacy_engine.cpp 的 srcT / bgraToRgbaBlend），
+    // 与参考版 3.0.1/3.0.2 同一套做法（旧版引擎的 srcT / bgraToRgbaBlend），
     // 连 8bit 存历史这一点也一样 —— 实测量化误差对高通的影响可以忽略。
     if (ema.lumT) {
         // beta >= 1 时仍然要走一遍，只是「只推进历史、不改亮度平面」。为什么

@@ -358,7 +358,7 @@ static void probeGpu(BeautyHwInfo& info) {
         }
     }
 
-    // 16F / 32F 的 typed UAV 读取支持（OBS 在该卡上踩过 32F 渲染目标崩溃）
+    // 16F / 32F 的 typed UAV 读取支持（同款卡上曾出现 32F 渲染目标触发 device-lost）
     bool t16 = false, t32 = false;
     checkFormatForUav(dev, DXGI_FORMAT_R16G16B16A16_FLOAT, t16);
     checkFormatForUav(dev, DXGI_FORMAT_R32G32B32A32_FLOAT, t32);

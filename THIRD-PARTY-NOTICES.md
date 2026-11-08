@@ -146,16 +146,31 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ---
 
-## 4. 兼容性说明（给维护者看）
+## 4. 算法出处标注（MIT，仅标注、不分发代码）
+
+源码注释里有若干「这条公式/这个口径来自哪个开源实现」的标注。这些上游都是 MIT
+许可，本项目**没有分发它们的代码或二进制**（既没有静态链接，也没有把它们编译进
+DLL），只在注释里写明公式来源。为避免把上游项目名散落在每一处注释里，正文统一
+写成「该 MIT 实现 / 那份 MIT 实现」，具名出处集中在本节：
+
+| 上游项目 | 许可 | 被引用的部分 | 用到哪里 |
+|---|---|---|---|
+| `dinjufen/lumina-beauty` | MIT（核心代码） | `kComposeShader`、`kSkinBlurShader`、`skinMask`、`uSmoothProtect`、`uSmoothThreshold`、`smoothGrain` | 磨皮合成式、肤色判据、五官保护、阈值软膝、颗粒回填 |
+| `wuxiwuhen/obs-beauty-filter` | MIT | `PSComposite` | Sobel 边缘门控的灵敏度口径（原值 ×10.0） |
+
+**发布前必须做的一件事**：上面两行的版权行（`Copyright (c) <年份> <作者>`）要从
+各自仓库的 `LICENSE` 逐字抄进本节。本文档不代填 —— 猜错版权人比不写更糟。若将来
+把上述代码整段并入本项目（而不是只对齐公式），则本节要升级成第 1、2 节那样的
+完整声明，附版权行与 MIT 全文。
+
+## 5. 兼容性说明（给维护者看）
 
 - GPL-2.0（仅第 2 版）与 **MIT、BSD-3-Clause 兼容**，可以并入并整体按 GPL-2.0 分发。
 - GPL-2.0 与 **Apache-2.0 不兼容**。所以第 2 节那条「模型目录是 MIT、不是仓库根的
   Apache-2.0」不是文字游戏 —— 如果将来换成 Apache-2.0 的模型或组件，整个授权结构
   就要重做（通常只能改成 GPL-3.0 或放弃 GPL）。
-- 源码注释里标注的 `wuxiwuhen/obs-beauty-filter (MIT)` 属于**算法出处标注**，
-  本项目未分发其代码，故不列入本文件。
 
-## 5. 复核方法
+## 6. 复核方法
 
 三份文件的指纹都可以现场重算（在仓库根目录执行）：
 

@@ -112,10 +112,10 @@ struct FreqParams {
 };
 
 // 清晰 + 美白 + 红润（肤色区域内）。三个都是**逐通道颜色变换**，
-// 与空间位置无关 —— 这是 2026-10-30 从原生参考实现反解出来的事实，不是假设。
+// 与空间位置无关 —— 这是 2026-10-30 从原生参考版反解出来的事实，不是假设。
 //
 // 依据（见 06_离线验证\全项对齐_20261030\tone_curve.py）：
-//   把 panel 全置 0、用 BEAUTY_EXTRA_PARAMS_FILE 直接下发单个参考实现参数，
+//   把 panel 全置 0、用 BEAUTY_EXTRA_PARAMS_FILE 直接下发单个参考版参数，
 //   再按输入灰阶分箱统计输出 → 「箱内 σ」就是它有多依赖空间/邻域。
 //     clarity   σ 0.08~0.27  → 纯曲线（S 形对比 + 轻微暖调）
 //     color_level σ 0.36~1.24 → 纯曲线（提亮）
@@ -129,7 +129,7 @@ struct FreqParams {
 //   clarity 0..1 清晰强度（面板值 /100）
 //   whiten  0..1 美白强度
 //   rosy    0..1 红润强度
-// 只在 roi 内、且 mask>0 的像素上动手（参考实现是整帧生效，我们保持"只动脸"）。
+// 只在 roi 内、且 mask>0 的像素上动手（参考版是整帧生效，我们保持"只动脸"）。
 void toneColor(unsigned char* dst, int w, int h,
                const unsigned char* mask, const RoiRect& roi,
                float clarity, float whiten, float rosy, int threads);

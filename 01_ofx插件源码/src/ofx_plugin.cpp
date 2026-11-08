@@ -202,13 +202,13 @@ struct ParamDef {
 // mad 10 档 0.167 / 100 档 0.207，只差 1.24 倍），而 v2.0 换成了线性曲线
 // （10 档 0.014 / 100 档 0.208）。同一个「20」在两版里的实际强度差约 5 倍，
 // 沿用 20 会让用户第一眼以为插件没生效。50 档对应 mad 0.087，是肉眼可辨
-// 的轻磨皮，也是 上一代宿主 侧标定的常用档（纹理保留约 86%）。
+// 的轻磨皮，也是旧宿主侧标定的常用档（纹理保留约 86%）。
 //
 // ⚠ 顺序必须与 nama_engine.h 的 P_* 枚举逐一对应：readParams() 按下标写进
 // NamaSettings::panel[]，顺序错一位就会「拖 A 滑块、B 效果变」。编译期只能保证
 // 元素个数不多不少，保证不了顺序 —— 改这里务必同时看枚举。
 static const ParamDef kParams[P_COUNT] = {
-    // v2.0.3 曾把默认值从 50 提到 62，依据是物理摄像头 GT：第三方默认 blur=80
+    // v2.0.3 曾把默认值从 50 提到 62，依据是物理摄像头 GT：同类产品默认 blur=80
     //   对应皮肤区噪声 81.4%，我方 50 是 85.9%、75 是 76.9%，插值到 81.4% 落在
     //   62.5 档，取 62 —— 那是当时唯一有 GT 支撑的默认值调整，且不改引擎曲线。
     //
@@ -228,26 +228,26 @@ static const ParamDef kParams[P_COUNT] = {
     //      恰好在皮肤掩码外）。想要锐利感请用「清晰」——它不受磨皮影响。
     {"sharpen", "锐化", 0, "已停用：磨皮大于 0 时完全无效；需要锐利感请用「清晰」。", true, "Main"},
     // v2.0 新增：把「锐化」同一条细节回填曲线扩展到皮肤掩码之外。0 = 脸外逐字节不变，
-    // 这是 上一代宿主 版 3.0.13 为「只动脸」这条硬指标做的设计，默认必须保持 0。
+    // 这是旧宿主版 3.0.13 为「只动脸」这条硬指标做的设计，默认必须保持 0。
     {"global_sharpen", "全局锐化", 0,
      "把细节回填扩展到皮肤区域之外。0 表示脸外逐字节不变（默认）；"
      "调大后背景也会变锐，适合需要整体质感时使用。", false, "Main"},
     {"face_threed", "五官立体", 0, "五官立体。实测满量程改动 16% 像素。", false, "Main"},
     {"eye_bright", "亮眼", 0, "亮眼。实测很弱，满量程只改动 0.65% 像素，需放大才看得出。", false, "Main"},
     {"remove_pouch_strength", "去黑眼圈", 0, "去黑眼圈。实测很弱，满量程只改动 0.93% 像素。", false, "Main"},
-    // v2.0 新增两项：上一代宿主 版实测 SDK 侧确实生效的参数，v1.51 从未接过。
+    // v2.0 新增两项：旧宿主版实测 SDK 侧确实生效的参数，v1.51 从未接过。
     {"remove_nasolabial_folds_strength", "去法令纹", 0,
      "去法令纹。SDK 侧生效；强度过大时鼻翼两侧可能出现涂抹感，建议 0~40。", false, "Main"},
     // 隐藏（secret）：v2.0 回移后实测在「只开磨皮」的调用链上**逐字节无变化**
     // （blur=0 与 blur=50 两种条件、delspot=50/100 都试过，改动像素 0）。
-    // 上一代宿主 侧 3.0.16 记录的效果量 +9.4% 是在「同时带 sharpen=4」的那一组测出来的，
+    // 旧宿主侧 3.0.16 记录的效果量 +9.4% 是在「同时带 sharpen=4」的那一组测出来的，
     // 而磨皮开启时本项目根本不下发 sharpen ⇒ 那个增益很可能来自 sharpen 而非它。
     // 因此不删接线（万一特定素材/组合下有效），但从面板隐藏，避免给用户一个
     // 拖了没反应的滑块。这与 v1.51 处理「锐化」的方式一致。
     {"delspot_level", "祛斑痘", 0,
      "已停用：实测在当前调用链上无效果（改动像素为 0），详见源码注释。", true, "Main"},
     // ---- 2.1.0 美型三项（几何形变）----------------------------------------
-    // 数值是「改动像素比例」，来自 上一代宿主 3.0.19 侧对 166 个 SDK 参数的逐项实测
+    // 数值是「改动像素比例」，来自旧宿主 3.0.19 侧对 166 个 SDK 参数的逐项实测
     // （见 05_文档/一级入口说明.md 第十六节）。只挑正交的三项：脸宽、眼大小、
     // 下庭。同族的窄脸 38.9% / V脸 28.3% / 小脸 29.6% / 短脸 18.0% 都作用于
     // 同一块下半脸像素，同时推会互相打架，所以不做成滑块。
@@ -269,7 +269,7 @@ static const ParamDef kParams[P_COUNT] = {
 
 static const char* kBlurTypeChoices[] = {"双边滤波", "高斯", "弱磨皮"};
 
-// v2.0 新增：磨皮模式四档。这一项**不是 SDK 参数**（上一代宿主 侧做过 14 组实验，
+// v2.0 新增：磨皮模式四档。这一项**不是 SDK 参数**（旧宿主侧做过 14 组实验，
 // heavy_blur / *_smooth 系列输出逐位相同，已证伪），而是引擎自己的 CPU 后处理：
 // 按结构自适应决定平坦皮肤与边缘轮廓各回填多少细节。
 // 索引直接对应 NamaSettings::smooth_mode，不要改动顺序。
@@ -277,7 +277,7 @@ static const char* kSmoothModeChoices[] = {
     "人像磨皮",
     "清晰磨皮",
     "精细磨皮",
-    // 索引 3 在 上一代宿主 侧叫「朦胧磨皮（细频整体压低）」，v2.0.1 改名。
+    // 索引 3 在旧宿主侧叫「朦胧磨皮（细频整体压低）」，v2.0.1 改名。
     // 原因：这个名字与实际行为方向相反。kTexModes[3] = {140,0,0} 的含义是
     // 「按面板锐化档位的 55% 回填细频」，不是「压低压低」——本引擎没有负回填
     // （hf 取自原图，减它只会把边缘挖穿），所以它做不到「比纯磨皮更糊」。
@@ -356,7 +356,7 @@ static void readParams(InstanceData* d, NamaSettings& s) {
         gParamHost->paramGetValue(d->blurType, &c);
         // v3.0.6：**直通面板索引，不再做任何重映射。**
         // 旧代码这里是 `static const int map[3] = {1, 0, 2}`，把面板序
-        // {双边, 高斯, 弱磨皮} 换成 旧版闭源 SDK 时代的 blur_type 序
+        // {双边, 高斯, 弱磨皮} 换成旧版引擎时代的 blur_type 序
         // {1=双边, 0=高斯, 2=弱磨皮}。v3.0.5 起 SDK 早已不存在，引擎侧的档位
         // 语义（beauty_core.cpp 里 `s.blur_type == 1` 走高斯）直接按**面板序**
         // 定义，这层 map 就把「双边」和「高斯」对调了。
@@ -383,7 +383,7 @@ static void readParams(InstanceData* d, NamaSettings& s) {
 // ---------------------------------------------------------------------------
 // 像素格式转换
 //
-// 旧版闭源 SDK 只吃 RGBA8。宿主给 float32 时，每帧要在两种格式间搬 2×8.3M 个浮点
+// 旧版引擎只吃 RGBA8。宿主给 float32 时，每帧要在两种格式间搬 2×8.3M 个浮点
 // （1080p）。这段代码是整条链路上唯一完全由我们掌控的耗时点，所以用 AVX2 写。
 //
 // 注意：这些函数体里不能出现需要析构的 C++ 对象，否则 MSVC 的 __try 会报 C2712。
@@ -642,7 +642,7 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
     gPropHost->propSetString(props, kOfxImageEffectPropSupportedContexts, 1,
                              kOfxImageEffectContextGeneral);
 
-    // 同时接受 8 位与浮点：旧版闭源 SDK 内部按 8 位 RGBA 处理，浮点会先降采样
+    // 同时接受 8 位与浮点：旧版引擎内部按 8 位 RGBA 处理，浮点会先降采样
     gPropHost->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 0, kOfxBitDepthByte);
     gPropHost->propSetString(props, kOfxImageEffectPropSupportedPixelDepths, 1, kOfxBitDepthFloat);
 
@@ -680,7 +680,7 @@ static OfxStatus describeMain(OfxImageEffectHandle effect) {
     //
     // 现在每个实例已经独占自己的 SDK 道具与参数缓存（NamaEngine 的 slot 池），
     // 所以「实例之间互相覆盖参数」的问题没有了。真正让它无法升到 InstanceSafe 的
-    // 是引擎的**物理约束**：旧版闭源 SDK 非可重入，全部调用必须走单一 GL 上下文，引擎
+    // 是引擎的**物理约束**：旧版引擎非可重入，全部调用必须走单一 GL 上下文，引擎
     // 内部还有一把全局互斥在串行化。既然宿主串行化与这把锁效果相同（零额外损失），
     // 就老老实实声明 Unsafe，让宿主替我们排好队。
     gPropHost->propSetString(props, kOfxImageEffectPluginRenderThreadSafety, 0,
@@ -777,7 +777,7 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
     // v2.2.0 用第二个 OFX Page：Resolve 不渲染 Page，拍平成一列，无效。
     // v2.2.1 改用 Group，但仍把 Group 挂在 Main 页下 —— 嵌套在页内的分组同样不呈现。
     // v2.2.2 的关键修正：**Group 必须留在 root 层级**（不设 kOfxParamPropParent）。
-    //   Resolve 确实支持 OFX 分组（第三方商业插件在 inspector 里就有可折叠小节，
+    //   Resolve 确实支持 OFX 分组（一些插件在 inspector 里就有可折叠小节，
     //   并能双击标题栏收起），但只对 root 层级的 Group 生效；页内嵌套的会被降级。
     //   三项美型仍用 Parent 挂到 Shape 之下。
     //   兜底：分组建不出来时三项退回 Main —— 宁可不分组，也不能丢参数。
@@ -1725,7 +1725,7 @@ static OfxStatus onLoad(void) {
 }
 
 static OfxStatus onUnload(void) {
-    // v3.0.0 起不再有旧版闭源 SDK（旧文案「卸载 SDK」会误导排错方向）。
+    // v3.0.0 起不再有旧版引擎（旧文案「卸载 SDK」会误导排错方向）。
     ofxLog("unload：释放引擎（CoreEngine + ONNX 会话）");
     NamaEngine::inst().release();
     // 2026-11-06：GPU 后端此前没有任何关闭点（gpuBeautyShutdown / gpuSmoothShutdown

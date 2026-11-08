@@ -1,14 +1,14 @@
 #pragma once
 #include <vector>
 // ---------------------------------------------------------------------------
-// beauty_smooth —— 自研保边平滑核（不依赖任何参考实现库）
+// beauty_smooth —— 自研保边平滑核（不依赖任何参考版库）
 //
 // 为什么自己写而不用 OpenCV：本项目的边界定在「开源可商用」就够，OpenCV
 // (Apache-2.0) 本身合规。手写的真实理由是体积 —— 即使只裁 core+imgproc，
 // 也要把十几 MB 的 DLL 重新塞回安装包，而我们要的只有双边滤波这一个函数。
 //
 // 参数是怎么定的：见 05_文档/S2_磨皮核对拍结论.md。离线对拍结论是
-// cv2.bilateralFilter(d=9, sigmaColor=40) 能复现 参考实现的档位曲线（RMSE 1.16 个
+// cv2.bilateralFilter(d=9, sigmaColor=40) 能复现参考版的档位曲线（RMSE 1.16 个
 // 百分点），所以默认参数按它的口径换算：
 //     d = 9             -> radius = 4（(9-1)/2）
 //     sigmaSpace = 13.5 （OpenCV 内部取 d*1.5）
@@ -69,7 +69,7 @@ void bilateralRgbaDown(const unsigned char* src, unsigned char* dst,
                        float sigmaSpace, float sigmaColor, int down);
 
 // 档位混合：dst = src + (smooth - src) * t，t ∈ [0,1]。
-// 参考实现的磨皮档位就是这条线性混合（见 legacy_engine.cpp 的 bgraToRgbaBlend）。
+// 参考版的磨皮档位就是这条线性混合（见旧版引擎的 bgraToRgbaBlend）。
 void mixRgba(const unsigned char* src, const unsigned char* smooth,
              unsigned char* dst, int w, int h, float t);
 
@@ -86,7 +86,7 @@ void amplifySmooth(const unsigned char* src, unsigned char* dst,
 
 // 默认参数：离线对拍扫出来的最优组合（05_文档/S2_磨皮核对拍结论.md）
 //   radius=2 / σSpace=7 / σColor=40 → 档位曲线误差 1.09 个百分点
-// 注意半径小反而更贴合 参考实现：说明它的平滑核半径本来就不大。
+// 注意半径小反而更贴合参考版：说明它的平滑核半径本来就不大。
 enum { kSmoothRadius = 2 };
 const float kSmoothSigmaSpace = 7.0f;
 const float kSmoothSigmaColor = 40.0f;
@@ -105,11 +105,11 @@ const float kSmoothSigmaColor = 40.0f;
 //   · 真边缘（发际线、眼镜框）：ref 在一两个像素内跟不上阶跃，diff 仍然很大
 //     → 照旧不平均。
 //
-// 做法来自 dinjufen/lumina-beauty 的 kSkinBlurShader（核心代码为 MIT）注释：
+// 做法来自一份 MIT 许可的开源实现（出处与许可见 THIRD-PARTY-NOTICES.md 第 4 节）的 kSkinBlurShader 注释：
 // 「颜色差先减去大半径模糊的差，只看局部起伏…直接用颜色差时，过渡带两侧会被
 //  各自抹平，中间挤出一条锯齿状的硬边」。
 //
-// 另一半改动是**中间结果用 float 存**（lumina 用 GL_RGBA16F）：原来每轮迭代
+// 另一半改动是**中间结果用 float 存**（该实现用 GL_RGBA16F）：原来每轮迭代
 // 都把结果压回 uint8，4 轮下来必然积累平台/色带。
 // ---------------------------------------------------------------------------
 struct BilateralRefParams {
@@ -150,12 +150,12 @@ LowFreqBuf lowFreqRefRoi(const unsigned char* src, int w, int h,
 //     out  += w · (fine·hFine + mid·hMid)
 // 磨皮决定「大尺度抹掉多少」，锐化决定「最细两段放回多少」，两个滑块解耦。
 //
-// 三条与参考实现版（legacy_engine.cpp 的 applySharpen）的差别，都是刻意的：
+// 三条与参考版（旧版引擎的 applySharpen）的差别，都是刻意的：
 //   1) 只在**亮度**上取高通，增量等量加到 RGB 三通道 —— 不会因三通道独立增益
-//      产生彩边；成本是参考实现版的 1/3。
+//      产生彩边；成本是参考版的 1/3。
 //   2) 细频带带一个软阈值 thrFine：相机噪点与毛孔在幅值上重叠（±2~6 vs 2~8），
 //      幅值分不开，只能靠软阈值削掉最细的一小段，避免 3.0.0 那版「脸部屏闪」。
-//   3) 没有做时序 EMA（core 引擎目前无跨帧状态），所以噪点抑制不如参考实现版彻底。
+//   3) 没有做时序 EMA（core 引擎目前无跨帧状态），所以噪点抑制不如参考版彻底。
 //      这是已知取舍，写在 05_文档/C11_锐化与全局锐化.md。
 //
 // 权重按像素取：m = mask/255，
@@ -183,8 +183,8 @@ struct DetailParams {
     bool deltaRefill = false;
 };
 
-// 细节层的时序 EMA（运动自适应）。对应参考实现侧的 srcT + detailBetaFromVel
-// （见 legacy_engine.cpp），解决的问题是：锐化把**相机白噪**一起放大，而噪点
+// 细节层的时序 EMA（运动自适应）。对应参考版侧的 srcT + detailBetaFromVel
+// （见旧版引擎），解决的问题是：锐化把**相机白噪**一起放大，而噪点
 // 帧间独立 → 静止的脸呈「沸腾」式闪动。
 //
 // 做法：把「算高通用的亮度平面」在时间轴上按 beta 平滑一次，再用平滑后的
@@ -199,7 +199,7 @@ struct DetailEma {
 
 // src 是**原图**（高频层从这里取），dst 是磨皮后的结果（增量加在它上面）。
 // 两者可以是同一块内存，但那样就退回「对磨完的图做 unsharp」——没有输入可放大，
-// 正是参考实现 2.1.0 那版失效的原因，不要这么用。
+// 正是参考版 2.1.0 那版失效的原因，不要这么用。
 // 只写 roi 内、且权重非零的像素；alpha 不动。
 // scratch 由调用方持有（4 个平面，按 ROI 面积分配）。
 // ema 非空且 beta<1 时，亮度平面先过一遍运动自适应时序 EMA 再算高通。
@@ -213,7 +213,7 @@ void detailRefill(const unsigned char* src, unsigned char* dst, int w, int h,
 //
 // 为什么需要它：双边迭代的低频层**本身也保边**，于是高频层 high = src − low 在
 // 真边缘处接近 0，幅度门控再保一次边 → 两道闸门叠在一起，「瑕疵」和「结构」
-// 一起被放过。实测脸颊细纹理只削掉 14%，参考实现削掉 37%（见 C14）。
+// 一起被放过。实测脸颊细纹理只削掉 14%，参考版削掉 37%（见 C14）。
 //
 // 盒式迭代不做任何保边：它就是各向同性的低通。等效方差
 //     σ² = iters × ((2r+1)² − 1) / 12
@@ -248,9 +248,9 @@ LowFreqBuf boxLumaRoi(const unsigned char* rgba, int w, int h, int radius,
                       std::vector<float>& scratch);
 
 // ---------------------------------------------------------------------------
-// surface3 —— 三层表面模糊（对齐参考实现 2.4.2 的磨皮结构，见 C22）
+// surface3 —— 三层表面模糊（对齐参考版 2.4.2 的磨皮结构，见 C22）
 //
-// 参考实现磨皮的 GLSL 反编译结论（beauty_source_readable.md）：
+// 参考版磨皮的结构结论（由离线频响/残差实测反推，见 C22）：
 //     even = C − b1 + b2
 //     even = mix(even, b2, skin·e)
 //     res  = C + (even − C)·I
@@ -324,8 +324,8 @@ void surface3Rgb25(const unsigned char* src, unsigned char* dst, int w, int h,
 // surface3RgbBand —— 双尺度带通 + 振幅门控（C23 §11/§12，第 2 批-B）
 // ---------------------------------------------------------------------------
 // 为什么不再用 25 tap：§10.4 的频响实测证明 25 tap 的径向频响是**双凹陷**
-// （8–13 与 32–60），中间还反弹；参考实现是干净的单凹陷（13–20）。那是稀疏环形核
-// 的旁瓣，不是参数没调好。§11 的振幅-频率实测又证明 参考实现的振幅依赖是
+// （8–13 与 32–60），中间还反弹；参考版是干净的单凹陷（13–20）。那是稀疏环形核
+// 的旁瓣，不是参数没调好。§11 的振幅-频率实测又证明参考版的振幅依赖是
 // 「弱纹理全磨、强纹理基本放过」，而 25 tap 的 yFactor 只能做到 1.05 倍。
 //
 // 结构（每个常数的来历都标在后面）：
@@ -338,13 +338,13 @@ void surface3Rgb25(const unsigned char* src, unsigned char* dst, int w, int h,
 //     out = C + w·(even − C)
 //
 // 三条结构判据（C23 §11.6）的实测结果见 §12.4：
-//     主凹陷 24 px ✅ / A=2·P=24 增益 0.376（参考实现0.201）❌ /
-//     A=16·P=8 增益 0.654（参考实现0.579）✅
-// 判据 2 没过是已知偏差：我们对**噪声级弱纹理**没有参考实现那么狠。强行对上会
+//     主凹陷 24 px ✅ / A=2·P=24 增益 0.376（参考版0.201）❌ /
+//     A=16·P=8 增益 0.654（参考版0.579）✅
+// 判据 2 没过是已知偏差：我们对**噪声级弱纹理**没有参考版那么狠。强行对上会
 // 让像素 RMSE 变差（§12.3 的幂次扫描：p=2→8 时 RMSE 1.34→2.03），所以保留。
 //
 // 反拟合纪律（C23 §8）：w1/w2 是照着**传递函数**（光栅表）定的，不是照着
-// 金标 RMSE 扫出来的；T 是照「改动量 = 2.74」定的，也不是 RMSE。
+// 基准输出 RMSE 扫出来的；T 是照「改动量 = 2.74」定的，也不是 RMSE。
 struct BandParams {
     // 盒宽占**处理宽度**的比例。基准 1920 宽 + 半分辨率（ww=960）时
     // w1=5 / w2=9 / wa=5。UV 固定（C23 §3.2），所以按比例缩放而不是按像素。
@@ -356,7 +356,7 @@ struct BandParams {
     // 门控曲线的陡度指数：gw = 1 / (1 + (a/T)^p)。
     //   p=2 是双曲形式（等价于原来的 1/(1+(a/T)²)）；
     //   p>2 时低振幅更贴近 1（平坦区照磨）、高振幅掉得更快（纹理区更保守），
-    //   也就是参考实现「越平越磨、越有结构越保守」的非对称——这是选择性的来源。
+    //   也就是参考版「越平越磨、越有结构越保守」的非对称——这是选择性的来源。
     float gwp = 2.0f;            // 【3.1.19】平坦/纹理选择性
     int   halfRes = 1;           // 1 = 半分辨率（实测 RMSE 1.336→1.362，可忽略）
     float I = 1.0f;              // 强度 0..1
