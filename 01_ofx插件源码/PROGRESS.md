@@ -1,7 +1,17 @@
 # DaVinci Beauty OFX 插件 —— 进展与决策记录
 
-最后更新：2026-11-08 16:26
+最后更新：2026-11-08 16:40
 
+> **16:40 1.3.5.0 定版 —— 三处「失败之后没有出路」的修复，画面不变。**
+> 正常渲染路径一行未动，只补失败出口：并行死锁（`beauty_pool.cpp`）、GPU 设备丢失后
+> 永久静默停用（`gpu_smooth.cpp`）、ORT 空 session options 崩溃（`beauty_onnx.cpp`）。
+> 过程与证据见下面 16:26 / 16:09 两条记录，不重复叙述。
+> 验收：全量编译 0 error 0 warning；baseline **18/18 逐字节不变**；`acceptance.py`
+> **PASS 28 / FAIL 0**；装机 DLL md5 `2299c3280ced27814016e26df3b35792`（旧版已备份为
+> `.bak-1.3.4.0`，共 17 个 `.bak-*`）；安装包 `build\DaVinciBeauty_Setup_v1.3.5.0.exe`
+> （4.6 MB，md5 `500f7b1754977decbaa54aee61c04a82`）已静默装测通过。
+> 未验：真 TDR 后 `Map(WRITE_DISCARD)` 是否必然返回 `DEVICE_REMOVED`（需故意触发 TDR）。
+>
 > **16:26 缺陷修复（合入 1.3.5.0）—— ORT 空 options、GPU 设备丢失后永久静默停用。**
 > 两项都是「不知道会不会出事」的悬案，这次都用实测收口：
 > 1. `beauty_onnx.cpp` 的 `CreateSessionOptions(&opts)` 不判返回值。拿仓库里的

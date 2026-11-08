@@ -2,13 +2,13 @@
 
 达芬奇 DaVinci Resolve 的 DaVinci Beauty 美颜 OpenFX 插件 —— 一键安装 / 一键卸载。
 
-> **插件当前构建：1.3.4.0（2026-11-08）**；当前正式安装包是 `build\DaVinciBeauty_Setup_v1.3.4.0.exe`（4.6 MB，2026-11-08 出包，已静默装测通过：装后 DLL md5 `83028743cbed837518aa92046f24f3ad`，16 个 `.bak-*` 未被覆盖）。`DaVinciBeauty_Setup_v1.1.1.4.exe` 及更早的是**历史产物**，不要用它们覆盖当前装机。要重出安装包请跑 `python build_nsis.py`（版本取自 `src\nama_engine.h` 的 `NAMA_BUILD_STR`）；沙箱包用 `--sandbox`（注意：沙箱包在 Resolve 上仍加载失败，见 `01_ofx插件源码/性能方案.md` 第十九节，暂不交付）。安装包内含 `LICENSE` 与 `THIRD-PARTY-NOTICES.md`。下文出现的 v3.0.9 等是旧口径（三段式）历史记录，四段式对照表见 `01_ofx插件源码/PROGRESS.md`。
+> **插件当前构建：1.3.5.0（2026-11-08）**；当前正式安装包是 `build\DaVinciBeauty_Setup_v1.3.5.0.exe`（4.6 MB，md5 `500f7b1754977decbaa54aee61c04a82`，2026-11-08 出包，已静默装测通过：装后 DLL md5 `2299c3280ced27814016e26df3b35792`，17 个 `.bak-*` 未被覆盖）。`DaVinciBeauty_Setup_v1.1.1.4.exe` 及更早的是**历史产物**，不要用它们覆盖当前装机。要重出安装包请跑 `python build_nsis.py`（版本取自 `src\nama_engine.h` 的 `NAMA_BUILD_STR`）；沙箱包用 `--sandbox`（注意：沙箱包在 Resolve 上仍加载失败，见 `01_ofx插件源码/性能方案.md` 第十九节，暂不交付）。安装包内含 `LICENSE` 与 `THIRD-PARTY-NOTICES.md`。下文出现的 v3.0.9 等是旧口径（三段式）历史记录，四段式对照表见 `01_ofx插件源码/PROGRESS.md`。
 
 ## 交付物
 
 | 文件 | 说明 |
 |---|---|
-| `build\DaVinciBeauty_Setup_v<版本>.exe` | **单文件安装包**。双击即装，内置插件 + 自研美颜/AI 引擎（推理运行时 + 人脸检测模型，约 12 MB），不再依赖闭源 SDK。目前留存的是 v1.1.1.4 的**历史产物**（4.6 MB，含卸载器与 `LICENSE` / `THIRD-PARTY-NOTICES.md`），当前 1.1.7.0 需重打；可用 `build_nsis.py` 重建 |
+| `build\DaVinciBeauty_Setup_v<版本>.exe` | **单文件安装包**。双击即装，内置插件 + 自研美颜/AI 引擎（推理运行时 + 人脸检测模型，约 12 MB），不再依赖闭源 SDK。当前版本为 **v1.3.5.0**（4.6 MB，含卸载器与 `LICENSE` / `THIRD-PARTY-NOTICES.md`）；更早的 exe 保留在 `build\` 下供回退，文件名即版本号 |
 | `build\DaVinciBeauty_Setup_v<版本>_sandbox.exe` | 沙箱包，仅 `--sandbox` 构建时产出。装到 `DaVinciBeautySandbox.ofx.bundle`，不影响正式安装 |
 | `davincibeauty.nsi` | NSIS 安装脚本（安装/卸载逻辑都在这里） |
 | `build_nsis.py` | 构建器：收集资源 + 调 makensis 编译出 exe |

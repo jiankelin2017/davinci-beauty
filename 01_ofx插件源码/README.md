@@ -1,5 +1,7 @@
-# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.3.4.0）
+# DaVinci Beauty OFX —— DaVinci Resolve 美颜滤镜（v1.3.5.0）
 
+> **1.3.5.0（2026-11-08）**：两处缺陷修复（并行死锁、GPU 掉驱动后永久静默停用）+ ORT 空 session options 护栏，全部只动失败路径，画面逐字节不变。详见 `PROGRESS.md`。
+>
 > **1.2.5.0（2026-11-08）**：美白横向台阶定案并修掉（色调权重长斜坡 + 内外门控 + 边缘门控 + ±0.5 级抖动）；锁骨白条取证为素材自带条带。详见根目录 `说明.txt`。
 
 一个给 DaVinci Resolve Studio 21.1 用的 OpenFX 滤镜，效果引擎是自研引擎 3.1.39 的
