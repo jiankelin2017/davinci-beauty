@@ -1001,6 +1001,13 @@ int g_maskFeatherPx = -1;
 // bit2 逐行从中心向两侧探肤色，左右边界落在皮肤/头发/衣领的真实分界上。
 int g_maskShape = 4;
 
+// 1.2.9：人脸检测复用（见 buildMaskInto 里的判据）。
+// 默认开：导出/慢镜头下能省掉 6.75 ms/次的大头；极快甩头时靠 detAge 兜底重测。
+bool   g_detReuse = true;
+double g_detThr   = 2.0;    // 64x36 灰度缩略图的平均绝对差阈值（0..255 级）
+int    g_detAge   = 4;      // 最多连续复用几次就必须重测
+long   g_detReuseHits = 0;  // 诊断：累计复用次数
+
 // 羽化斜坡查表：ramp[dist * 65 + fe] = smoothstep(dist/fe) × 256。
 //
 // 为什么查表：羽化在 worker 上逐像素跑，1080p 脸框约 40 万像素，每像素至少一次
@@ -1389,6 +1396,9 @@ public:
             const char* nse = getenv("BEAUTY_NECK_SKINEND");
             if (nse && *nse) g_neck.skinEnd = atoi(nse);
             g_neck.skinEnd = (g_neck.skinEnd != 0) ? 1 : 0;
+            if (const char* s = getenv("BEAUTY_DET_REUSE")) g_detReuse = (atoi(s) != 0);
+            if (const char* s = getenv("BEAUTY_DET_THR")) { double v = atof(s); if (v >= 0.0) g_detThr = v; }
+            if (const char* s = getenv("BEAUTY_DET_AGE")) { int v = atoi(s); if (v >= 1 && v <= 64) g_detAge = v; }
             // 边缘门控灵敏度（0 = 关闭）。生产默认 10，这里只为离线复验留口子。
             const char* ek = getenv("BEAUTY_EDGE_K");
             if (ek && *ek) g_cfg.edgeK = atoi(ek);
@@ -2841,11 +2851,51 @@ private:
         // 源是 bottom-up（OFX）时让检测按视觉方向读行，返回的框/关键点再映射回
         // 缓冲行号。掩码与几何美形本来就按缓冲行号落笔，下游一行都不用改
         // （详见 beauty_face.h 的 detect 注释）。
-        if (!face_.detect(src, w, h, faces, ferr, 0.6f, 0.3f, 4, flipY) ||
-            faces.empty()) {
-            msgOut = ferr;
-            facesOut = 0;
-            return false;
+        // 1.2.9：能复用上一帧的人脸框就复用 —— 检测是掩码里最贵的一步
+        // （1080p 实测 6.75 ms，占掩码 2/3），而导出/慢镜头下人像移动很慢。
+        // 判据：64x36 灰度缩略图的平均绝对差 ≤ g_detThr，且距上次真检测不超过
+        // g_detAge 次重算。任一条不满足就老实重测。
+        // 回退：BEAUTY_DET_REUSE=0 逐字节回到旧行为。
+        const int TW = 64, TH = 36;
+        auto thumbOf = [&](std::vector<unsigned char>& out) {
+            out.assign((size_t)TW * TH, 0);
+            for (int ty = 0; ty < TH; ty++) {
+                const int sy = (int)((long)ty * h / TH);
+                const unsigned char* row = src + (size_t)sy * w * 4;
+                for (int tx = 0; tx < TW; tx++) {
+                    const int sx = (int)((long)tx * w / TW);
+                    out[(size_t)ty * TW + tx] = (unsigned char)
+                        ((66 * row[sx * 4 + 0] + 129 * row[sx * 4 + 1] +
+                          25 * row[sx * 4 + 2]) >> 8);
+                }
+            }
+        };
+        bool reused = false;
+        if (g_detReuse && detValid_ && detW_ == w && detH_ == h &&
+            (int)detThumb_.size() == TW * TH) {
+            std::vector<unsigned char> th;
+            thumbOf(th);
+            long acc = 0;
+            for (size_t i = 0; i < th.size(); i++)
+                acc += std::abs((int)th[i] - (int)detThumb_[i]);
+            const double mad = (double)acc / (double)(TW * TH);
+            if (mad <= g_detThr && detAge_ < g_detAge && !detFaces_.empty()) {
+                faces = detFaces_;
+                reused = true;
+                detAge_++;
+                g_detReuseHits++;
+            }
+        }
+        if (!reused) {
+            if (!face_.detect(src, w, h, faces, ferr, 0.6f, 0.3f, 4, flipY) ||
+                faces.empty()) {
+                msgOut = ferr;
+                facesOut = 0;
+                return false;
+            }
+            detFaces_ = faces;
+            detW_ = w; detH_ = h; detAge_ = 0; detValid_ = true;
+            thumbOf(detThumb_);
         }
         facesOut = (int)faces.size();
         // 关键点要留给后续的「五官局部」五项用（亮眼/去黑眼圈/法令纹…都要位置）。
@@ -3993,6 +4043,11 @@ private:
     // 与掩码同一生命周期（异步时由 worker 一起交回），所以不会出现
     // 「掩码是这一帧的、关键点是上一帧的」这种错配。
     std::vector<beautycore::FaceBox> faces_;
+    // 1.2.9：人脸框复用缓存（见 buildMaskInto）
+    std::vector<beautycore::FaceBox> detFaces_;
+    std::vector<unsigned char> detThumb_;
+    int detW_ = 0, detH_ = 0, detAge_ = 0;
+    bool detValid_ = false;
     beautycore::RoiRect bounds_;   // 掩码包围盒（外扩 radius），随掩码一起更新
     bool maskValid_ = false;
     // 3.1.21：本次「启用以来」是否成功产出过掩码。只看第一次 —— 用它区分
