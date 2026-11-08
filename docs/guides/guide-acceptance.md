@@ -52,7 +52,7 @@ python acceptance.py --report 验收报告.txt    :: 落盘一份
 | 二进制内嵌版本串 | `NamaVersion()` **只编码 MAJOR/MINOR，PATCH 位被有意丢弃**（保持对外 ABI），所以"装的到底是哪个版本"只能靠二进制里的字符串判 |
 | `NamaVersion()` 编码 | `== (MAJOR<<16) \| MINOR`，两段各 16 位，不是每 8 位一段 |
 | 装机产物**行为等价** | 让装机 DLL 跑同一组黄金用例，输出必须与编译产物相同 |
-| 装机产物**字节比对** | **硬判据**。`build.ps1` 的 `Reset-PeTimestamp` 把 COFF 与 `IMAGE_DEBUG_DIRECTORY` 两个 `TimeDateStamp` 清零，同源码重编 md5 恒定（实测 `2299c328…`）。不一致 = 没 `install.bat`，直接 FAIL。注意 `/Brepro` 在本工具链上单独**不生效**，别把它当成可复现的原因 |
+| 装机产物**字节比对** | **硬判据**。`build.ps1` 的 `Reset-PeTimestamp` 把 COFF 与 `IMAGE_DEBUG_DIRECTORY` 两个 `TimeDateStamp` 清零，同源码重编 md5 恒定（实测 `5655699…`）。不一致 = 没 `install.bat`，直接 FAIL。注意 `/Brepro` 在本工具链上单独**不生效**，别把它当成可复现的原因 |
 
 ### 2.2 参数（5 项）
 

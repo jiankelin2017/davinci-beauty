@@ -19,6 +19,7 @@
 #include "beauty_log.h"
 #include "beauty_warp.h"   /* 3.1.27：美形三项的几何变形 */
 #include "gpu_beauty.h"    /* P1：D3D11 ROI 传输管道（beauty.ini 的 gpu_pipe 控制） */
+#include "beauty_build.h"  /* 版本串：转出 NAMA_BUILD_STR，见该头注释（不能直接包含 nama_engine.h） */
 #include "gpu_smooth.h"    /* P2：磨皮生产路径的 D3D11 Compute 版（beauty.ini 的 gpu_smooth 控制） */
 #include "beauty_hwprobe.h" /* 3.3.0：beauty.ini 配置读取（gpu_pipe 三态） */
 
@@ -1335,7 +1336,7 @@ static void dumpGrayPgm(const char* path, const unsigned char* m, int w, int h, 
 class CoreEngine : public IBeautyEngine {
 public:
     const char* id() const override { return "core"; }
-    const char* version() const override { return "1.4.0"; }
+    const char* version() const override { return namaBuildStr(); }
     // GPU 执行提供器名：人脸检测（YuNet/ONNX）实际使用的执行提供器，
     // 自动检测为 "DirectML"（onnxruntime-directml 构建版）或 "CPU"。
     const char* gpuProvider() const override { return face_.provider(); }

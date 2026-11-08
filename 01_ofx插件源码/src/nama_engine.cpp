@@ -334,4 +334,10 @@ unsigned long __stdcall NamaVersion(void) {
     return ((unsigned long)NAMA_BUILD_MAJOR << 16) | (unsigned long)NAMA_BUILD_MINOR;
 }
 
+// beauty_build.h 的实现：版本串的唯一出口。数值只由上面的宏决定，
+// 这里不写任何字面量副本（写死过一次 "1.4.0"，日志里就和 build= 打架）。
+const char* namaBuildStr(void) {
+    return NAMA_BUILD_STR;
+}
+
 }  // extern "C"

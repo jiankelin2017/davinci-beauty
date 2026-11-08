@@ -34,6 +34,8 @@
 #include <mutex>
 #include <vector>
 
+#include "beauty_build.h"   /* 版本串：ini 头行的版本号不在这里写死 */
+
 #include "beauty_hwprobe.h"
 
 #pragma comment(lib, "d3d11.lib")
@@ -63,8 +65,8 @@ static const double kBwFloorGBs = 5.0;
 //
 // 三级优先级：环境变量 > beauty.ini > 代码内自动默认。
 // ---------------------------------------------------------------------------
+// 头行（带版本号）在 cfgWriteTemplate 里用 namaBuildStr() 现拼，见下。
 static const char kIniTemplate[] =
-    "; DaVinci Beauty 运行配置 v3.3.0\r\n"
     "; 改完保存后需要重启 DaVinci Resolve 才生效。\r\n"
     "; 同名环境变量优先级更高：BEAUTY_PATH / BEAUTY_GPU_PIPE / BEAUTY_GPU_SMOOTH / BEAUTY_GPU_MINPIX\r\n"
     "\r\n"
@@ -155,6 +157,9 @@ static void cfgWriteTemplate(const std::string& path) {
     if (!f) return;
     const unsigned char bom[3] = { 0xEF, 0xBB, 0xBF };
     fwrite(bom, 1, sizeof(bom), f);
+    // 头行带版本号，供用户报问题时对照；版本取自 namaBuildStr()（唯一出处
+    // nama_engine.h），不在这里写死 —— 曾写死 "v3.3.0"，比插件实际版本落后一年。
+    fprintf(f, "; DaVinci Beauty 运行配置 v%s\r\n", namaBuildStr());
     fwrite(kIniTemplate, 1, strlen(kIniTemplate), f);
     fclose(f);
 }

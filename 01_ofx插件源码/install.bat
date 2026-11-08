@@ -21,7 +21,7 @@ for /d %%D in ("%PARENT%\*") do (
 )
 if "%ENGINE%"=="" (
     echo [ERROR] Cannot find engine assets folder containing onnxruntime.dll + yunet.onnx.
-    echo Make sure the 02_引擎资产 folder still has both files.
+    echo Make sure the engine assets folder still has both files.
     pause
     exit /b 1
 )
@@ -48,8 +48,8 @@ mkdir "%WIN64%" 2>nul
 copy /y "%~dp0out\DaVinciBeauty.ofx" "%WIN64%\" >nul
 copy /y "%ENGINE%\onnxruntime.dll" "%WIN64%\" >nul
 copy /y "%ENGINE%\yunet.onnx" "%WIN64%\" >nul
-rem GPL / MIT / BSD-3 都要求「随副本附带声明」，所以许可文件跟 DLL 一起装。
-rem 用 if exist 保护：源码包可能被裁剪成只有 01_ofx插件源码 一层。
+rem GPL / MIT / BSD-3 all require shipping the notices with the copy, so the
+rem license files go in with the DLL. if exist guards trimmed source trees.
 if exist "%~dp0..\LICENSE" copy /y "%~dp0..\LICENSE" "%WIN64%\" >nul
 if exist "%~dp0..\THIRD-PARTY-NOTICES.md" copy /y "%~dp0..\THIRD-PARTY-NOTICES.md" "%WIN64%\" >nul
 

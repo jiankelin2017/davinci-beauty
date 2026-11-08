@@ -139,7 +139,7 @@ f.kps[p*2+1] = flipY ? (h - vy2)     : vy2;   // 关键点：y' = h - y
 - `01_ofx插件源码/build.bat` 是**薄壳**，只做 `powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 %*`。真正逻辑在 `build.ps1`：vswhere 找 VS → 取最新 MSVC 与 Windows SDK → 编译 `src\*.cpp`，参数 `/O2 /EHsc /MD /W3 /utf-8 /arch:AVX2 /std:c++17` → `out\DaVinciBeauty.ofx`。支持 `-Clean` / `-NoInstall`。
 - **为什么不用纯 .bat**：批处理里的非 ASCII 字面量由 cmd 按 OEM 代码页（936/65001）解码，切换即乱码，cl 报 `cannot open include file`；`%~dp0` 动态展开不受影响，所以"只有中文字面量出问题"。PowerShell 的 argv 是 UTF-16，`build.ps1` 自身写成纯 ASCII，任何代码页都能解析。`build.bat` 也保持纯 ASCII + CRLF。
 - onnxruntime 头：`02_引擎资产\onnxruntime\include`，脚本按 `07_*` 前缀**自动定位**，目录改名不用改脚本。
-- 构建**可复现**：`build.ps1` 链接后用 `Reset-PeTimestamp` 把 COFF 与 `IMAGE_DEBUG_DIRECTORY` 两个 `TimeDateStamp` 清零，同源码重编逐字节相同（实测稳定 `2299c328…`）。注意 `/Brepro` 在本工具链上**不生效**，可复现靠的是上面那步，别再引用旧说法。
+- 构建**可复现**：`build.ps1` 链接后用 `Reset-PeTimestamp` 把 COFF 与 `IMAGE_DEBUG_DIRECTORY` 两个 `TimeDateStamp` 清零，同源码重编逐字节相同（实测稳定 `5655699…`）。注意 `/Brepro` 在本工具链上**不生效**，可复现靠的是上面那步，别再引用旧说法。
 - 自检：`cmd /c "build.bat < nul"`（`nul` 喂 stdin 避免旧版末尾 `pause` 挂起）。通过会打印 `[OK] out\DaVinciBeauty.ofx <bytes> md5=…`。
 - ⚠️ 任何源码改动**必须实跑构建**。静态分析曾漏掉符号级错误（`face_.provider()` 不存在、成员名写错 `lastFaces_`）。
 

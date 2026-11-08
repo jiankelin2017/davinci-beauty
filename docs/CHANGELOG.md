@@ -18,7 +18,21 @@
 | 2 | GPU 掉驱动后永久静默停用 | 不崩、不脏，只是「莫名变慢」，直到重启 Resolve | 三条失败出口统一识别 `DEVICE_REMOVED/RESET` 并拆设备重建 |
 | 3 | ORT `CreateSessionOptions` 返回空时仍往下调用 | 极端内存条件下硬崩（实测对 `nullptr` 一律 `0xC0000005`） | 自己挡一道；顺带补上两处丢弃的 `OrtStatus`（泄漏） |
 
-产物：`DaVinciBeauty_Setup_v1.3.5.0.exe`（4.6 MB），装机 DLL md5 `2299c328…`，旧版已备份为 `.bak-1.3.4.0`。
+产物：`DaVinciBeauty_Setup_v1.3.5.0.exe`（4.6 MB，md5 `5d422ef0…`），装机 DLL md5 `5655699…`，旧版已备份为 `.bak-1.3.4.0`。
+
+### 同日重切：三处旧编号清理（无行为变化）
+
+发版后发现三处版本串还写着旧编号，会误导排错，已清掉并**用同一版本号重出安装包**（未对外交付，不升版本）：
+
+| 位置 | 原来 | 现在 |
+|---|---|---|
+| `beauty_hwprobe.cpp` 的 `beauty.ini` 模板头 | `v3.3.0`（落后一年） | `v1.3.5.0`，由 `namaBuildStr()` 现拼 |
+| `beauty_core.cpp` 的 `CoreEngine::version()` | 硬编码 `"1.4.0"`，启动日志里以 `ver=` 出现 | 同上，与 `build=` 同源 |
+| `install.bat` | 3 行中文（`echo` / `rem`） | 纯 ASCII，规避 936 代码页下的乱码风险 |
+
+做法上没有再写第二份字面量：新增 `beauty_build.h` 只声明 `namaBuildStr()`，实现在 `nama_engine.cpp` 里 `return NAMA_BUILD_STR`。原因是 `beauty_core.cpp` 不能直接包含 `nama_engine.h`——那边的 `P_*` 枚举与 `beauty_params.h` 的同名（见该头注释）。
+
+验证：重编两次 md5 一致（`5655699…`）；基线 **18/18 逐字节不变**（这三处都是字符串，不碰像素，所以不需要重标基线）；`acceptance.py` **PASS 28 / FAIL 0**。
 
 ## 1.3.4.0（2026-11-08）— GPU 预热前移，片头不再顿
 

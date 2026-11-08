@@ -292,5 +292,5 @@ python baseline.py update
 
 已迁出正文，避免性能文档被工程排障淹没：
 
-- **构建可复现**：`build.ps1` 的 `Reset-PeTimestamp` 清零 COFF 与 `IMAGE_DEBUG_DIRECTORY` 两个 `TimeDateStamp`，同源码重编 md5 恒定（`2299c328…`）。`/Brepro` 在本工具链**不生效**。详见 `reference-architecture.md` §3。
+- **构建可复现**：`build.ps1` 的 `Reset-PeTimestamp` 清零 COFF 与 `IMAGE_DEBUG_DIRECTORY` 两个 `TimeDateStamp`，同源码重编 md5 恒定（`5655699…`）。`/Brepro` 在本工具链**不生效**。详见 `reference-architecture.md` §3。
 - **PowerShell 5.1 编码坑**：`build.ps1` 若含非 ASCII 注释，以 GBK 解码时行尾 CRLF 会被吃掉，**下一行的数组元素被当成注释内容**（曾因此吞掉 `/Brepro` 和 `$sandboxDefine`，表现为"宏没到编译器"）。修法是脚本保持纯 ASCII。沙箱构建的结论见 `docs/guides/guide-package.md`。
