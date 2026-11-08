@@ -3,9 +3,8 @@
 > 当前构建：**1.3.6.0（2026-11-08）** ｜ 状态：Active ｜ 最后更新：2026-11-08 ｜ 维护人：Jian
 > 文档总表：`docs/INDEX.md` ｜ 版本变化：`docs/CHANGELOG.md`
 
-达芬奇 Resolve 的 OFX 美颜插件。**自研纯 CPU 美颜引擎**（移植自旧版引擎 3.1.x）+ **ONNX 人脸检测**；人脸推理有 GPU 时自动加速，无 GPU 时自动退回 CPU，效果一致。插件 ID：`com.nama.davinci.beauty`（不要改，改了历史工程里已挂的效果会失效）。
+达芬奇 Resolve 的 OFX 美颜插件。**自研纯 CPU 美颜引擎** + **ONNX 人脸检测**；人脸推理有 GPU 时自动加速，无 GPU 时自动退回 CPU，效果一致。插件 ID：`com.nama.davinci.beauty`。
 
-**1.3.6.0 修掉一处数据竞争**：色调段的 Sobel 门控在读正被并行写的像素，导致输出以 1.5% 概率随机漂移（表现为「逐字节回归偶发 17/18」）。改成先算边缘再写回。**画面会变**（0.2% 像素、最多 3 级，肉眼不可见），基线已重标。1.3.5.0 修的三处失败路径（死锁 / GPU 掉驱动后静默停用 / ORT 空 options 崩溃）不变。细节见 `docs/CHANGELOG.md`。
 
 ## 快速开始
 
@@ -19,21 +18,7 @@
 装完自检：`04_验收工具\verify.bat`，期望 `PASS 28 / FAIL 0`。
 安装 / 升级 / 回滚 / 配置开关 / 常见问题：`docs/guides/guide-install.md`。
 
-**从 GitHub 获取**：仓库地址 <https://github.com/jiankelin2017/davinci-beauty>。安装包在仓库 `dist\` 目录，同时挂在 [Releases](https://github.com/jiankelin2017/davinci-beauty/releases) 页可直接下载（不用 clone）。
 
-## 文档在哪
-
-| 想知道 | 看这里 |
-|---|---|
-| 全部文档与状态 | `docs/INDEX.md` |
-| 每个版本用户能看出来什么 | `docs/CHANGELOG.md` |
-| 怎么装、怎么退 | `docs/guides/guide-install.md` |
-| 怎么改代码、发版流程 | `docs/guides/guide-dev-workflow.md` |
-| 怎么验收、判据是什么 | `docs/guides/guide-acceptance.md` |
-| 怎么出安装包 | `docs/guides/guide-package.md` |
-| 架构、关键事实、排错 | `docs/reference/reference-architecture.md` |
-| 性能实测、被证伪的猜想 | `docs/reference/reference-performance.md` |
-| 当时的完整过程 | `docs/history/history-progress-1x.md` |
 
 ## 目录形态
 
@@ -48,10 +33,6 @@ docs\             文档体系（总表见 docs/INDEX.md）
 LICENSE / COPYRIGHT / THIRD-PARTY-NOTICES.md   许可、版权与第三方声明
 FILELIST.txt      已跟踪文件的 sha256 清单（gen_filelist.py 生成）
 ```
-
-`安装说明.txt` 由 `package.py` 在**包内**生成，仓库里不留副本 —— 留一份就一定会过期。
-**仓库里没有**：推理运行时与模型副本、构建中间产物（`out/ obj/ bundle/ 05_安装包/build/`）、本地归档 `_archive/`。`dist\` 只放**当前版本**的发布安装包，历史版本走 Releases；`.gitignore` 对此开了白名单（`!dist/*.exe`），别把它当构建输出目录用。
-`package.py` 有防呆：目标目录 == 本仓库时直接拒绝，避免把 `.git` 哈希进清单或 `--force` 删库重来。
 
 ## 引擎与硬件
 
@@ -75,8 +56,4 @@ FILELIST.txt      已跟踪文件的 sha256 清单（gen_filelist.py 生成）
 - 第三方组件与算法出处：[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
 - 每个源文件首行都有 `SPDX-License-Identifier: GPL-2.0-only`，机器可识别
 
-三点需要说清楚：
 
-1. **「仅第 2 版」不是笔误**。声明里没有 "or (at your option) any later version"，所以下游不能自行按 GPLv3 使用。将来要改成「或更高版本」，只需改 `COPYRIGHT` 里那一句，`LICENSE` 正文一个字都不用动 —— GPL 第 2 版明文禁止修改许可证文本，所以版权声明全部放在 `COPYRIGHT`，不往 `LICENSE` 里插。
-2. **GPL-2.0 与 Apache-2.0 不兼容**，与 MIT、BSD-3-Clause 兼容。现有三个第三方组件都是 MIT/BSD-3，所以这个组合成立；将来若引入 Apache-2.0 组件（例如某个模型仓库的 `models/` 目录），整个授权结构必须重做。
-3. **MIT 上游只在合规文件里标注，不散落在注释中**。磨皮合成式与 Sobel 门控灵敏度口径分别来自两个 MIT 实现，源码注释统一写「该 MIT 实现」，具名出处、版权行与 MIT 全文集中在 `THIRD-PARTY-NOTICES.md` 第 4 节。本项目**没有分发它们的代码**，只是对齐公式。
